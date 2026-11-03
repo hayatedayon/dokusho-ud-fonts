@@ -1,0 +1,56 @@
+# 読書 UD明朝・読書 UDゴシック
+
+[English](README.en.md)
+
+本を読むためのフォントです。モリサワの [BIZ UD明朝](https://github.com/googlefonts/morisawa-biz-ud-mincho)・[BIZ UDゴシック](https://github.com/googlefonts/morisawa-biz-ud-gothic)を元に、欧字だけを同じデザインのプロポーショナルな BIZ UDP の字にしました。縦書きでも横書きでも、印刷された日本語の本と同じ組み方になります。
+
+| | 読書 UD明朝 | 読書 UDゴシック |
+| --- | --- | --- |
+| 英語名 | Dokusho UD Mincho | Dokusho UD Gothic |
+| ウェイト | Regular・Bold | Regular・Bold |
+| ファイル | `DokushoUDMincho-Regular.ttf` など | `DokushoUDGothic-Regular.ttf` など |
+
+## なぜ合成したか
+
+日本語の横組の本は、仮名・漢字・約物を全角のマス目に並べ（[日本語組版処理の要件（JLReq）](https://www.w3.org/TR/jlreq/?lang=ja) のベタ組）、欧字はプロポーショナルの欧文書体で組みます。BIZ UD と BIZ UDP は、どちらか一方ではこの組み方になりません。
+
+| | 仮名・約物 | 欧字 |
+| --- | --- | --- |
+| BIZ UD | 全角（マス目に並ぶ） | 半角の等幅（`i` も `W` も同じ幅） |
+| BIZ UDP | 字ごとの幅（句点は全角の 6 割、始め括弧は半分） | 字ごとの幅 |
+| **読書 UD** | **全角（BIZ UD と同じ）** | **字ごとの幅（BIZ UDP と同じ）** |
+
+縦書きの字形（`vert`・`vrt2`）と縦の字送り、JIS 第 1・第 2 水準の漢字は BIZ UD のままです。
+
+## 変えたところ
+
+- 欧字（U+0020–007E、U+00C0–00D6、U+00D8–00F6、U+00F8–017F）の形・字幅・縦の字送りを BIZ UDP のものにしました。× と ÷ は和文で全角として使うので、BIZ UD のままです。
+- その欧字からの置き換え（`frac`・`numr`・`sups`・`zero`・`vrt2`。縦組で横に倒した欧字など）を BIZ UDP と同じにしました。
+- BIZ UDP から持ってきたグリフのヒンティングの命令は外しました（BIZ UD と BIZ UDP で cvt が違うため）。
+- 名前を「読書 UD」にしました。BIZ UD明朝・BIZ UDゴシックはモリサワの商標です。等幅の印（`post.isFixedPitch`）も外しました。
+
+くわしくは [FONTLOG.txt](FONTLOG.txt) にあります。
+
+## ライセンス
+
+[SIL Open Font License 1.1](OFL.txt) です。個人でも商用でも無料で使え、アプリや文書に同梱して配れます。フォント単体での販売はできません。元のフォントの著作権表示は OFL.txt にあります。
+
+リリースで配るのはフォントのファイルだけです。OFL が配るフォントの 1 つ 1 つに求める著作権表示と使用許諾の全文は、フォントの中（name テーブルの著作権表示とライセンスの欄）に入れてあります。フォントを再配布するときも、ファイルだけで足ります。
+
+このフォントはモリサワとは関係がありません。不具合はこのリポジトリの Issue に報告してください。
+
+## 作り方
+
+[fontTools](https://github.com/fonttools/fonttools) で作ります。元のフォントは Google Fonts のものを、`scripts/sources.json` のコミットと SHA-256 に固定して取ってきます。同じ元からは同じファイルができます。
+
+```sh
+python3 -m venv .venv
+.venv/bin/pip install -r requirements.txt
+.venv/bin/python scripts/fetch_sources.py   # sources/ に元のフォント
+.venv/bin/python scripts/build.py           # fonts/ に読書 UD
+.venv/bin/python scripts/check.py           # 元のフォントと突き合わせる
+```
+
+`scripts/check.py` は、欧字が BIZ UDP と、和文が BIZ UD と同じ形と字幅か、縦書きの機能と名前が正しいかを確かめます。CI は push のたびに作って確かめ、`vX.Y.Z` のタグを付けるとリリースを作ります。タグ `vX.Y.Z` はフォントの版 `X.YYZ` です（`v1.0.0` は 1.000）。
+
+リリースは後から変えられません（GitHub の immutable releases）。公開したリリースのファイルとタグは差し替えも削除もできないので、同じ版のファイルはいつダウンロードしても同じです。各ファイルの SHA-256 はリリースのページに出ており、GitHub が作るリリースの証明（attestation）で確かめられます。

@@ -1,0 +1,64 @@
+name: Release
+
+# v1.000 のようなタグを push すると、作って確かめたフォントでリリースを作る
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    uses: ./.github/workflows/build.yml
+
+  release:
+    name: Publish the release
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+
+    steps:
+      - name: Download the fonts
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: DokushoUD
+          path: fonts
+
+      # タグの版と、フォントの中の版 (scripts/spec.py の VERSION) が同じであること。
+      # タグ vX.Y.Z は、フォントの版 X.YYZ (v1.0.0 は 1.000、v1.2.3 は 1.023)
+      - name: Check the version
+        env:
+          TAG: ${{ github.ref_name }}
+        run: |
+          python3 - "$TAG" <<'PY'
+          import re
+          import sys
+          match = re.fullmatch(r"v(\d+)\.(\d{1,2})\.(\d)", sys.argv[1])
+          if not match:
+              sys.exit(f"{sys.argv[1]}: the tag must be vX.Y.Z, with Y up to 99 and Z up to 9")
+          major, minor, patch = match.groups()
+          version = f"{int(major)}.{int(minor):02d}{patch}"
+          for name in ["DokushoUDMincho-Regular", "DokushoUDMincho-Bold", "DokushoUDGothic-Regular", "DokushoUDGothic-Bold"]:
+              data = open(f"fonts/{name}.ttf", "rb").read()
+              if f"Version {version};".encode("utf-16-be") not in data:
+                  sys.exit(f"{name} is not version {version} (tag {sys.argv[1]})")
+          PY
+
+      # リリースは変えられない (immutable releases)。公開した後はファイルを足せないので、下書きで
+      # すべてのファイルを付けてから公開する。配るのはフォントだけ (使用許諾はフォントの中にある)
+      - name: Publish
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          gh release create "$TAG" fonts/*.ttf \
+            --repo "$GITHUB_REPOSITORY" --verify-tag --draft \
+            --title "読書 UD明朝・読書 UDゴシック $TAG" --generate-notes
+          gh release edit "$TAG" --repo "$GITHUB_REPOSITORY" --draft=false
+          immutable="$(gh api "repos/$GITHUB_REPOSITORY/releases/tags/$TAG" -q .immutable)"
+          echo "immutable: $immutable"
+          test "$immutable" = true

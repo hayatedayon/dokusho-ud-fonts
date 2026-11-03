@@ -1,0 +1,59 @@
+FONTLOG for Dokusho UD Mincho and Dokusho UD Gothic (読書 UD明朝・読書 UDゴシック)
+==================================================================================
+
+This file provides detailed information on the Dokusho UD fonts, following the
+FONTLOG that SIL recommends for fonts under the Open Font License.
+
+Basic Font Information
+----------------------
+
+Dokusho UD Mincho and Dokusho UD Gothic are fonts for reading books, in
+horizontal and vertical text alike. They are Modified Versions of Morisawa's
+BIZ UDMincho and BIZ UDGothic (SIL Open Font License 1.1).
+
+Printed Japanese books set kana, kanji and punctuation on a full-width grid
+(solid setting in the W3C Requirements for Japanese Text Layout), and Latin
+letters in a proportional typeface. BIZ UD has full-width kana but monospaced
+half-width Latin letters, and BIZ UDP has proportional Latin letters but also
+proportional kana and punctuation, so neither sets text the way books do on its
+own. Dokusho UD keeps everything of BIZ UD and takes only the Latin letters,
+with their substitutions, from BIZ UDP of the same design.
+
+ChangeLog
+---------
+
+2026-11-03 (hayatedayon) Dokusho UD 1.001
+- Built from BIZ UDMincho, BIZ UDPMincho, BIZ UDGothic and BIZ UDPGothic 1.06
+  (google/fonts at commit 2fe1e8c6b137fb13041a7cfca6fdcd8a910ea4dc).
+- The Latin letters (U+0020-007E, U+00C0-00D6, U+00D8-00F6, U+00F8-017F) take
+  their outlines, advance widths and vertical metrics from BIZ UDP. U+00D7 (×)
+  and U+00F7 (÷) stay as in BIZ UD, since Japanese text uses them full width.
+- The GSUB substitutions of those letters in frac, numr, sups, zero and vrt2
+  follow BIZ UDP, together with the glyphs they lead to where BIZ UDP's differ.
+- The TrueType instructions are removed from the glyphs taken from BIZ UDP,
+  because BIZ UD and BIZ UDP have different control value tables.
+- Renamed to Dokusho UD (BIZ UDMincho and BIZ UDGothic are trademarks of
+  Morisawa Inc.), the trademark record removed, the fixed pitch flag cleared,
+  and the digital signature dropped.
+- OS/2.xAvgCharWidth is computed again from the glyphs (BIZ UDGothic has 1718
+  where its glyphs give 1962:
+  https://github.com/googlefonts/morisawa-biz-ud-gothic/issues/45).
+- The copyright notice (name ID 0) and the license field (name ID 13) hold the
+  copyright lines and the full text of OFL.txt, so that each font file carries
+  the notice and the license the OFL requires, and releases contain only the
+  font files.
+- OFL.txt: the copyright line of BIZ UDGothic points to
+  https://github.com/googlefonts/morisawa-biz-ud-gothic, as the notice inside
+  the fonts does. The OFL.txt of the original distribution has the URL of BIZ
+  UDMincho's repository on that line
+  (https://github.com/googlefonts/morisawa-biz-ud-gothic/issues/24, with a fix
+  in https://github.com/googlefonts/morisawa-biz-ud-gothic/pull/46).
+- This is the first release to use. Version 1.000, published earlier the same
+  day, had the same glyphs, but a pointer to the license instead of its text,
+  the wrong URL above, and came as a zip with the documents; it is superseded.
+
+Acknowledgements
+----------------
+
+The original fonts were designed by TypeBank Co., Ltd. and released by Morisawa
+Inc. under the SIL Open Font License 1.1.

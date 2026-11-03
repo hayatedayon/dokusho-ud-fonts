@@ -1,0 +1,6 @@
+# scripts/fetch_sources.py が取ってくる元のフォントと、scripts/build.py が作るフォント
+/sources/
+/fonts/
+/dist/
+__pycache__/
+.venv/
