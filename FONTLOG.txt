@@ -22,6 +22,16 @@ with their substitutions, from BIZ UDP of the same design.
 ChangeLog
 ---------
 
+(unreleased) (hayatedayon) Dokusho UD 1.002
+- Added halt and vhal (GPOS), which the original fonts lack: the alternate
+  half widths of the full-width punctuation, so that text-spacing-trim in
+  browsers (and applications that use these features) can remove the extra
+  space between consecutive brackets and punctuation, as in printed books.
+  Following JLReq, opening brackets lose the space before them, closing
+  brackets, commas and full stops the space after them, and middle dots a
+  quarter on each side. Only glyphs whose ink stays inside the remaining half
+  get them (in vertical text, “ and ； do not). The glyphs do not change.
+
 2026-11-03 (hayatedayon) Dokusho UD 1.001
 - Built from BIZ UDMincho, BIZ UDPMincho, BIZ UDGothic and BIZ UDPGothic 1.06
   (google/fonts at commit 2fe1e8c6b137fb13041a7cfca6fdcd8a910ea4dc).

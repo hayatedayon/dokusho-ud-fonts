@@ -27,6 +27,7 @@
 - 欧字（U+0020–007E、U+00C0–00D6、U+00D8–00F6、U+00F8–017F）の形・字幅・縦の字送りを BIZ UDP のものにしました。× と ÷ は和文で全角として使うので、BIZ UD のままです。
 - その欧字からの置き換え（`frac`・`numr`・`sups`・`zero`・`vrt2`。縦組で横に倒した欧字など）を BIZ UDP と同じにしました。
 - BIZ UDP から持ってきたグリフのヒンティングの命令は外しました（BIZ UD と BIZ UDP で cvt が違うため）。
+- 約物の詰め（`halt`・`vhal`）を足しました。元の BIZ UD にはありません。ブラウザの `text-spacing-trim`（Chromium は既定で働きます）で、「『 や 。」 のように続いた括弧や句読点の間のアキが、本と同じように詰まります。
 - 名前を「読書 UD」にしました。BIZ UD明朝・BIZ UDゴシックはモリサワの商標です。等幅の印（`post.isFixedPitch`）も外しました。
 
 くわしくは [FONTLOG.txt](FONTLOG.txt) にあります。

@@ -7,6 +7,7 @@
 2. 欧字からの GSUB の置き換え (spec.LATIN_FEATURES) を BIZ UDP と同じにする。置き換え先の
    グリフの形か字送りが違えば、それも BIZ UDP のものにする
 3. 名前を読書 UD に変え (BIZ UD はモリサワの商標)、等幅の印 (post.isFixedPitch) を外す
+4. 約物の詰め (halt・vhal) を足す (spacing.py)
 
 BIZ UD と BIZ UDP は、ヒンティングの cvt が違う。BIZ UDP から持ってきたグリフの命令は
 BIZ UD の cvt では正しく働かないので、外す。
@@ -21,6 +22,7 @@ from fontTools.ttLib import TTFont
 from fontTools.misc.timeTools import epoch_diff as EPOCH_DIFF
 from fontTools.ttLib.tables._g_l_y_f import Glyph
 
+import spacing
 import spec
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -163,6 +165,7 @@ def build(family: dict, weight: str) -> Path:
     if ud["fpgm"].compile(ud) != udp["fpgm"].compile(udp):
         raise SystemExit("BIZ UD and BIZ UDP have different fpgm")
     stats = merge_latin(ud, udp)
+    spaced = spacing.add(ud)
 
     rename(ud, family, weight)
     ud["post"].isFixedPitch = 0
@@ -182,7 +185,7 @@ def build(family: dict, weight: str) -> Path:
     out = OUTPUT / spec.output_name(family, weight)
     ud.save(out)
     print(f"{out.relative_to(ROOT)}: Latin {stats['latin']} glyphs, {stats['mappings']} GSUB mappings, "
-          f"{stats['targets']} GSUB targets from BIZ UDP")
+          f"{stats['targets']} GSUB targets from BIZ UDP; halt {spaced['halt']}, vhal {spaced['vhal']} glyphs")
     return out
 
 

@@ -27,6 +27,7 @@ The vertical forms (`vert`, `vrt2`), vertical metrics and the kanji of JIS level
 - The Latin letters (U+0020–007E, U+00C0–00D6, U+00D8–00F6, U+00F8–017F) take their outlines, widths and vertical metrics from BIZ UDP. × and ÷ stay as in BIZ UD, since Japanese text uses them full width.
 - Their substitutions (`frac`, `numr`, `sups`, `zero`, and `vrt2`, the Latin letters turned sideways in vertical text) follow BIZ UDP.
 - The hinting instructions of the glyphs taken from BIZ UDP are removed, because BIZ UD and BIZ UDP have different control value tables.
+- `halt` and `vhal` are added (BIZ UD has neither), so that `text-spacing-trim` in browsers (on by default in Chromium) removes the extra space between consecutive brackets and punctuation, as printed books do.
 - The fonts are renamed Dokusho UD, as BIZ UDMincho and BIZ UDGothic are trademarks of Morisawa Inc., and the fixed pitch flag (`post.isFixedPitch`) is cleared.
 
 [FONTLOG.txt](FONTLOG.txt) has the details.

@@ -6,6 +6,7 @@ build.py とは別の書き方で、できたものだけを見る。1 つでも
 import sys
 from pathlib import Path
 
+from fontTools.pens.boundsPen import BoundsPen
 from fontTools.ttLib import TTFont
 
 import spec
@@ -101,6 +102,64 @@ def check_font(family: dict, weight: str) -> None:
     check("DSIG" not in font, f"{label}: the signature of BIZ UD is still there")
     check(f"{font['head'].fontRevision:.3f}" == spec.VERSION, f"{label}: font revision")
     check(font["OS/2"].fsType == 0, f"{label}: embedding is restricted")
+    check_spacing(label, font)
+
+
+def gpos_values(font: TTFont, tag: str) -> dict:
+    """GPOS の tag の、グリフごとの (XPlacement, YPlacement, XAdvance, YAdvance)"""
+    gpos = font["GPOS"].table
+    values = {}
+    for record in gpos.FeatureList.FeatureRecord:
+        if record.FeatureTag != tag:
+            continue
+        for index in record.Feature.LookupListIndex:
+            for subtable in gpos.LookupList.Lookup[index].SubTable:
+                subtable = getattr(subtable, "ExtSubTable", subtable)
+                glyphs = subtable.Coverage.glyphs
+                records = [subtable.Value] * len(glyphs) if subtable.Format == 1 else subtable.Value
+                for glyph, record in zip(glyphs, records):
+                    values[glyph] = tuple(getattr(record, a, 0) or 0
+                                          for a in ("XPlacement", "YPlacement", "XAdvance", "YAdvance"))
+    return values
+
+
+def check_spacing(label: str, font: TTFont) -> None:
+    """約物の詰め (halt・vhal)。詰めた後もインクが字の枠に収まり、代表の字が JLReq の値であること"""
+    if "GPOS" not in font:
+        problems.append(f"{label}: no GPOS (halt and vhal are missing)")
+        return
+    em, half, quarter = font["head"].unitsPerEm, font["head"].unitsPerEm // 2, font["head"].unitsPerEm // 4
+    glyph_set = font.getGlyphSet()
+    cmap = font.getBestCmap()
+    vertical_forms = gsub_mapping(font, "vert")
+    halt, vhal = gpos_values(font, "halt"), gpos_values(font, "vhal")
+    for glyph, (x, y, x_advance, y_advance) in halt.items():
+        pen = BoundsPen(glyph_set)
+        glyph_set[glyph].draw(pen)
+        left, right = pen.bounds[0] + x, pen.bounds[2] + x
+        width = font["hmtx"][glyph][0] + x_advance
+        check(0 <= left and right <= width, f"{label}: halt of {glyph} puts its ink outside its width")
+    for glyph, (x, y, x_advance, y_advance) in vhal.items():
+        pen = BoundsPen(glyph_set)
+        glyph_set[glyph].draw(pen)
+        advance, top_side = font["vmtx"][glyph]
+        top = top_side - y  # 上へ動かすと、枠の上からの位置は小さくなる
+        bottom = top + (pen.bounds[3] - pen.bounds[1])
+        check(0 <= top and bottom <= advance + y_advance, f"{label}: vhal of {glyph} puts its ink outside its advance")
+    expected = {
+        "「": ((-half, 0, -half, 0), (0, half, 0, -half)),
+        "」": ((0, 0, -half, 0), (0, 0, 0, -half)),
+        "。": ((0, 0, -half, 0), (0, 0, 0, -half)),
+        "、": ((0, 0, -half, 0), (0, 0, 0, -half)),
+        "・": ((-quarter, 0, -half, 0), (0, quarter, 0, -half)),
+    }
+    for char, (horizontal, vertical) in expected.items():
+        glyph = cmap[ord(char)]
+        check(halt.get(glyph) == horizontal, f"{label}: halt of {char} is {halt.get(glyph)}, not {horizontal}")
+        upright = vertical_forms.get(glyph, glyph)
+        check(vhal.get(upright) == vertical, f"{label}: vhal of {char} is {vhal.get(upright)}, not {vertical}")
+    scripts = {r.ScriptTag for r in font["GPOS"].table.ScriptList.ScriptRecord}
+    check({"hani", "kana", "DFLT"} <= scripts, f"{label}: GPOS scripts {sorted(scripts)}")
 
 
 def check_license() -> None:
