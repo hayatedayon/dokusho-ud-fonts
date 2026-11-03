@@ -22,7 +22,7 @@ with their substitutions, from BIZ UDP of the same design.
 ChangeLog
 ---------
 
-(unreleased) (hayatedayon) Dokusho UD 1.002
+2026-11-03 (hayatedayon) Dokusho UD 1.002
 - Added halt and vhal (GPOS), which the original fonts lack: the alternate
   half widths of the full-width punctuation, so that text-spacing-trim in
   browsers (and applications that use these features) can remove the extra
