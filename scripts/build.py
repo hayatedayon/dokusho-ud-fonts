@@ -8,11 +8,13 @@
    グリフの形か字送りが違えば、それも BIZ UDP のものにする
 3. 欧文の中の記号 (引用符・アポストロフィ・ダッシュなど) を、欧字の用字系の中でだけ BIZ UDP の
    字にする (latin_symbols.py。日本語の文書では置き換えない)
-4. 名前を読書 UD に変え (BIZ UD はモリサワの商標)、等幅の印 (post.isFixedPitch) を外す
-5. 約物の詰め (halt・vhal) を足す (spacing.py)
+4. BIZ UDP から持ってきた字に、BIZ UDP のヒンティングを付ける (hinting.py)
+5. 名前を読書 UD に変え (BIZ UD はモリサワの商標)、等幅の印 (post.isFixedPitch) を外す
+6. 約物の詰め (halt・vhal) を足す (spacing.py)
 
-BIZ UD と BIZ UDP は、ヒンティングの cvt が違う。BIZ UDP から持ってきたグリフの命令は
-BIZ UD の cvt では正しく働かないので、外す。
+BIZ UD と BIZ UDP は、ヒンティングの cvt と prep が違う。BIZ UDP から持ってきた字の命令は、
+いったん外し (BIZ UD の cvt では正しく働かない)、hinting.py が cvt と prep を付け足してから、
+cvt の番号をずらして入れ直す。
 """
 
 import copy
@@ -24,6 +26,7 @@ from fontTools.ttLib import TTFont
 from fontTools.misc.timeTools import epoch_diff as EPOCH_DIFF
 from fontTools.ttLib.tables._g_l_y_f import Glyph
 
+import hinting
 import latin_symbols
 import spacing
 import spec
@@ -118,7 +121,8 @@ def merge_latin(ud: TTFont, udp: TTFont) -> dict:
     taken_targets = [t for t in sorted(targets) if t not in latin and not same_glyph(ud, udp, t)]
     for name in taken_targets:
         take_glyph(ud, udp, name)
-    return {"latin": len(latin), "mappings": changed_mappings, "targets": len(taken_targets)}
+    return {"latin": len(latin), "mappings": changed_mappings, "targets": len(taken_targets),
+            "glyphs": latin + taken_targets}
 
 
 def license_text() -> str:
@@ -169,6 +173,9 @@ def build(family: dict, weight: str) -> Path:
         raise SystemExit("BIZ UD and BIZ UDP have different fpgm")
     stats = merge_latin(ud, udp)
     symbols = latin_symbols.add(ud, udp)
+    # BIZ UDP から持ってきた字 (読書 UD のグリフ名 → BIZ UDP のグリフ名)
+    taken = {name: name for name in stats["glyphs"]} | {target: source for source, target in symbols["glyphs"].items()}
+    hinted = hinting.add(ud, udp, taken)
     spaced = spacing.add(ud)
 
     rename(ud, family, weight)
@@ -190,6 +197,7 @@ def build(family: dict, weight: str) -> Path:
     ud.save(out)
     print(f"{out.relative_to(ROOT)}: Latin {stats['latin']} glyphs, {stats['mappings']} GSUB mappings, "
           f"{stats['targets']} GSUB targets from BIZ UDP; {symbols['symbols']} symbols in Latin text; "
+          f"hinting of BIZ UDP on {hinted['hinted']} glyphs (cvt +{hinted['cvt']}); "
           f"halt {spaced['halt']}, vhal {spaced['vhal']} glyphs")
     return out
 

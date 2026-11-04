@@ -10,6 +10,7 @@ from fontTools.pens.boundsPen import BoundsPen
 from fontTools.pens.recordingPen import DecomposingRecordingPen
 from fontTools.ttLib import TTFont
 
+import freetype_render
 import spec
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -109,6 +110,7 @@ def check_font(family: dict, weight: str) -> None:
     check(f"{font['head'].fontRevision:.3f}" == spec.VERSION, f"{label}: font revision")
     check(font["OS/2"].fsType == 0, f"{label}: embedding is restricted")
     check_latin_symbols(label, font, ud, udp)
+    check_hinting(label, font, family, weight)
     check_spacing(label, font)
 
 
@@ -191,6 +193,38 @@ def check_latin_symbols(label: str, font: TTFont, ud: TTFont, udp: TTFont) -> No
     for script, language in [("latn", "JAN "), ("hani", None), ("kana", None), ("DFLT", None)]:
         check(not latin_symbol_mapping(font, script, language),
               f"{label}: symbols are substituted in {script} {language or 'dflt'}")
+
+
+# 描いて比べる大きさ (1 em の画素の数)。ヒンティングが効くのは小さな大きさ
+HINTING_PPEMS = range(8, 25)
+
+
+def check_hinting(label: str, font: TTFont, family: dict, weight: str) -> None:
+    """BIZ UDP から持ってきた字のヒンティングが BIZ UDP と同じで、和文のヒンティングが BIZ UD と
+    同じこと。FreeType でヒンティングを動かして描き、画素を比べる (hinting.py が cvt の番号を
+    ずらし損ねていれば、字の形がずれる)"""
+    paths = {"ours": FONTS / label, "ud": SOURCES / f"{family['ud']}-{weight}.ttf",
+             "udp": SOURCES / f"{family['udp']}-{weight}.ttf"}
+    cmap = font.getBestCmap()
+    symbols = latin_symbol_mapping(font, "latn", None)
+    by_name = {name: code for code, name in cmap.items()}
+    for mode, interpreter, flags in freetype_render.MODES:
+        renderers = {key: freetype_render.Renderer(path, interpreter, flags) for key, path in paths.items()}
+        ours, ud, udp = renderers["ours"], renderers["ud"], renderers["udp"]
+        # (何を, 読書 UD のグリフの番号, 比べる相手, 相手のグリフの番号)
+        cases = [(f"U+{code:04X}", ours.char_index(code), udp, udp.char_index(code)) for code in spec.LATIN]
+        cases += [(f"U+{by_name[source]:04X} in Latin text", font.getGlyphID(target), udp, udp.char_index(by_name[source]))
+                  for source, target in symbols.items()]
+        cases += [(char, ours.char_index(ord(char)), ud, ud.char_index(ord(char))) for char in JAPANESE]
+        differ = []
+        for what, ours_index, other, other_index in cases:
+            for ppem in HINTING_PPEMS:
+                if ours.render(ours_index, ppem) != other.render(other_index, ppem):
+                    differ.append(f"{what} at {ppem} ppem")
+        check(not differ, f"{label}: {mode}: {len(differ)} glyphs are not drawn as in BIZ UD / BIZ UDP, "
+                          f"such as {differ[:3]}")
+        for renderer in renderers.values():
+            renderer.close()
 
 
 def check_spacing(label: str, font: TTFont) -> None:

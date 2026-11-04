@@ -13,6 +13,8 @@
 - 選ぶのは、BIZ UD と BIZ UDP で形か幅が違う記号だけ。同じものは置き換えない
 """
 
+import copy
+
 from fontTools.pens.recordingPen import DecomposingRecordingPen
 from fontTools.pens.ttGlyphPen import TTGlyphPen
 from fontTools.ttLib import TTFont
@@ -46,16 +48,24 @@ def drawing(glyph_set, name: str) -> list:
 
 
 def add_glyph(ud: TTFont, udp: TTFont, source: str, name: str) -> None:
-    """BIZ UDP の source の字 (形・字幅・縦の字送り) を、ud に name として足す。部品は分解し、
-    ヒンティングの命令は付けない (BIZ UD と BIZ UDP は cvt が違う)"""
-    recording = DecomposingRecordingPen(udp.getGlyphSet())
-    udp.getGlyphSet()[source].draw(recording)
-    pen = TTGlyphPen(None)
-    recording.replay(pen)
+    """BIZ UDP の source の字 (形・字幅・縦の字送り) を、ud に name として足す。部品でできた字は
+    分解する。そうでない字は点の並びをそのまま写す (hinting.py が、BIZ UDP の命令を点の番号の
+    まま入れる)。ヒンティングの命令はいったん外す (BIZ UD と BIZ UDP は cvt が違う)"""
+    original = udp["glyf"][source]
+    if original.isComposite():
+        recording = DecomposingRecordingPen(udp.getGlyphSet())
+        udp.getGlyphSet()[source].draw(recording)
+        pen = TTGlyphPen(None)
+        recording.replay(pen)
+        glyph = pen.glyph()
+    else:
+        glyph = copy.deepcopy(original)
+        glyph.expand(udp["glyf"])
+        glyph.removeHinting()
     order = ud.getGlyphOrder() + [name]
     ud.setGlyphOrder(order)
     ud["glyf"].glyphOrder = order
-    ud["glyf"][name] = pen.glyph()
+    ud["glyf"][name] = glyph
     ud["hmtx"][name] = udp["hmtx"][source]
     ud["vmtx"][name] = udp["vmtx"][source]
 
@@ -120,4 +130,4 @@ def add(ud: TTFont, udp: TTFont) -> dict[str, int]:
     latn.DefaultLangSys.FeatureIndex = latn.DefaultLangSys.FeatureIndex + [new]
     latn.DefaultLangSys.FeatureCount = len(latn.DefaultLangSys.FeatureIndex)
     sort_features(gsub)
-    return {"symbols": len(chosen)}
+    return {"symbols": len(chosen), "glyphs": mapping}

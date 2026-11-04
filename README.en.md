@@ -34,7 +34,7 @@ The vertical forms (`vert`, `vrt2`), vertical metrics and the kanji of JIS level
 
 - The Latin letters (U+0020–007E, U+00C0–00D6, U+00D8–00F6, U+00F8–017F) take their outlines, widths and vertical metrics from BIZ UDP. × and ÷ stay as in BIZ UD, since Japanese text uses them full width.
 - Their substitutions (`frac`, `numr`, `sups`, `zero`, and `vrt2`, the Latin letters turned sideways in vertical text) follow BIZ UDP.
-- The hinting instructions of the glyphs taken from BIZ UDP are removed, because BIZ UD and BIZ UDP have different control value tables.
+- The glyphs taken from BIZ UDP (the Latin letters, the symbols in Latin text and the like) carry BIZ UDP's hinting. BIZ UD and BIZ UDP have different control value tables and prep programs, so BIZ UDP's are appended to BIZ UD's, and the cvt numbers in the instructions are shifted to match. Small Latin text is drawn with the same instructions and values as in BIZ UDP (up to 1.003 the instructions were removed, so on Windows the Latin letters alone looked slightly faint and soft in small text).
 - `halt` and `vhal` are added (BIZ UD has neither), so that `text-spacing-trim` in browsers (on by default in Chromium) removes the extra space between consecutive brackets and punctuation, as printed books do.
 - Symbols in Latin text (the quotation marks and apostrophe `‘ ’ “ ”`, the dash `—`, `†`, `©`, `€` and others whose outline or width differs between BIZ UD and BIZ UDP) take BIZ UDP's glyphs, but only within Latin script (`locl`). BIZ UD's `’` is full width, so Alice’s would otherwise have a full-width gap. In documents in Japanese (`lang="ja"`) they keep BIZ UD's glyphs, English passages included, and “ ” in Japanese text stay full width.
 - The fonts are renamed Dokusho UD, as BIZ UDMincho and BIZ UDGothic are trademarks of Morisawa Inc., and the fixed pitch flag (`post.isFixedPitch`) is cleared.
@@ -70,6 +70,6 @@ python3 -m venv .venv
 .venv/bin/python scripts/check.py           # compare with the original fonts
 ```
 
-`scripts/check.py` checks that the Latin letters match BIZ UDP and the Japanese characters match BIZ UD in outline and width, that the symbols in Latin text become BIZ UDP's only within Latin script, and that the vertical features and the names are right. CI builds and checks on every push, and makes a release for a `vX.Y.Z` tag, which is font version `X.YYZ` (`v1.0.0` is 1.000).
+`scripts/check.py` checks that the Latin letters match BIZ UDP and the Japanese characters match BIZ UD in outline and width, that the glyphs drawn by FreeType with hinting are pixel for pixel BIZ UDP's for the Latin letters and the symbols in Latin text, and BIZ UD's for Japanese (it needs libfreetype, libfreetype6 on Debian and Ubuntu), that the symbols in Latin text become BIZ UDP's only within Latin script, and that the vertical features and the names are right. CI builds and checks on every push, and makes a release for a `vX.Y.Z` tag, which is font version `X.YYZ` (`v1.0.0` is 1.000).
 
 Releases cannot be changed afterwards (GitHub immutable releases): the files and the tag of a published release can be neither replaced nor deleted, so a version always downloads the same files. The SHA-256 of each file is shown on the release page and can be checked against the release attestation that GitHub makes.

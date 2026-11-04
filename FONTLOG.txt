@@ -22,6 +22,21 @@ with their substitutions, from BIZ UDP of the same design.
 ChangeLog
 ---------
 
+2026-11-04 (hayatedayon) Dokusho UD 1.004
+- The glyphs taken from BIZ UDP (the Latin letters, their GSUB targets and
+  the symbols in Latin text) now carry BIZ UDP's TrueType hinting, which
+  earlier versions removed. BIZ UD and BIZ UDP share the same fpgm but have
+  different cvt and prep, so BIZ UDP's cvt is appended to BIZ UD's, BIZ
+  UDP's prep is appended to BIZ UD's with its cvt numbers shifted by the size
+  of BIZ UD's cvt, and the glyph programs from BIZ UDP get the same shift.
+  The numbers to shift are found by tracing the programs: every cvt number
+  is pushed by the program itself and used for nothing else.
+- Checked with FreeType (TrueType interpreter v35, grayscale and mono, and
+  v40, 8 to 24 ppem): the Latin letters and the symbols in Latin text are
+  drawn pixel for pixel as in BIZ UDP, and the Japanese characters as in BIZ
+  UD. Up to 1.003, small Latin text on Windows looked fainter and softer than
+  the Japanese around it.
+
 2026-11-04 (hayatedayon) Dokusho UD 1.003
 - Symbols in Latin text now take the glyphs of BIZ UDP: the quotation marks
   and apostrophe (‘ ’ “ ”, full width in BIZ UD), the dashes, †, ©, € and the
