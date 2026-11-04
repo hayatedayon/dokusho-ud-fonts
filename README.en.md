@@ -41,6 +41,15 @@ The vertical forms (`vert`, `vrt2`), vertical metrics and the kanji of JIS level
 
 [FONTLOG.txt](FONTLOG.txt) has the details.
 
+## Inherited from the original fonts
+
+The following is the same in BIZ UD and BIZ UDP, and Dokusho UD leaves it as it is.
+
+- Greek and Cyrillic letters are full width, the width Japanese text uses them at (as in α波 or β版). BIZ UDP has no proportional forms of them either, so they stay full width in Latin text too: Greek or Russian text, or a π or Ω in an English sentence, is set with wide gaps.
+- Few of the extended Latin letters are included (16 of the 208 in Latin Extended-B, and 2 of the 256 in Latin Extended Additional, which Vietnamese uses). Browsers and other applications draw the missing ones with the next font in the list, so those letters alone change shape.
+
+For such text, combine Dokusho UD with another Latin typeface.
+
 ## License
 
 [SIL Open Font License 1.1](OFL.txt). Free for personal and commercial use, and free to bundle with apps and documents; the fonts may not be sold by themselves. The copyright notices of the original fonts are in OFL.txt.
