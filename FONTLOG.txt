@@ -22,6 +22,17 @@ with their substitutions, from BIZ UDP of the same design.
 ChangeLog
 ---------
 
+2026-11-04 (hayatedayon) Dokusho UD 1.003
+- Symbols in Latin text now take the glyphs of BIZ UDP: the quotation marks
+  and apostrophe (‘ ’ “ ”, full width in BIZ UD), the dashes, †, ©, € and the
+  other characters of U+00A0-00BF, U+2010-205E, U+20A0-20C0 and
+  U+2100-214F whose outline or width differs between BIZ UD and BIZ UDP. The
+  character map does not change: the BIZ UDP glyphs are added as new glyphs
+  and substituted with locl, only in the default language system of the latn
+  script. A new JAN language system of latn leaves them out, so documents in
+  Japanese keep BIZ UD's full-width forms, also around English words, and
+  “ ” in Japanese text stay full width as before.
+
 2026-11-03 (hayatedayon) Dokusho UD 1.002
 - Added halt and vhal (GPOS), which the original fonts lack: the alternate
   half widths of the full-width punctuation, so that text-spacing-trim in

@@ -6,8 +6,10 @@
 1. 欧字 (spec.LATIN) のグリフの形・字幅・縦の字送りを BIZ UDP のものにする
 2. 欧字からの GSUB の置き換え (spec.LATIN_FEATURES) を BIZ UDP と同じにする。置き換え先の
    グリフの形か字送りが違えば、それも BIZ UDP のものにする
-3. 名前を読書 UD に変え (BIZ UD はモリサワの商標)、等幅の印 (post.isFixedPitch) を外す
-4. 約物の詰め (halt・vhal) を足す (spacing.py)
+3. 欧文の中の記号 (引用符・アポストロフィ・ダッシュなど) を、欧字の用字系の中でだけ BIZ UDP の
+   字にする (latin_symbols.py。日本語の文書では置き換えない)
+4. 名前を読書 UD に変え (BIZ UD はモリサワの商標)、等幅の印 (post.isFixedPitch) を外す
+5. 約物の詰め (halt・vhal) を足す (spacing.py)
 
 BIZ UD と BIZ UDP は、ヒンティングの cvt が違う。BIZ UDP から持ってきたグリフの命令は
 BIZ UD の cvt では正しく働かないので、外す。
@@ -22,6 +24,7 @@ from fontTools.ttLib import TTFont
 from fontTools.misc.timeTools import epoch_diff as EPOCH_DIFF
 from fontTools.ttLib.tables._g_l_y_f import Glyph
 
+import latin_symbols
 import spacing
 import spec
 
@@ -165,6 +168,7 @@ def build(family: dict, weight: str) -> Path:
     if ud["fpgm"].compile(ud) != udp["fpgm"].compile(udp):
         raise SystemExit("BIZ UD and BIZ UDP have different fpgm")
     stats = merge_latin(ud, udp)
+    symbols = latin_symbols.add(ud, udp)
     spaced = spacing.add(ud)
 
     rename(ud, family, weight)
@@ -185,7 +189,8 @@ def build(family: dict, weight: str) -> Path:
     out = OUTPUT / spec.output_name(family, weight)
     ud.save(out)
     print(f"{out.relative_to(ROOT)}: Latin {stats['latin']} glyphs, {stats['mappings']} GSUB mappings, "
-          f"{stats['targets']} GSUB targets from BIZ UDP; halt {spaced['halt']}, vhal {spaced['vhal']} glyphs")
+          f"{stats['targets']} GSUB targets from BIZ UDP; {symbols['symbols']} symbols in Latin text; "
+          f"halt {spaced['halt']}, vhal {spaced['vhal']} glyphs")
     return out
 
 

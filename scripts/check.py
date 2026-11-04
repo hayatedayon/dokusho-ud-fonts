@@ -7,6 +7,7 @@ import sys
 from pathlib import Path
 
 from fontTools.pens.boundsPen import BoundsPen
+from fontTools.pens.recordingPen import DecomposingRecordingPen
 from fontTools.ttLib import TTFont
 
 import spec
@@ -53,7 +54,12 @@ def check_font(family: dict, weight: str) -> None:
     em = font["head"].unitsPerEm
 
     check(cmap == cmap_ud, f"{label}: the character map differs from BIZ UD")
-    check(font.getGlyphOrder() == ud.getGlyphOrder(), f"{label}: the glyph order differs from BIZ UD")
+    # BIZ UD のグリフの後に、欧文の中の記号 (BIZ UDP の字) だけが足してあること
+    order, order_ud = font.getGlyphOrder(), ud.getGlyphOrder()
+    check(order[: len(order_ud)] == order_ud, f"{label}: the glyph order of BIZ UD is not kept")
+    extra = set(order[len(order_ud):])
+    check(extra == set(latin_symbol_mapping(font, "latn", None).values()),
+          f"{label}: glyphs other than the symbols for Latin text were added")
 
     for code in spec.LATIN:
         g, gp = cmap[code], cmap_udp[code]
@@ -102,6 +108,7 @@ def check_font(family: dict, weight: str) -> None:
     check("DSIG" not in font, f"{label}: the signature of BIZ UD is still there")
     check(f"{font['head'].fontRevision:.3f}" == spec.VERSION, f"{label}: font revision")
     check(font["OS/2"].fsType == 0, f"{label}: embedding is restricted")
+    check_latin_symbols(label, font, ud, udp)
     check_spacing(label, font)
 
 
@@ -121,6 +128,69 @@ def gpos_values(font: TTFont, tag: str) -> dict:
                     values[glyph] = tuple(getattr(record, a, 0) or 0
                                           for a in ("XPlacement", "YPlacement", "XAdvance", "YAdvance"))
     return values
+
+
+def lang_system(font: TTFont, script: str, language: str | None):
+    gsub = font["GSUB"].table
+    record = next((r for r in gsub.ScriptList.ScriptRecord if r.ScriptTag == script), None)
+    if record is None:
+        return None
+    if language is None:
+        return record.Script.DefaultLangSys
+    return next((r.LangSys for r in record.Script.LangSysRecord if r.LangSysTag == language), None)
+
+
+def latin_symbol_mapping(font: TTFont, script: str, language: str | None) -> dict:
+    """その用字系・言語体系で働く locl の置き換え"""
+    gsub = font["GSUB"].table
+    system = lang_system(font, script, language)
+    mapping: dict = {}
+    if system is None:
+        return mapping
+    for index in system.FeatureIndex:
+        record = gsub.FeatureList.FeatureRecord[index]
+        if record.FeatureTag != "locl":
+            continue
+        for lookup_index in record.Feature.LookupListIndex:
+            for subtable in gsub.LookupList.Lookup[lookup_index].SubTable:
+                subtable = getattr(subtable, "ExtSubTable", subtable)
+                mapping.update(getattr(subtable, "mapping", {}))
+    return mapping
+
+
+def drawing(font: TTFont, name: str) -> list:
+    pen = DecomposingRecordingPen(font.getGlyphSet())
+    font.getGlyphSet()[name].draw(pen)
+    return pen.value
+
+
+def check_latin_symbols(label: str, font: TTFont, ud: TTFont, udp: TTFont) -> None:
+    """欧文の中の記号。できたフォントと BIZ UDP で違う記号は、欧字の用字系 (latn) の既定でだけ BIZ UDP の
+    字 (形と字幅) に置き換わり、日本語 (latn の JAN) と和文の用字系では置き換わらないこと"""
+    cmap, cmap_ud, cmap_udp = font.getBestCmap(), ud.getBestCmap(), udp.getBestCmap()
+    latin = latin_symbol_mapping(font, "latn", None)
+    for code in spec.LATIN_SYMBOLS:
+        if code not in cmap_ud or code not in cmap_udp:
+            continue
+        # 比べるのは、できたフォントの字。欧字の置き換え先 (sups の ² など) は、すでに BIZ UDP の字に
+        # なっているので、欧文の中でも置き換えなくてよい
+        name, name_udp = cmap[code], cmap_udp[code]
+        differs = font["hmtx"][name] != udp["hmtx"][name_udp] or drawing(font, name) != drawing(udp, name_udp)
+        target = latin.get(name)
+        if not differs:
+            check(target is None, f"{label}: U+{code:04X} is the same in BIZ UDP but is substituted")
+            continue
+        if target is None:
+            problems.append(f"{label}: U+{code:04X} is not substituted in Latin text")
+            continue
+        check(font["hmtx"][target] == udp["hmtx"][name_udp], f"{label}: U+{code:04X} in Latin text is not as wide as BIZ UDP's")
+        check(drawing(font, target) == drawing(udp, name_udp), f"{label}: U+{code:04X} in Latin text is not BIZ UDP's shape")
+    for char in "‘’“”":
+        check(cmap[ord(char)] in latin, f"{label}: {char} is not substituted in Latin text")
+    check(lang_system(font, "latn", "JAN ") is not None, f"{label}: latn has no JAN language system")
+    for script, language in [("latn", "JAN "), ("hani", None), ("kana", None), ("DFLT", None)]:
+        check(not latin_symbol_mapping(font, script, language),
+              f"{label}: symbols are substituted in {script} {language or 'dflt'}")
 
 
 def check_spacing(label: str, font: TTFont) -> None:
