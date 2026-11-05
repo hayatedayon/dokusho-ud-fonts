@@ -31,6 +31,7 @@ LATIN_SYMBOL_RANGES = [
     (0x2010, 0x205E),  # 一般句読点 (‐ — ‘ ’ “ ” † • など)
     (0x20A0, 0x20C0),  # 通貨記号 (€ など)
     (0x2100, 0x214F),  # 文字様記号 (™ など)
+    (0x2150, 0x215F),  # 分数 (⅓ ⅔ ⅕。¼ ½ ¾ はラテン 1 補助にあり、そろえる)
 ]
 LATIN_SYMBOLS = [code for start, end in LATIN_SYMBOL_RANGES for code in range(start, end + 1)]
 
