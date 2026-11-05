@@ -22,6 +22,28 @@ with their substitutions, from BIZ UDP of the same design.
 ChangeLog
 ---------
 
+2026-11-05 (hayatedayon) Dokusho UD 1.005
+- More Latin letters take their glyphs from BIZ UDP: Latin Extended-B, the
+  IPA symbols and the spacing modifier letters (U+0180-02FF), Latin Extended
+  Additional (U+1E00-1EFF), the Latin ligatures ﬁ and ﬂ (U+FB00-FB06), and
+  the superscript ⁴ (U+2074), so 379 glyphs in all. Of these, BIZ UD set the
+  pinyin letters (ǎ ǐ ǒ ǔ ǖ and so on) full width and the IPA symbols, ƒ, ǽ,
+  Ḿ, ﬁ and ﬂ half width, which left gaps inside words such as nǐ hǎo. ⁴ was
+  half width next to the superscripts ¹ ² ³, which already followed BIZ UDP.
+  Text with decomposed accents (ǐ as i + U+030C) gets the same glyphs.
+- The fractions ⅓ ⅔ ⅕ (U+2150-215F) join the symbols that take BIZ UDP's
+  glyphs in Latin text, as ¼ ½ ¾ already did.
+- The ligatures that start from Latin letters in ccmp and liga follow BIZ
+  UDP: fi and fl become ﬁ and ﬂ, and æ, ə, ʌ, ɔ, ɑ and ɚ with a combining
+  grave or acute accent, and the tone letters ˥˩, join into BIZ UDP's glyphs
+  instead of BIZ UD's half-width ones. ɑ with the accents shares its glyphs
+  with the Greek ὰ ά (U+1F70, U+1F71), which therefore follow BIZ UDP too,
+  as in BIZ UDP itself. The ligatures of kana and the handakuten stay as in
+  BIZ UD.
+- The checks now also draw, with hinting, the glyphs that the Latin letters
+  are substituted with (superscripts, the slashed zero, the sideways letters
+  of vertical text, the ligatures) and compare them with BIZ UDP.
+
 2026-11-04 (hayatedayon) Dokusho UD 1.004
 - The glyphs taken from BIZ UDP (the Latin letters, their GSUB targets and
   the symbols in Latin text) now carry BIZ UDP's TrueType hinting, which
