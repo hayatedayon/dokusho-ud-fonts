@@ -51,6 +51,33 @@ def latin_codes(cmap: dict) -> list[int]:
     return [code for code in spec.LATIN if code in cmap]
 
 
+def gsub_ligatures(font: TTFont, tag: str) -> dict:
+    """{最初の字: [(つなぐ字, 置き換え先), ...]}"""
+    gsub = font["GSUB"].table
+    ligatures = {}
+    for record in gsub.FeatureList.FeatureRecord:
+        if record.FeatureTag != tag:
+            continue
+        for index in record.Feature.LookupListIndex:
+            for subtable in gsub.LookupList.Lookup[index].SubTable:
+                subtable = getattr(subtable, "ExtSubTable", subtable)
+                for first, items in getattr(subtable, "ligatures", {}).items():
+                    ligatures[first] = [(tuple(item.Component), item.LigGlyph) for item in items]
+    return ligatures
+
+
+def latin_targets(font: TTFont, latin_glyphs: set[str]) -> dict[str, str]:
+    """欧字からの置き換え先と合字 ({グリフ名: どの機能か})。BIZ UDP と同じ名前の、BIZ UDP の字"""
+    targets = {}
+    for tag in spec.LATIN_FEATURES:
+        targets.update({v: tag for k, v in gsub_mapping(font, tag).items() if k in latin_glyphs})
+    for tag in spec.LATIN_LIGATURE_FEATURES:
+        for first, items in gsub_ligatures(font, tag).items():
+            if first in latin_glyphs:
+                targets.update({target: tag for _, target in items})
+    return targets
+
+
 def check_font(family: dict, weight: str) -> None:
     label = spec.output_name(family, weight)
     font = TTFont(FONTS / label)
@@ -92,9 +119,18 @@ def check_font(family: dict, weight: str) -> None:
         ours = {k: v for k, v in gsub_mapping(font, tag).items() if k in latin_glyphs}
         theirs = {k: v for k, v in gsub_mapping(udp, tag).items() if k in latin_glyphs}
         check(ours == theirs, f"{label}: {tag} of the Latin letters differs from BIZ UDP")
-        for target in theirs.values():
-            check(font["hmtx"][target] == udp["hmtx"][target] and font["vmtx"][target] == udp["vmtx"][target],
-                  f"{label}: {tag} target {target} metrics are not BIZ UDP's")
+    for tag in spec.LATIN_LIGATURE_FEATURES:
+        ours = {k: v for k, v in gsub_ligatures(font, tag).items() if k in latin_glyphs}
+        theirs = {k: v for k, v in gsub_ligatures(udp, tag).items() if k in latin_glyphs}
+        check(ours == theirs, f"{label}: {tag} ligatures of the Latin letters differ from BIZ UDP")
+    for target, tag in sorted(latin_targets(udp, latin_glyphs).items()):
+        check(font["hmtx"][target] == udp["hmtx"][target] and font["vmtx"][target] == udp["vmtx"][target],
+              f"{label}: {tag} target {target} metrics are not BIZ UDP's")
+        check(outline(font, target) == outline(udp, target), f"{label}: {tag} target {target} outline is not BIZ UDP's")
+    # 結合用のアクセントを付けた字 (ə + ́ など) は、BIZ UDP の幅の字になること
+    schwa_acute = dict(gsub_ligatures(font, "ccmp").get(cmap[0x0259], [])).get((cmap[0x0301],))
+    check(schwa_acute is not None and font["hmtx"][schwa_acute][0] == font["hmtx"][cmap[0x0259]][0],
+          f"{label}: ə with U+0301 is not as wide as ə")
     features = {r.FeatureTag for r in font["GSUB"].table.FeatureList.FeatureRecord}
     check({"vert", "vrt2", "fwid"} <= features, f"{label}: vertical or full-width features are missing")
     check("vhea" in font and "vmtx" in font, f"{label}: vertical metrics are missing")
@@ -119,7 +155,7 @@ def check_font(family: dict, weight: str) -> None:
     check(f"{font['head'].fontRevision:.3f}" == spec.VERSION, f"{label}: font revision")
     check(font["OS/2"].fsType == 0, f"{label}: embedding is restricted")
     check_latin_symbols(label, font, ud, udp)
-    check_hinting(label, font, family, weight)
+    check_hinting(label, font, family, weight, latin_targets(udp, latin_glyphs), udp)
     check_spacing(label, font)
 
 
@@ -208,7 +244,8 @@ def check_latin_symbols(label: str, font: TTFont, ud: TTFont, udp: TTFont) -> No
 HINTING_PPEMS = range(8, 25)
 
 
-def check_hinting(label: str, font: TTFont, family: dict, weight: str) -> None:
+def check_hinting(label: str, font: TTFont, family: dict, weight: str, targets: dict[str, str],
+                  udp_font: TTFont) -> None:
     """BIZ UDP から持ってきた字のヒンティングが BIZ UDP と同じで、和文のヒンティングが BIZ UD と
     同じこと。FreeType でヒンティングを動かして描き、画素を比べる (hinting.py が cvt の番号を
     ずらし損ねていれば、字の形がずれる)"""
@@ -226,6 +263,10 @@ def check_hinting(label: str, font: TTFont, family: dict, weight: str) -> None:
                  if code not in spec.UNHINTED]
         cases += [(f"U+{by_name[source]:04X} in Latin text", font.getGlyphID(target), udp, udp.char_index(by_name[source]))
                   for source, target in symbols.items() if by_name[source] not in spec.UNHINTED]
+        # 欧字からの置き換え先と合字 (² ・斜線の 0・縦組で横に倒した欧字・ﬁ など)。グリフの番号は
+        # BIZ UD と BIZ UDP で違うので、名前で引く
+        cases += [(f"{target} ({tag})", font.getGlyphID(target), udp, udp_font.getGlyphID(target))
+                  for target, tag in sorted(targets.items())]
         cases += [(char, ours.char_index(ord(char)), ud, ud.char_index(ord(char))) for char in JAPANESE]
         differ = []
         for what, ours_index, other, other_index in cases:
@@ -236,7 +277,7 @@ def check_hinting(label: str, font: TTFont, family: dict, weight: str) -> None:
                           f"such as {differ[:3]}")
         for renderer in renderers.values():
             renderer.close()
-        check_nothing_vanishes(label, font, mode, interpreter, flags, symbols, by_name)
+        check_nothing_vanishes(label, font, mode, interpreter, flags, symbols, by_name, targets)
     # BIZ UDP から持ってきた字だけを見る。欧字 (spec.LATIN) は文字が指す字、欧文の中の記号は置き換え先の
     # 字 (文字が指すのは BIZ UD の字で、BIZ UD のヒンティングを持ったまま和文で使う)
     for code in spec.UNHINTED:
@@ -248,13 +289,14 @@ def check_hinting(label: str, font: TTFont, family: dict, weight: str) -> None:
 
 
 def check_nothing_vanishes(label: str, font: TTFont, mode: str, interpreter: int, flags: int,
-                           symbols: dict, by_name: dict) -> None:
+                           symbols: dict, by_name: dict, targets: dict[str, str]) -> None:
     """ヒンティングを動かすと何も描かれなくなる欧字・記号が無いこと (動かさなければ描ける字)。
     BIZ UDP のヒンティングは、細い横線の字を、ある大きさで消す (spec.UNHINTED)"""
     hinted = freetype_render.Renderer(FONTS / label, interpreter, flags)
     plain = freetype_render.Renderer(FONTS / label, interpreter, flags | freetype_render.NO_HINTING)
     glyphs = [(f"U+{code:04X}", hinted.char_index(code)) for code in latin_codes(font.getBestCmap())]
     glyphs += [(f"U+{by_name[source]:04X} in Latin text", font.getGlyphID(target)) for source, target in symbols.items()]
+    glyphs += [(f"{target} ({tag})", font.getGlyphID(target)) for target, tag in sorted(targets.items())]
     gone = [f"{what} at {ppem} ppem" for what, index in glyphs for ppem in HINTING_PPEMS
             if not any(hinted.render(index, ppem)[5]) and any(plain.render(index, ppem)[5])]
     check(not gone, f"{label}: {mode}: hinting erases {len(gone)} glyphs, such as {gone[:3]}")

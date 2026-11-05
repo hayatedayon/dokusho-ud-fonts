@@ -47,6 +47,12 @@ UNHINTED = [0x002D, 0x005F, 0x00AD, 0x00AF, 0x2013, 0x2014, 0x203E]
 # fwid (全角の欧字) は BIZ UD と同じなので触らない
 LATIN_FEATURES = ["frac", "numr", "sups", "zero", "vrt2"]
 
+# 欧字から始まる合字 (GSUB の ligature) を置き換える機能。BIZ UDP は、ccmp と liga で、f i を ﬁ に、
+# æ ə ɑ などと結合用のアクセントを 1 つの字につなぐ (BIZ UD は f i をつながず、アクセントの付いた
+# 字は BIZ UD の幅の字につなぐ)。dlig (!? など) は、欧文の中では locl で BIZ UDP の字になるので
+# 触らない
+LATIN_LIGATURE_FEATURES = ["ccmp", "liga"]
+
 WEIGHTS = ["Regular", "Bold"]
 
 FAMILIES = [

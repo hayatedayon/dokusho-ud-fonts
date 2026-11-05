@@ -4,8 +4,9 @@
 欧字だけを同じデザインの BIZ UDP の字にする。
 
 1. 欧字 (spec.LATIN) のグリフの形・字幅・縦の字送りを BIZ UDP のものにする
-2. 欧字からの GSUB の置き換え (spec.LATIN_FEATURES) を BIZ UDP と同じにする。置き換え先の
-   グリフの形か字送りが違えば、それも BIZ UDP のものにする
+2. 欧字からの GSUB の置き換え (spec.LATIN_FEATURES) と、欧字から始まる合字
+   (spec.LATIN_LIGATURE_FEATURES) を BIZ UDP と同じにする。置き換え先のグリフの形か字送りが
+   違えば、それも BIZ UDP のものにする
 3. 欧文の中の記号 (引用符・アポストロフィ・ダッシュなど) を、欧字の用字系の中でだけ BIZ UDP の
    字にする (latin_symbols.py。日本語の文書では置き換えない)
 4. BIZ UDP から持ってきた字に、BIZ UDP のヒンティングを付ける (hinting.py)
@@ -48,6 +49,13 @@ def single_subtables(gsub, index: int):
     for subtable in gsub.LookupList.Lookup[index].SubTable:
         subtable = getattr(subtable, "ExtSubTable", subtable)
         if hasattr(subtable, "mapping"):
+            yield subtable
+
+
+def ligature_subtables(gsub, index: int):
+    for subtable in gsub.LookupList.Lookup[index].SubTable:
+        subtable = getattr(subtable, "ExtSubTable", subtable)
+        if hasattr(subtable, "ligatures"):
             yield subtable
 
 
@@ -117,6 +125,8 @@ def merge_latin(ud: TTFont, udp: TTFont) -> dict:
                 changed_mappings += 1
 
     glyph_names = set(ud.getGlyphOrder())
+    changed_mappings += merge_latin_ligatures(gsub_ud, gsub_udp, set(latin), targets, glyph_names)
+
     missing = sorted(t for t in targets if t not in glyph_names)
     if missing:
         raise SystemExit(f"GSUB targets missing from BIZ UD: {missing[:10]}")
@@ -125,6 +135,52 @@ def merge_latin(ud: TTFont, udp: TTFont) -> dict:
         take_glyph(ud, udp, name)
     return {"latin": len(latin), "mappings": changed_mappings, "targets": len(taken_targets),
             "glyphs": latin + taken_targets}
+
+
+def merge_latin_ligatures(gsub_ud, gsub_udp, latin: set[str], targets: set[str], glyph_names: set[str]) -> int:
+    """欧字から始まる合字 (spec.LATIN_LIGATURE_FEATURES) を BIZ UDP と同じにする。置き換え先は
+    targets に足す (BIZ UD に無ければ merge_latin が止まる)。つなぐ字 (結合用のアクセントなど) は
+    BIZ UD のままにし、BIZ UD にあることだけを確かめる。変えた合字の数を返す"""
+    changed = 0
+    for tag in spec.LATIN_LIGATURE_FEATURES:
+        wanted = {}
+        for index in feature_lookups(gsub_udp, tag):
+            for subtable in ligature_subtables(gsub_udp, index):
+                for first, ligatures in subtable.ligatures.items():
+                    if first not in latin:
+                        continue
+                    # いくつもの lookup に分かれていると、1 つの lookup にまとめたときに順が変わる
+                    if first in wanted:
+                        raise SystemExit(f"{tag}: BIZ UDP has ligatures from {first} in more than one lookup")
+                    wanted[first] = ligatures
+        indexes = feature_lookups(gsub_ud, tag)
+        for index in indexes:
+            if any(first in latin for s in ligature_subtables(gsub_ud, index) for first in s.ligatures):
+                users = lookup_users(gsub_ud, index)
+                if users != {tag}:
+                    raise SystemExit(f"GSUB lookup {index} for {tag} is shared with {sorted(users)}")
+        subtables = [s for i in indexes for s in ligature_subtables(gsub_ud, i)]
+        if wanted and not subtables:
+            raise SystemExit(f"{tag}: BIZ UD has no ligature substitution to put the Latin into")
+        for subtable in subtables:
+            for first in [k for k in subtable.ligatures if k in latin and k not in wanted]:
+                del subtable.ligatures[first]
+                changed += 1
+        for first, ligatures in wanted.items():
+            holder = next((s for s in subtables if first in s.ligatures), subtables[0])
+            for subtable in subtables:
+                if subtable is not holder and first in subtable.ligatures:
+                    del subtable.ligatures[first]
+            current = [(list(l.Component), l.LigGlyph) for l in holder.ligatures.get(first, [])]
+            if current != [(list(l.Component), l.LigGlyph) for l in ligatures]:
+                holder.ligatures[first] = copy.deepcopy(ligatures)
+                changed += 1
+            for ligature in ligatures:
+                targets.add(ligature.LigGlyph)
+                missing = [c for c in ligature.Component if c not in glyph_names]
+                if missing:
+                    raise SystemExit(f"{tag}: the ligature {first} {missing} of BIZ UDP needs glyphs missing from BIZ UD")
+    return changed
 
 
 def license_text() -> str:
