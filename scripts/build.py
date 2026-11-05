@@ -27,6 +27,7 @@ from fontTools.ttLib import TTFont
 from fontTools.misc.timeTools import epoch_diff as EPOCH_DIFF
 from fontTools.ttLib.tables._g_l_y_f import Glyph
 
+import fetch_sources
 import hinting
 import latin_symbols
 import spacing
@@ -263,6 +264,11 @@ def build(family: dict, weight: str) -> Path:
 
 
 def main() -> int:
+    stale = fetch_sources.mismatches()
+    if stale:
+        print(f"sources/ does not match sources.json: {', '.join(stale)}; run scripts/fetch_sources.py",
+              file=sys.stderr)
+        return 1
     for family in spec.FAMILIES:
         for weight in spec.WEIGHTS:
             build(family, weight)

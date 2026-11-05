@@ -60,7 +60,7 @@ These fonts are not affiliated with Morisawa. Please report problems as issues i
 
 ## Building
 
-The fonts are built with [fontTools](https://github.com/fonttools/fonttools) from the Google Fonts files, pinned to the commit and SHA-256 in `scripts/sources.json`. The same sources always give the same files.
+The fonts are built with [fontTools](https://github.com/fonttools/fonttools) from the Google Fonts files, pinned to the commit and SHA-256 in `scripts/sources.json`. `scripts/build.py` checks the SHA-256 of the sources too and stops if they do not match. The same sources always give the same files.
 
 ```sh
 python3 -m venv .venv
