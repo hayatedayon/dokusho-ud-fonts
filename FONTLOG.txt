@@ -38,7 +38,7 @@ ChangeLog
   matches +. Japanese text keeps BIZ UD's, since the macOS Japanese input
   method enters this character as the full-width minus. Like the other thin
   horizontal bars, it keeps no hinting: BIZ UDP's hinting erases its stroke
-  at 8 to 13 ppem.
+  at some sizes from 8 to 13 ppem.
 - The ligatures that start from Latin letters in ccmp and liga follow BIZ
   UDP: fi and fl become ﬁ and ﬂ, and æ, ə, ʌ, ɔ, ɑ and ɚ with a combining
   grave or acute accent, and the tone letters ˥˩, join into BIZ UDP's glyphs
@@ -52,6 +52,10 @@ ChangeLog
   feature, for 115 letters, and lacked BIZ UDP's sideways forms of 47 more
   letters, such as Æ and the accented letters. The other alternates
   (full-width and circled forms and so on) stay as in BIZ UD.
+- The version string (name ID 5) of Dokusho UD Gothic names the versions of
+  its sources correctly, BIZ UDGothic 1.05 and BIZ UDPGothic 1.051. Up to
+  1.004 it said 1.06 for both, the version of the Mincho sources. The
+  versions are now read from the original fonts.
 - The checks now also draw, with hinting, the glyphs that the Latin letters
   are substituted with (superscripts, the slashed zero, the sideways letters
   of vertical text, the ligatures) and compare them with BIZ UDP.
@@ -80,7 +84,8 @@ ChangeLog
 - Symbols in Latin text now take the glyphs of BIZ UDP: the quotation marks
   and apostrophe (‘ ’ “ ”, full width in BIZ UD), the dashes, †, ©, € and the
   other characters of U+00A0-00BF, U+2010-205E, U+20A0-20C0 and
-  U+2100-214F whose outline or width differs between BIZ UD and BIZ UDP. The
+  U+2100-214F whose outline or width differs between BIZ UD and BIZ UDP,
+  and × and ÷, which stay as in BIZ UD in Japanese text. The
   character map does not change: the BIZ UDP glyphs are added as new glyphs
   and substituted with locl, only in the default language system of the latn
   script. A new JAN language system of latn leaves them out, so documents in
@@ -98,7 +103,8 @@ ChangeLog
   get them (in vertical text, “ and ； do not). The glyphs do not change.
 
 2026-11-03 (hayatedayon) Dokusho UD 1.001
-- Built from BIZ UDMincho, BIZ UDPMincho, BIZ UDGothic and BIZ UDPGothic 1.06
+- Built from BIZ UDMincho 1.06, BIZ UDPMincho 1.06, BIZ UDGothic 1.05 and
+  BIZ UDPGothic 1.051
   (google/fonts at commit 2fe1e8c6b137fb13041a7cfca6fdcd8a910ea4dc).
 - The Latin letters (U+0020-007E, U+00C0-00D6, U+00D8-00F6, U+00F8-017F) take
   their outlines, advance widths and vertical metrics from BIZ UDP. U+00D7 (×)

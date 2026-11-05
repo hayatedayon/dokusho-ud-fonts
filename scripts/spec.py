@@ -6,8 +6,9 @@ VERSION = "1.005"
 REPOSITORY = "https://github.com/hayatedayon/dokusho-ud-fonts"
 COPYRIGHT = "Copyright 2026 The Dokusho UD Project Authors (https://github.com/hayatedayon/dokusho-ud-fonts)"
 
-# 欧字 (ASCII の字と、アクセントの付いたラテン文字)。この字だけを BIZ UDP の字にする。
-# × (U+00D7)・÷ (U+00F7) は和文で全角として使うので、BIZ UD のままにする。範囲のうち、BIZ UD と
+# 欧字 (ASCII の字と、拡張のラテン文字・IPA の記号など)。この字だけを BIZ UDP の字にする。
+# × (U+00D7)・÷ (U+00F7) は和文で全角として使うので、ここには入れない (欧文の中でだけ、
+# LATIN_SYMBOLS として BIZ UDP の字にする)。範囲のうち、BIZ UD と
 # BIZ UDP のどちらにも無い字は飛ばす (片方にだけある字があれば、build.py が止まる)
 LATIN_RANGES = [
     (0x0020, 0x007E), (0x00C0, 0x00D6), (0x00D8, 0x00F6), (0x00F8, 0x017F),
@@ -47,7 +48,8 @@ UNHINTED = [0x002D, 0x005F, 0x00AD, 0x00AF, 0x2013, 0x2014, 0x203E, 0x2212]
 
 # 欧字から置き換える GSUB の機能。BIZ UDP は、ここで欧字を自分の幅のグリフにつなぐ
 # (vrt2 は縦組で横に倒した欧字、zero は斜線の 0、frac・numr は分数の斜線、sups は上付き)。
-# fwid (全角の欧字) は BIZ UD と同じなので触らない
+# fwid (全角の欧字) は BIZ UD のままにする (BIZ UDP の fwid には欧字が無く、BIZ UDP の全角の欧字は
+# プロポーショナル)
 LATIN_FEATURES = ["frac", "numr", "sups", "zero", "vrt2"]
 
 # 欧字から始まる合字 (GSUB の ligature) を置き換える機能。BIZ UDP は、ccmp と liga で、f i を ﬁ に、

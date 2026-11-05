@@ -41,7 +41,7 @@ class Pushed(int):
 
 UNKNOWN = object()  # 値が分からない (点の座標・大きさなどから決まる)
 
-# 命令ごとに、(取る値のうち点の番号などの数, 取る値のうちそれ以外の数, 積む数)
+# 命令ごとに、(取る値の用途を、取る順に並べたもの, 積む値の数)。用途は点の番号 (_POINT) かそれ以外 (_OTHER)
 _POINT = "point"
 _OTHER = "other"
 _OPS: dict[str, tuple[list[str], int]] = {

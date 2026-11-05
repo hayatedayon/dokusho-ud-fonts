@@ -20,6 +20,7 @@ cvt の番号をずらして入れ直す。
 
 import copy
 import os
+import re
 import sys
 from pathlib import Path
 
@@ -46,35 +47,26 @@ def feature_lookups(gsub, tag: str) -> list[int]:
     return indexes
 
 
-def single_subtables(gsub, index: int):
+def subtables(gsub, index: int, kind: str):
+    """lookup の、kind ("mapping" は 1 対 1、"ligatures" は合字、"alternates" は候補) のサブテーブル"""
     for subtable in gsub.LookupList.Lookup[index].SubTable:
         subtable = getattr(subtable, "ExtSubTable", subtable)
-        if hasattr(subtable, "mapping"):
+        if hasattr(subtable, kind):
             yield subtable
 
 
-def ligature_subtables(gsub, index: int):
-    for subtable in gsub.LookupList.Lookup[index].SubTable:
-        subtable = getattr(subtable, "ExtSubTable", subtable)
-        if hasattr(subtable, "ligatures"):
-            yield subtable
-
-
-def alternate_subtables(gsub, index: int):
-    for subtable in gsub.LookupList.Lookup[index].SubTable:
-        subtable = getattr(subtable, "ExtSubTable", subtable)
-        if hasattr(subtable, "alternates"):
-            yield subtable
+def feature_subtables(gsub, tag: str, kind: str) -> list:
+    return [s for i in feature_lookups(gsub, tag) for s in subtables(gsub, i, kind)]
 
 
 def single_mapping(gsub, tag: str, keys) -> dict[str, str]:
-    """tag の 1 対 1 の置き換えのうち、keys からのもの (先にある lookup のものを取る)"""
+    """tag の 1 対 1 の置き換えのうち、keys からのもの。同じ字が何度も出れば、先のものを取る
+    (文字を並べる仕組みは、先の lookup で置き換えた字を、後の lookup にかける)"""
     mapping: dict[str, str] = {}
-    for index in feature_lookups(gsub, tag):
-        for subtable in single_subtables(gsub, index):
-            for key, value in subtable.mapping.items():
-                if key in keys:
-                    mapping.setdefault(key, value)
+    for subtable in feature_subtables(gsub, tag, "mapping"):
+        for key, value in subtable.mapping.items():
+            if key in keys:
+                mapping.setdefault(key, value)
     return mapping
 
 
@@ -82,19 +74,26 @@ def alternates(gsub, tag: str, keys) -> dict[str, list[str]]:
     """tag (aalt など) の候補のうち、keys からのもの。1 対 1 の置き換えも候補 1 つとして数える"""
     result: dict[str, list[str]] = {}
     for index in feature_lookups(gsub, tag):
-        for subtable in single_subtables(gsub, index):
+        for subtable in subtables(gsub, index, "mapping"):
             for key, value in subtable.mapping.items():
                 if key in keys and value not in result.setdefault(key, []):
                     result[key].append(value)
-        for subtable in alternate_subtables(gsub, index):
+        for subtable in subtables(gsub, index, "alternates"):
             for key, values in subtable.alternates.items():
                 if key in keys:
                     result.setdefault(key, []).extend(v for v in values if v not in result[key])
     return result
 
 
-def lookup_users(gsub, index: int) -> set[str]:
-    return {r.FeatureTag for r in gsub.FeatureList.FeatureRecord if index in r.Feature.LookupListIndex}
+def ensure_own_lookups(gsub, tag: str, kind: str, keys=None) -> None:
+    """tag の lookup のうち、keys の字 (None ならどの字でも) を持つものを、ほかの機能と分け合って
+    いないこと (変えると、その機能も変わる)"""
+    for index in feature_lookups(gsub, tag):
+        if keys is not None and not any(k in keys for s in subtables(gsub, index, kind) for k in getattr(s, kind)):
+            continue
+        users = {r.FeatureTag for r in gsub.FeatureList.FeatureRecord if index in r.Feature.LookupListIndex}
+        if users != {tag}:
+            raise SystemExit(f"GSUB lookup {index} for {tag} is shared with {sorted(users)}")
 
 
 def same_glyph(a: TTFont, b: TTFont, name: str) -> bool:
@@ -120,7 +119,7 @@ def take_glyph(target: TTFont, source: TTFont, name: str) -> None:
 
 def merge_latin(ud: TTFont, udp: TTFont) -> dict:
     cmap_ud, cmap_udp = ud.getBestCmap(), udp.getBestCmap()
-    latin = []
+    latin: list[str] = []
     for code in spec.LATIN:
         if code not in cmap_ud and code not in cmap_udp:
             continue
@@ -131,42 +130,35 @@ def merge_latin(ud: TTFont, udp: TTFont) -> dict:
         take_glyph(ud, udp, name)
 
     gsub_ud, gsub_udp = ud["GSUB"].table, udp["GSUB"].table
-    before = {tag: single_mapping(gsub_ud, tag, set(latin)) for tag in spec.LATIN_FEATURES}
+    latin_set = set(latin)
+    before = {tag: single_mapping(gsub_ud, tag, latin_set) for tag in spec.LATIN_FEATURES}
     changed_mappings = 0
     targets: set[str] = set()
     for tag in spec.LATIN_FEATURES:
-        wanted = {}
-        for index in feature_lookups(gsub_udp, tag):
-            for subtable in single_subtables(gsub_udp, index):
-                wanted.update({k: v for k, v in subtable.mapping.items() if k in latin})
+        wanted = single_mapping(gsub_udp, tag, latin_set)
         targets.update(wanted.values())
-        subtables = [s for i in feature_lookups(gsub_ud, tag) for s in single_subtables(gsub_ud, i)]
-        for index in feature_lookups(gsub_ud, tag):
-            # 欧字を持つ lookup を、ほかの機能と分け合っていないこと (変えると、その機能も変わる)
-            if any(k in latin for s in single_subtables(gsub_ud, index) for k in s.mapping):
-                users = lookup_users(gsub_ud, index)
-                if users != {tag}:
-                    raise SystemExit(f"GSUB lookup {index} for {tag} is shared with {sorted(users)}")
-        if wanted and not subtables:
+        ensure_own_lookups(gsub_ud, tag, "mapping", latin_set)
+        subtables_ud = feature_subtables(gsub_ud, tag, "mapping")
+        if wanted and not subtables_ud:
             raise SystemExit(f"{tag}: BIZ UD has no single substitution to put the Latin into")
-        for subtable in subtables:
-            for key in [k for k in subtable.mapping if k in latin and k not in wanted]:
+        for subtable in subtables_ud:
+            for key in [k for k in subtable.mapping if k in latin_set and k not in wanted]:
                 del subtable.mapping[key]
                 changed_mappings += 1
         for key, value in wanted.items():
-            holder = next((s for s in subtables if key in s.mapping), subtables[0])
+            holder = next((s for s in subtables_ud if key in s.mapping), subtables_ud[0])
             if holder.mapping.get(key) != value:
                 holder.mapping[key] = value
                 changed_mappings += 1
 
     glyph_names = set(ud.getGlyphOrder())
-    changed_mappings += merge_latin_ligatures(gsub_ud, gsub_udp, set(latin), targets, glyph_names)
-    changed_mappings += merge_latin_alternates(gsub_ud, gsub_udp, set(latin), before)
+    changed_mappings += merge_latin_ligatures(gsub_ud, gsub_udp, latin_set, targets, glyph_names)
+    changed_mappings += merge_latin_alternates(gsub_ud, gsub_udp, latin_set, before)
 
     missing = sorted(t for t in targets if t not in glyph_names)
     if missing:
         raise SystemExit(f"GSUB targets missing from BIZ UD: {missing[:10]}")
-    taken_targets = [t for t in sorted(targets) if t not in latin and not same_glyph(ud, udp, t)]
+    taken_targets = [t for t in sorted(targets) if t not in latin_set and not same_glyph(ud, udp, t)]
     for name in taken_targets:
         take_glyph(ud, udp, name)
     return {"latin": len(latin), "mappings": changed_mappings, "targets": len(taken_targets),
@@ -180,31 +172,25 @@ def merge_latin_ligatures(gsub_ud, gsub_udp, latin: set[str], targets: set[str],
     changed = 0
     for tag in spec.LATIN_LIGATURE_FEATURES:
         wanted = {}
-        for index in feature_lookups(gsub_udp, tag):
-            for subtable in ligature_subtables(gsub_udp, index):
-                for first, ligatures in subtable.ligatures.items():
-                    if first not in latin:
-                        continue
-                    # いくつもの lookup に分かれていると、1 つの lookup にまとめたときに順が変わる
-                    if first in wanted:
-                        raise SystemExit(f"{tag}: BIZ UDP has ligatures from {first} in more than one lookup")
-                    wanted[first] = ligatures
-        indexes = feature_lookups(gsub_ud, tag)
-        for index in indexes:
-            if any(first in latin for s in ligature_subtables(gsub_ud, index) for first in s.ligatures):
-                users = lookup_users(gsub_ud, index)
-                if users != {tag}:
-                    raise SystemExit(f"GSUB lookup {index} for {tag} is shared with {sorted(users)}")
-        subtables = [s for i in indexes for s in ligature_subtables(gsub_ud, i)]
-        if wanted and not subtables:
+        for subtable in feature_subtables(gsub_udp, tag, "ligatures"):
+            for first, ligatures in subtable.ligatures.items():
+                if first not in latin:
+                    continue
+                # いくつものサブテーブルに分かれていると、1 つにまとめたときに順が変わる
+                if first in wanted:
+                    raise SystemExit(f"{tag}: BIZ UDP has ligatures from {first} in more than one subtable")
+                wanted[first] = ligatures
+        ensure_own_lookups(gsub_ud, tag, "ligatures", latin)
+        subtables_ud = feature_subtables(gsub_ud, tag, "ligatures")
+        if wanted and not subtables_ud:
             raise SystemExit(f"{tag}: BIZ UD has no ligature substitution to put the Latin into")
-        for subtable in subtables:
+        for subtable in subtables_ud:
             for first in [k for k in subtable.ligatures if k in latin and k not in wanted]:
                 del subtable.ligatures[first]
                 changed += 1
         for first, ligatures in wanted.items():
-            holder = next((s for s in subtables if first in s.ligatures), subtables[0])
-            for subtable in subtables:
+            holder = next((s for s in subtables_ud if first in s.ligatures), subtables_ud[0])
+            for subtable in subtables_ud:
                 if subtable is not holder and first in subtable.ligatures:
                     del subtable.ligatures[first]
             current = [(list(l.Component), l.LigGlyph) for l in holder.ligatures.get(first, [])]
@@ -223,16 +209,11 @@ def merge_latin_alternates(gsub_ud, gsub_udp, latin: set[str], before: dict[str,
     """aalt (アプリの字形パネルなどが出す字形の候補) の欧字の候補を、置き換え (spec.LATIN_FEATURES) を
     BIZ UDP と同じにしたのに合わせる。before は、変える前の BIZ UD の置き換え。置き換え先が変わった
     候補は新しいものにし (BIZ UD の古い置き換え先は、ほかの機能からは使われず、等幅の字のまま残る。
-    BIZ UDP の aalt にもある候補は残す)、
-    BIZ UDP の aalt にあって BIZ UD に無い新しい置き換え先は足す。ほかの候補 (全角の字・丸数字など)
-    と並びは BIZ UD のまま。変えた字の数を返す"""
-    indexes = feature_lookups(gsub_ud, "aalt")
-    for index in indexes:
-        users = lookup_users(gsub_ud, index)
-        if users != {"aalt"}:
-            raise SystemExit(f"GSUB lookup {index} for aalt is shared with {sorted(users)}")
-    singles = [s for i in indexes for s in single_subtables(gsub_ud, i)]
-    multiples = [s for i in indexes for s in alternate_subtables(gsub_ud, i)]
+    BIZ UDP の aalt にもある候補は残す)、BIZ UDP の aalt にあって BIZ UD に無い新しい置き換え先は
+    足す。ほかの候補 (全角の字・丸数字など) と並びは BIZ UD のまま。変えた字の数を返す"""
+    ensure_own_lookups(gsub_ud, "aalt", "mapping")
+    singles = feature_subtables(gsub_ud, "aalt", "mapping")
+    multiples = feature_subtables(gsub_ud, "aalt", "alternates")
     if not singles or not multiples:
         raise SystemExit("aalt: BIZ UD has no single and alternate substitutions to put the Latin into")
     after = {tag: single_mapping(gsub_ud, tag, latin) for tag in spec.LATIN_FEATURES}
@@ -275,7 +256,16 @@ def license_text() -> str:
     return (ROOT / "OFL.txt").read_text(encoding="utf-8").replace("\r\n", "\n").strip()
 
 
-def rename(font: TTFont, family: dict, weight: str) -> None:
+def source_version(font: TTFont) -> str:
+    """元のフォントの版 (name の 5 の "Version 1.06" の 1.06)"""
+    match = re.match(r"Version (\d+\.\d+)", font["name"].getDebugName(5) or "")
+    if not match:
+        raise SystemExit(f"cannot read the version of {font['name'].getDebugName(6)}")
+    return match.group(1)
+
+
+def rename(font: TTFont, family: dict, weight: str, versions: tuple[str, str]) -> None:
+    """versions は、元の BIZ UD と BIZ UDP の版"""
     name = font["name"]
     original_copyright = name.getDebugName(0)
     keep = {9, 12, 14}  # 設計者・設計者の URL・ライセンスの URL
@@ -289,8 +279,8 @@ def rename(font: TTFont, family: dict, weight: str) -> None:
         2: (weight, weight),
         3: (f"{spec.VERSION};NONE;{postscript}", None),
         4: (full_en, full_ja),
-        5: (f"Version {spec.VERSION}; based on {family['source_name']} 1.06 and "
-            f"{family['source_name'].replace('BIZ UD', 'BIZ UDP')} 1.06", None),
+        5: (f"Version {spec.VERSION}; based on {family['source_name']} {versions[0]} and "
+            f"{family['source_name'].replace('BIZ UD', 'BIZ UDP')} {versions[1]}", None),
         6: (postscript, None),
         10: (
             f"{family['name_en']} is {family['source_name']} with the proportional Latin letters of the same "
@@ -314,8 +304,7 @@ def build(family: dict, weight: str) -> Path:
     udp = TTFont(SOURCES / f"{family['udp']}-{weight}.ttf")
     if ud["head"].unitsPerEm != udp["head"].unitsPerEm:
         raise SystemExit("BIZ UD and BIZ UDP have different units per em")
-    if ud["fpgm"].compile(ud) != udp["fpgm"].compile(udp):
-        raise SystemExit("BIZ UD and BIZ UDP have different fpgm")
+    versions = (source_version(ud), source_version(udp))
     stats = merge_latin(ud, udp)
     symbols = latin_symbols.add(ud, udp)
     # BIZ UDP から持ってきた字 (読書 UD のグリフ名 → BIZ UDP のグリフ名)
@@ -325,7 +314,7 @@ def build(family: dict, weight: str) -> Path:
     hinted = hinting.add(ud, udp, taken, unhinted)
     spaced = spacing.add(ud)
 
-    rename(ud, family, weight)
+    rename(ud, family, weight, versions)
     ud["post"].isFixedPitch = 0
     ud["OS/2"].achVendID = "NONE"
     ud["OS/2"].recalcAvgCharWidth(ud)

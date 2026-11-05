@@ -42,7 +42,8 @@ def gsub_mapping(font: TTFont, tag: str) -> dict:
         for index in record.Feature.LookupListIndex:
             for subtable in gsub.LookupList.Lookup[index].SubTable:
                 subtable = getattr(subtable, "ExtSubTable", subtable)
-                mapping.update(getattr(subtable, "mapping", {}))
+                for key, value in getattr(subtable, "mapping", {}).items():
+                    mapping.setdefault(key, value)  # 先の lookup のものを取る
     return mapping
 
 
@@ -171,6 +172,10 @@ def check_font(family: dict, weight: str) -> None:
     check(names.get((2, 0x409)) == weight, f"{label}: style name {names.get((2, 0x409))!r}")
     check(names.get((6, 0x409)) == f"{family['postscript']}-{weight}", f"{label}: PostScript name")
     check((7, 0x409) not in names, f"{label}: the trademark of BIZ UD is still in the name table")
+    # 版の表記 (5) が、元のフォントの版 ("Version 1.05" など) を正しく書くこと
+    based_on = [f"{source['name'].getDebugName(1)} {source['name'].getDebugName(5).split()[1]}" for source in (ud, udp)]
+    check(names.get((5, 0x409)) == f"Version {spec.VERSION}; based on {based_on[0]} and {based_on[1]}",
+          f"{label}: name 5 is {names.get((5, 0x409))!r}, not based on {based_on}")
     for (name_id, _), text in names.items():
         # BIZ UD の名前は、元の著作権表示 (0)・説明 (5・10)・使用許諾の全文 (13。著作権表示を含む) にだけ出る
         if name_id not in (0, 5, 10, 13):
@@ -231,7 +236,8 @@ def latin_symbol_mapping(font: TTFont, script: str, language: str | None) -> dic
         for lookup_index in record.Feature.LookupListIndex:
             for subtable in gsub.LookupList.Lookup[lookup_index].SubTable:
                 subtable = getattr(subtable, "ExtSubTable", subtable)
-                mapping.update(getattr(subtable, "mapping", {}))
+                for key, value in getattr(subtable, "mapping", {}).items():
+                    mapping.setdefault(key, value)  # 先の lookup のものを取る
     return mapping
 
 

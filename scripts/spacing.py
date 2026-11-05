@@ -31,7 +31,8 @@ def vertical_forms(font: TTFont) -> dict[str, str]:
         for index in record.Feature.LookupListIndex:
             for subtable in gsub.LookupList.Lookup[index].SubTable:
                 subtable = getattr(subtable, "ExtSubTable", subtable)
-                forms.update(getattr(subtable, "mapping", {}))
+                for key, value in getattr(subtable, "mapping", {}).items():
+                    forms.setdefault(key, value)  # 先の lookup のものを取る
     return forms
 
 
