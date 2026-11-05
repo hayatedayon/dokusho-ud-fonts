@@ -46,6 +46,11 @@ def gsub_mapping(font: TTFont, tag: str) -> dict:
     return mapping
 
 
+def latin_codes(cmap: dict) -> list[int]:
+    """spec.LATIN のうち、フォントにある字 (範囲には BIZ UD・BIZ UDP のどちらにも無い字もある)"""
+    return [code for code in spec.LATIN if code in cmap]
+
+
 def check_font(family: dict, weight: str) -> None:
     label = spec.output_name(family, weight)
     font = TTFont(FONTS / label)
@@ -62,12 +67,16 @@ def check_font(family: dict, weight: str) -> None:
     check(extra == set(latin_symbol_mapping(font, "latn", None).values()),
           f"{label}: glyphs other than the symbols for Latin text were added")
 
-    for code in spec.LATIN:
+    check(latin_codes(cmap) == latin_codes(cmap_udp), f"{label}: BIZ UDP has other Latin letters than BIZ UD")
+    for code in latin_codes(cmap):
         g, gp = cmap[code], cmap_udp[code]
-        check(font["hmtx"][g][0] == udp["hmtx"][gp][0], f"{label}: U+{code:04X} width is not BIZ UDP's")
+        check(font["hmtx"][g] == udp["hmtx"][gp] and font["vmtx"][g] == udp["vmtx"][gp],
+              f"{label}: U+{code:04X} metrics are not BIZ UDP's")
         check(outline(font, g) == outline(udp, gp), f"{label}: U+{code:04X} outline is not BIZ UDP's")
-    widths = {chr(c): font["hmtx"][cmap[c]][0] for c in map(ord, "iWm")}
-    check(widths["i"] * 2 < widths["W"], f"{label}: Latin letters are not proportional: {widths}")
+    # ピンインの ǐ ǎ は、BIZ UD では全角。アクセントの無い字と同じ幅になること
+    widths = {chr(c): font["hmtx"][cmap[c]][0] for c in map(ord, "iWmaǐǎ")}
+    check(widths["i"] * 2 < widths["W"] and widths["ǐ"] == widths["i"] and widths["ǎ"] == widths["a"],
+          f"{label}: Latin letters are not proportional: {widths}")
 
     for char in JAPANESE:
         g = cmap[ord(char)]
@@ -78,7 +87,7 @@ def check_font(family: dict, weight: str) -> None:
         g = cmap[ord(char)]
         check(font["hmtx"][g] == ud["hmtx"][cmap_ud[ord(char)]], f"{label}: {char} is not BIZ UD's")
 
-    latin_glyphs = {cmap[c] for c in spec.LATIN}
+    latin_glyphs = {cmap[c] for c in latin_codes(cmap)}
     for tag in spec.LATIN_FEATURES:
         ours = {k: v for k, v in gsub_mapping(font, tag).items() if k in latin_glyphs}
         theirs = {k: v for k, v in gsub_mapping(udp, tag).items() if k in latin_glyphs}
@@ -213,7 +222,7 @@ def check_hinting(label: str, font: TTFont, family: dict, weight: str) -> None:
         ours, ud, udp = renderers["ours"], renderers["ud"], renderers["udp"]
         # (何を, 読書 UD のグリフの番号, 比べる相手, 相手のグリフの番号)
         # BIZ UDP のヒンティングを付けない字 (spec.UNHINTED) は、BIZ UDP と同じには描かれない
-        cases = [(f"U+{code:04X}", ours.char_index(code), udp, udp.char_index(code)) for code in spec.LATIN
+        cases = [(f"U+{code:04X}", ours.char_index(code), udp, udp.char_index(code)) for code in latin_codes(cmap)
                  if code not in spec.UNHINTED]
         cases += [(f"U+{by_name[source]:04X} in Latin text", font.getGlyphID(target), udp, udp.char_index(by_name[source]))
                   for source, target in symbols.items() if by_name[source] not in spec.UNHINTED]
@@ -244,7 +253,7 @@ def check_nothing_vanishes(label: str, font: TTFont, mode: str, interpreter: int
     BIZ UDP のヒンティングは、細い横線の字を、ある大きさで消す (spec.UNHINTED)"""
     hinted = freetype_render.Renderer(FONTS / label, interpreter, flags)
     plain = freetype_render.Renderer(FONTS / label, interpreter, flags | freetype_render.NO_HINTING)
-    glyphs = [(f"U+{code:04X}", hinted.char_index(code)) for code in spec.LATIN]
+    glyphs = [(f"U+{code:04X}", hinted.char_index(code)) for code in latin_codes(font.getBestCmap())]
     glyphs += [(f"U+{by_name[source]:04X} in Latin text", font.getGlyphID(target)) for source, target in symbols.items()]
     gone = [f"{what} at {ppem} ppem" for what, index in glyphs for ppem in HINTING_PPEMS
             if not any(hinted.render(index, ppem)[5]) and any(plain.render(index, ppem)[5])]

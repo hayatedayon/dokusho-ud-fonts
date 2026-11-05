@@ -32,7 +32,7 @@ The vertical forms (`vert`, `vrt2`), vertical metrics and the kanji of JIS level
 
 ## What changed
 
-- The Latin letters (U+0020–007E, U+00C0–00D6, U+00D8–00F6, U+00F8–017F) take their outlines, widths and vertical metrics from BIZ UDP. × and ÷ stay as in BIZ UD, since Japanese text uses them full width.
+- The Latin letters (U+0020–007E, U+00C0–00D6, U+00D8–00F6, U+00F8–02FF, U+1E00–1EFF and U+FB00–FB06, including the extended Latin letters, the IPA symbols and ligatures such as ﬁ) and the superscript ⁴ take their outlines, widths and vertical metrics from BIZ UDP. In BIZ UD, pinyin letters such as `ǎ` and `ǐ` are full width and the IPA symbols half width, which leaves gaps inside words. × and ÷ stay as in BIZ UD, since Japanese text uses them full width.
 - Their substitutions (`frac`, `numr`, `sups`, `zero`, and `vrt2`, the Latin letters turned sideways in vertical text) follow BIZ UDP.
 - The glyphs taken from BIZ UDP (the Latin letters, the symbols in Latin text and the like) carry BIZ UDP's hinting. BIZ UD and BIZ UDP have different control value tables and prep programs, so BIZ UDP's are appended to BIZ UD's, and the cvt numbers in the instructions are shifted to match. Small Latin text is drawn with the same instructions and values as in BIZ UDP (up to 1.003 the instructions were removed, so on Windows the Latin letters alone looked slightly faint and soft in small text). Seven thin horizontal bars still have no hinting: the hyphen-minus, the low line, the soft hyphen, the macron, the en dash, the em dash and the overline. BIZ UDP's hinting erases their stroke at some sizes (in BIZ UDP itself too).
 - `halt` and `vhal` are added (BIZ UD has neither), so that `text-spacing-trim` in browsers (on by default in Chromium) removes the extra space between consecutive brackets and punctuation, as printed books do.
@@ -46,7 +46,7 @@ The vertical forms (`vert`, `vrt2`), vertical metrics and the kanji of JIS level
 The following is the same in BIZ UD and BIZ UDP, and Dokusho UD leaves it as it is.
 
 - Greek and Cyrillic letters are full width, the width Japanese text uses them at (as in α波 or β版). BIZ UDP has no proportional forms of them either, so they stay full width in Latin text too: Greek or Russian text, or a π or Ω in an English sentence, is set with wide gaps.
-- Few of the extended Latin letters are included (16 of the 208 in Latin Extended-B, and 2 of the 256 in Latin Extended Additional, which Vietnamese uses). Browsers and other applications draw the missing ones with the next font in the list, so those letters alone change shape.
+- Few of the extended Latin letters are included (16 of the 208 in Latin Extended-B, 55 of the 96 IPA symbols, and 2 of the 256 in Latin Extended Additional, which Vietnamese uses). Browsers and other applications draw the missing ones (such as the IPA `ɪ`) with the next font in the list, so those letters alone change shape.
 
 For such text, combine Dokusho UD with another Latin typeface.
 

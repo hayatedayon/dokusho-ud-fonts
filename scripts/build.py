@@ -80,7 +80,9 @@ def merge_latin(ud: TTFont, udp: TTFont) -> dict:
     cmap_ud, cmap_udp = ud.getBestCmap(), udp.getBestCmap()
     latin = []
     for code in spec.LATIN:
-        if cmap_ud.get(code) != cmap_udp.get(code) or code not in cmap_ud:
+        if code not in cmap_ud and code not in cmap_udp:
+            continue
+        if cmap_ud.get(code) != cmap_udp.get(code):
             raise SystemExit(f"U+{code:04X}: BIZ UD and BIZ UDP map it to different glyphs")
         latin.append(cmap_ud[code])
     for name in latin:

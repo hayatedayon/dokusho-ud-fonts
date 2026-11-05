@@ -7,8 +7,17 @@ REPOSITORY = "https://github.com/hayatedayon/dokusho-ud-fonts"
 COPYRIGHT = "Copyright 2026 The Dokusho UD Project Authors (https://github.com/hayatedayon/dokusho-ud-fonts)"
 
 # 欧字 (ASCII の字と、アクセントの付いたラテン文字)。この字だけを BIZ UDP の字にする。
-# × (U+00D7)・÷ (U+00F7) は和文で全角として使うので、BIZ UD のままにする
-LATIN_RANGES = [(0x0020, 0x007E), (0x00C0, 0x00D6), (0x00D8, 0x00F6), (0x00F8, 0x017F)]
+# × (U+00D7)・÷ (U+00F7) は和文で全角として使うので、BIZ UD のままにする。範囲のうち、BIZ UD と
+# BIZ UDP のどちらにも無い字は飛ばす (片方にだけある字があれば、build.py が止まる)
+LATIN_RANGES = [
+    (0x0020, 0x007E), (0x00C0, 0x00D6), (0x00D8, 0x00F6), (0x00F8, 0x017F),
+    # ラテン文字拡張 B (BIZ UD の ǎ ǐ ǒ などピンインの字は全角で、語の途中が大きく空く)・
+    # IPA の記号・前進を伴う修飾文字 (ˈ ː、声調の ˥ など)
+    (0x0180, 0x02FF),
+    (0x1E00, 0x1EFF),  # ラテン文字拡張追加 (Ḿ ḿ)
+    (0x2074, 0x2074),  # ⁴ (¹ ² ³ は、sups の置き換え先として BIZ UDP の字になる。⁴ だけ幅が違った)
+    (0xFB00, 0xFB06),  # ラテン文字の合字 (ﬁ ﬂ)
+]
 LATIN = [code for start, end in LATIN_RANGES for code in range(start, end + 1)]
 
 # 欧文の中でだけ BIZ UDP の字にする記号 (latin_symbols.py)。文字の割り当ては BIZ UD のままで、
