@@ -33,6 +33,12 @@ ChangeLog
   Text with decomposed accents (ǐ as i + U+030C) gets the same glyphs.
 - The fractions ⅓ ⅔ ⅕ (U+2150-215F) join the symbols that take BIZ UDP's
   glyphs in Latin text, as ¼ ½ ¾ already did.
+- So does the minus sign − (U+2212). BIZ UD's is half width, with a bar
+  shorter than those of + and =, which already followed BIZ UDP; BIZ UDP's
+  matches +. Japanese text keeps BIZ UD's, since the macOS Japanese input
+  method enters this character as the full-width minus. Like the other thin
+  horizontal bars, it keeps no hinting: BIZ UDP's hinting erases its stroke
+  at 8 to 13 ppem.
 - The ligatures that start from Latin letters in ccmp and liga follow BIZ
   UDP: fi and fl become ﬁ and ﬂ, and æ, ə, ʌ, ɔ, ɑ and ɚ with a combining
   grave or acute accent, and the tone letters ˥˩, join into BIZ UDP's glyphs
