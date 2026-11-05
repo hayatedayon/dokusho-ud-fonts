@@ -6,7 +6,7 @@
 1. 欧字 (spec.LATIN) のグリフの形・字幅・縦の字送りを BIZ UDP のものにする
 2. 欧字からの GSUB の置き換え (spec.LATIN_FEATURES) と、欧字から始まる合字
    (spec.LATIN_LIGATURE_FEATURES) を BIZ UDP と同じにする。置き換え先のグリフの形か字送りが
-   違えば、それも BIZ UDP のものにする
+   違えば、それも BIZ UDP のものにする。字形の候補 (aalt) の欧字の候補も、それに合わせる
 3. 欧文の中の記号 (引用符・アポストロフィ・ダッシュなど) を、欧字の用字系の中でだけ BIZ UDP の
    字にする (latin_symbols.py。日本語の文書では置き換えない)
 4. BIZ UDP から持ってきた字に、BIZ UDP のヒンティングを付ける (hinting.py)
@@ -60,6 +60,39 @@ def ligature_subtables(gsub, index: int):
             yield subtable
 
 
+def alternate_subtables(gsub, index: int):
+    for subtable in gsub.LookupList.Lookup[index].SubTable:
+        subtable = getattr(subtable, "ExtSubTable", subtable)
+        if hasattr(subtable, "alternates"):
+            yield subtable
+
+
+def single_mapping(gsub, tag: str, keys) -> dict[str, str]:
+    """tag の 1 対 1 の置き換えのうち、keys からのもの (先にある lookup のものを取る)"""
+    mapping: dict[str, str] = {}
+    for index in feature_lookups(gsub, tag):
+        for subtable in single_subtables(gsub, index):
+            for key, value in subtable.mapping.items():
+                if key in keys:
+                    mapping.setdefault(key, value)
+    return mapping
+
+
+def alternates(gsub, tag: str, keys) -> dict[str, list[str]]:
+    """tag (aalt など) の候補のうち、keys からのもの。1 対 1 の置き換えも候補 1 つとして数える"""
+    result: dict[str, list[str]] = {}
+    for index in feature_lookups(gsub, tag):
+        for subtable in single_subtables(gsub, index):
+            for key, value in subtable.mapping.items():
+                if key in keys and value not in result.setdefault(key, []):
+                    result[key].append(value)
+        for subtable in alternate_subtables(gsub, index):
+            for key, values in subtable.alternates.items():
+                if key in keys:
+                    result.setdefault(key, []).extend(v for v in values if v not in result[key])
+    return result
+
+
 def lookup_users(gsub, index: int) -> set[str]:
     return {r.FeatureTag for r in gsub.FeatureList.FeatureRecord if index in r.Feature.LookupListIndex}
 
@@ -98,6 +131,7 @@ def merge_latin(ud: TTFont, udp: TTFont) -> dict:
         take_glyph(ud, udp, name)
 
     gsub_ud, gsub_udp = ud["GSUB"].table, udp["GSUB"].table
+    before = {tag: single_mapping(gsub_ud, tag, set(latin)) for tag in spec.LATIN_FEATURES}
     changed_mappings = 0
     targets: set[str] = set()
     for tag in spec.LATIN_FEATURES:
@@ -127,6 +161,7 @@ def merge_latin(ud: TTFont, udp: TTFont) -> dict:
 
     glyph_names = set(ud.getGlyphOrder())
     changed_mappings += merge_latin_ligatures(gsub_ud, gsub_udp, set(latin), targets, glyph_names)
+    changed_mappings += merge_latin_alternates(gsub_ud, gsub_udp, set(latin), before)
 
     missing = sorted(t for t in targets if t not in glyph_names)
     if missing:
@@ -181,6 +216,57 @@ def merge_latin_ligatures(gsub_ud, gsub_udp, latin: set[str], targets: set[str],
                 missing = [c for c in ligature.Component if c not in glyph_names]
                 if missing:
                     raise SystemExit(f"{tag}: the ligature {first} {missing} of BIZ UDP needs glyphs missing from BIZ UD")
+    return changed
+
+
+def merge_latin_alternates(gsub_ud, gsub_udp, latin: set[str], before: dict[str, dict[str, str]]) -> int:
+    """aalt (アプリの字形パネルなどが出す字形の候補) の欧字の候補を、置き換え (spec.LATIN_FEATURES) を
+    BIZ UDP と同じにしたのに合わせる。before は、変える前の BIZ UD の置き換え。置き換え先が変わった
+    候補は新しいものにし (BIZ UD の古い置き換え先は、ほかの機能からは使われず、等幅の字のまま残る。
+    BIZ UDP の aalt にもある候補は残す)、
+    BIZ UDP の aalt にあって BIZ UD に無い新しい置き換え先は足す。ほかの候補 (全角の字・丸数字など)
+    と並びは BIZ UD のまま。変えた字の数を返す"""
+    indexes = feature_lookups(gsub_ud, "aalt")
+    for index in indexes:
+        users = lookup_users(gsub_ud, index)
+        if users != {"aalt"}:
+            raise SystemExit(f"GSUB lookup {index} for aalt is shared with {sorted(users)}")
+    singles = [s for i in indexes for s in single_subtables(gsub_ud, i)]
+    multiples = [s for i in indexes for s in alternate_subtables(gsub_ud, i)]
+    if not singles or not multiples:
+        raise SystemExit("aalt: BIZ UD has no single and alternate substitutions to put the Latin into")
+    after = {tag: single_mapping(gsub_ud, tag, latin) for tag in spec.LATIN_FEATURES}
+    current, theirs = alternates(gsub_ud, "aalt", latin), alternates(gsub_udp, "aalt", latin)
+    changed = 0
+    for key in sorted(latin):
+        old = current.get(key, [])
+        new = list(old)
+        for tag in spec.LATIN_FEATURES:
+            was, now = before[tag].get(key), after[tag].get(key)
+            if was == now:
+                continue
+            if was in new:
+                # BIZ UDP でも候補なら残す (zero の Ø。BIZ UD の zero は、斜線の 0 に Ø を使う)
+                position = new.index(was)
+                if was in theirs.get(key, []):
+                    position += 1
+                else:
+                    new.remove(was)
+                if now is not None and now not in new:
+                    new.insert(position, now)
+            elif now is not None and now not in new and now in theirs.get(key, []):
+                new.append(now)
+        if new == old:
+            continue
+        for subtable in singles:
+            subtable.mapping.pop(key, None)
+        for subtable in multiples:
+            subtable.alternates.pop(key, None)
+        if len(new) == 1:
+            singles[0].mapping[key] = new[0]
+        elif new:
+            multiples[0].alternates[key] = new
+        changed += 1
     return changed
 
 

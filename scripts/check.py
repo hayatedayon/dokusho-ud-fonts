@@ -46,6 +46,25 @@ def gsub_mapping(font: TTFont, tag: str) -> dict:
     return mapping
 
 
+def gsub_alternates(font: TTFont, tag: str) -> dict:
+    """{字: [候補, ...]}。1 対 1 の置き換えも候補 1 つとして数える"""
+    gsub = font["GSUB"].table
+    result: dict = {}
+    for record in gsub.FeatureList.FeatureRecord:
+        if record.FeatureTag != tag:
+            continue
+        for index in record.Feature.LookupListIndex:
+            for subtable in gsub.LookupList.Lookup[index].SubTable:
+                subtable = getattr(subtable, "ExtSubTable", subtable)
+                # aalt の機能は用字系ごとにあり、同じ lookup を指すので、同じ候補は 1 つにする
+                for key, value in getattr(subtable, "mapping", {}).items():
+                    if value not in result.setdefault(key, []):
+                        result[key].append(value)
+                for key, values in getattr(subtable, "alternates", {}).items():
+                    result.setdefault(key, []).extend(v for v in values if v not in result[key])
+    return result
+
+
 def latin_codes(cmap: dict) -> list[int]:
     """spec.LATIN のうち、フォントにある字 (範囲には BIZ UD・BIZ UDP のどちらにも無い字もある)"""
     return [code for code in spec.LATIN if code in cmap]
@@ -131,6 +150,17 @@ def check_font(family: dict, weight: str) -> None:
     schwa_acute = dict(gsub_ligatures(font, "ccmp").get(cmap[0x0259], [])).get((cmap[0x0301],))
     check(schwa_acute is not None and font["hmtx"][schwa_acute][0] == font["hmtx"][cmap[0x0259]][0],
           f"{label}: ə with U+0301 is not as wide as ə")
+    # 字形の候補 (aalt) の欧字の候補に、BIZ UD の古い置き換え先 (今の置き換えには無い、等幅の横倒しの
+    # 字など。BIZ UDP でも候補のものは除く) が残らず、BIZ UDP の aalt にある今の置き換え先が入っていること
+    ours_aalt, udp_aalt = gsub_alternates(font, "aalt"), gsub_alternates(udp, "aalt")
+    for tag in spec.LATIN_FEATURES:
+        now = {k: v for k, v in gsub_mapping(font, tag).items() if k in latin_glyphs}
+        old = {v for k, v in gsub_mapping(ud, tag).items() if k in latin_glyphs} - set(now.values())
+        stale = sorted((k, v) for k in latin_glyphs for v in ours_aalt.get(k, [])
+                       if v in old and v not in udp_aalt.get(k, []))
+        check(not stale, f"{label}: aalt offers {len(stale)} old {tag} glyphs of BIZ UD, such as {stale[:3]}")
+        missing = sorted(k for k, v in now.items() if v in udp_aalt.get(k, []) and v not in ours_aalt.get(k, []))
+        check(not missing, f"{label}: aalt lacks the {tag} glyphs of {len(missing)} Latin letters, such as {missing[:3]}")
     features = {r.FeatureTag for r in font["GSUB"].table.FeatureList.FeatureRecord}
     check({"vert", "vrt2", "fwid"} <= features, f"{label}: vertical or full-width features are missing")
     check("vhea" in font and "vmtx" in font, f"{label}: vertical metrics are missing")

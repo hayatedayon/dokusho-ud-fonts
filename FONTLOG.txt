@@ -46,6 +46,12 @@ ChangeLog
   with the Greek ὰ ά (U+1F70, U+1F71), which therefore follow BIZ UDP too,
   as in BIZ UDP itself. The ligatures of kana and the handakuten stay as in
   BIZ UD.
+- The alternates of the Latin letters in aalt (as glyph panels of applications
+  show them) follow the substitutions above. Up to 1.004 they still offered
+  BIZ UD's sideways letters for vertical text, monospaced and used by no other
+  feature, for 115 letters, and lacked BIZ UDP's sideways forms of 47 more
+  letters, such as Æ and the accented letters. The other alternates
+  (full-width and circled forms and so on) stay as in BIZ UD.
 - The checks now also draw, with hinting, the glyphs that the Latin letters
   are substituted with (superscripts, the slashed zero, the sideways letters
   of vertical text, the ligatures) and compare them with BIZ UDP.
