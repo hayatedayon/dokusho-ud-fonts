@@ -49,6 +49,7 @@ class _Face(Structure):
 
 
 _LOAD_RENDER = 1 << 2
+NO_HINTING = 1 << 1  # ヒンティングを動かさずに描く (Renderer の flags に足す)
 _LOAD_TARGET_MONO = 2 << 16
 
 # (名前, TrueType の命令の解釈の版, 読み込みの指定)。v35 は昔の Windows に近く、ヒンティングが縦にも

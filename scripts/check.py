@@ -212,9 +212,11 @@ def check_hinting(label: str, font: TTFont, family: dict, weight: str) -> None:
         renderers = {key: freetype_render.Renderer(path, interpreter, flags) for key, path in paths.items()}
         ours, ud, udp = renderers["ours"], renderers["ud"], renderers["udp"]
         # (何を, 読書 UD のグリフの番号, 比べる相手, 相手のグリフの番号)
-        cases = [(f"U+{code:04X}", ours.char_index(code), udp, udp.char_index(code)) for code in spec.LATIN]
+        # BIZ UDP のヒンティングを付けない字 (spec.UNHINTED) は、BIZ UDP と同じには描かれない
+        cases = [(f"U+{code:04X}", ours.char_index(code), udp, udp.char_index(code)) for code in spec.LATIN
+                 if code not in spec.UNHINTED]
         cases += [(f"U+{by_name[source]:04X} in Latin text", font.getGlyphID(target), udp, udp.char_index(by_name[source]))
-                  for source, target in symbols.items()]
+                  for source, target in symbols.items() if by_name[source] not in spec.UNHINTED]
         cases += [(char, ours.char_index(ord(char)), ud, ud.char_index(ord(char))) for char in JAPANESE]
         differ = []
         for what, ours_index, other, other_index in cases:
@@ -225,6 +227,30 @@ def check_hinting(label: str, font: TTFont, family: dict, weight: str) -> None:
                           f"such as {differ[:3]}")
         for renderer in renderers.values():
             renderer.close()
+        check_nothing_vanishes(label, font, mode, interpreter, flags, symbols, by_name)
+    # BIZ UDP から持ってきた字だけを見る。欧字 (spec.LATIN) は文字が指す字、欧文の中の記号は置き換え先の
+    # 字 (文字が指すのは BIZ UD の字で、BIZ UD のヒンティングを持ったまま和文で使う)
+    for code in spec.UNHINTED:
+        names = [cmap[code]] if code in spec.LATIN and code in cmap else []
+        names += [target for source, target in symbols.items() if by_name[source] == code]
+        for name in names:
+            program = getattr(font["glyf"][name], "program", None)
+            check(program is None or not program.getBytecode(), f"{label}: U+{code:04X} ({name}) still has hinting")
+
+
+def check_nothing_vanishes(label: str, font: TTFont, mode: str, interpreter: int, flags: int,
+                           symbols: dict, by_name: dict) -> None:
+    """ヒンティングを動かすと何も描かれなくなる欧字・記号が無いこと (動かさなければ描ける字)。
+    BIZ UDP のヒンティングは、細い横線の字を、ある大きさで消す (spec.UNHINTED)"""
+    hinted = freetype_render.Renderer(FONTS / label, interpreter, flags)
+    plain = freetype_render.Renderer(FONTS / label, interpreter, flags | freetype_render.NO_HINTING)
+    glyphs = [(f"U+{code:04X}", hinted.char_index(code)) for code in spec.LATIN]
+    glyphs += [(f"U+{by_name[source]:04X} in Latin text", font.getGlyphID(target)) for source, target in symbols.items()]
+    gone = [f"{what} at {ppem} ppem" for what, index in glyphs for ppem in HINTING_PPEMS
+            if not any(hinted.render(index, ppem)[5]) and any(plain.render(index, ppem)[5])]
+    check(not gone, f"{label}: {mode}: hinting erases {len(gone)} glyphs, such as {gone[:3]}")
+    hinted.close()
+    plain.close()
 
 
 def check_spacing(label: str, font: TTFont) -> None:

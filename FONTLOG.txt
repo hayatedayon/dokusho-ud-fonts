@@ -31,6 +31,11 @@ ChangeLog
   of BIZ UD's cvt, and the glyph programs from BIZ UDP get the same shift.
   The numbers to shift are found by tracing the programs: every cvt number
   is pushed by the program itself and used for nothing else.
+- Seven thin horizontal bars keep no hinting, as before: the hyphen-minus,
+  the low line, the soft hyphen, the macron, the en dash, the em dash and the
+  overline. BIZ UDP's hinting rounds their stroke to nothing at some sizes
+  (FreeType draws nothing, Windows a faint line), in BIZ UDP itself too. A
+  check makes sure that hinting erases no other Latin glyph or symbol.
 - Checked with FreeType (TrueType interpreter v35, grayscale and mono, and
   v40, 8 to 24 ppem): the Latin letters and the symbols in Latin text are
   drawn pixel for pixel as in BIZ UDP, and the Japanese characters as in BIZ

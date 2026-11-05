@@ -175,7 +175,9 @@ def build(family: dict, weight: str) -> Path:
     symbols = latin_symbols.add(ud, udp)
     # BIZ UDP から持ってきた字 (読書 UD のグリフ名 → BIZ UDP のグリフ名)
     taken = {name: name for name in stats["glyphs"]} | {target: source for source, target in symbols["glyphs"].items()}
-    hinted = hinting.add(ud, udp, taken)
+    cmap_udp = udp.getBestCmap()
+    unhinted = {cmap_udp[code] for code in spec.UNHINTED if code in cmap_udp}
+    hinted = hinting.add(ud, udp, taken, unhinted)
     spaced = spacing.add(ud)
 
     rename(ud, family, weight)

@@ -303,8 +303,9 @@ def shift_cvt(program: Program, funcs: dict[int, list[Instruction]], offset: int
     return shifted, len(sources)
 
 
-def add(ud: TTFont, udp: TTFont, glyphs: dict[str, str]) -> dict[str, int]:
-    """glyphs (ud のグリフ名 → udp のグリフ名) の字に、BIZ UDP のヒンティングを付ける"""
+def add(ud: TTFont, udp: TTFont, glyphs: dict[str, str], unhinted: set[str] = frozenset()) -> dict[str, int]:
+    """glyphs (ud のグリフ名 → udp のグリフ名) の字に、BIZ UDP のヒンティングを付ける。unhinted
+    (udp のグリフ名) は付けない (spec.UNHINTED。BIZ UDP のヒンティングで消える字)"""
     if ud["fpgm"].program.getBytecode() != udp["fpgm"].program.getBytecode():
         raise SystemExit("BIZ UD and BIZ UDP have different fpgm")
     funcs = functions(udp["fpgm"].program)
@@ -321,6 +322,8 @@ def add(ud: TTFont, udp: TTFont, glyphs: dict[str, str]) -> dict[str, int]:
         program = getattr(udp["glyf"][source], "program", None)
         # 部品でできた字は、分解して足すので点の並びが変わる。命令はそのまま入れられない
         if program is None or not program.getBytecode() or udp["glyf"][source].isComposite():
+            continue
+        if source in unhinted:
             continue
         if ud["glyf"][target].numberOfContours != udp["glyf"][source].numberOfContours:
             raise SystemExit(f"{target}: the outline is not BIZ UDP's {source}")
