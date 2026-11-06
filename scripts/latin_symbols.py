@@ -7,9 +7,14 @@
 
 - 記号には用字系が無く、文字を並べる仕組み (HarfBuzz など) は前後の字の用字系に入れるので、
   英語の文の中の記号は latn、和文の中の記号は hani・kana として並べられる
-- ただし、和文の中に引いた英語 (彼は“Hello”と) では、開きの “ は和文、閉じの ” は英語に入り、
-  左右がそろわない。日本語の文書 (lang="ja") では置き換えない。latn に日本語の言語体系 (JAN)
-  を足し、そこには置き換えを入れない。日本語の本の中の英語は、これまでどおり BIZ UD の記号になる
+- 引用符とアポストロフィ (spec.LATIN_QUOTES) は、日本語の文書 (lang="ja") でも、和文の用字系
+  (kana・hani) などでも置き換える (横組では、いつも BIZ UDP の字)。和文の中に引いた英語 (画面に
+  “Hello”と) では、開きの “ は前の和文と同じ組に入り、閉じの ” は英語に入る (Chromium で確かめた)。
+  フォントは組の外の字を見られないので、“ の後ろが英語か和文かは分からない。どちらも BIZ UDP の
+  字にして、左右をそろえる。縦組では BIZ UD の字のまま (vert・vrt2 で戻す)
+- latn に日本語の言語体系 (JAN) を足し、そこには引用符とアポストロフィの置き換えだけを入れる。
+  ダッシュ・三点リーダーなどは、日本語の本の使い方 (OK―― など) があるので、日本語の文書では
+  BIZ UD の記号のまま
 - 選ぶのは、BIZ UD と BIZ UDP で形か幅が違う記号だけ。同じものは置き換えない
 - 書式の文字 (一般カテゴリ Cf。ソフトハイフン U+00AD など) は置き換えない。HarfBuzz は、普段は
   見えないこれらの文字を幅 0 にして隠すが、フォントが GSUB で置き換えた字は隠さない (1.003 から
@@ -89,6 +94,28 @@ def sort_features(gsub) -> None:
                 system.ReqFeatureIndex = new_index[system.ReqFeatureIndex]
 
 
+def single(gsub, mapping: dict) -> int:
+    """1 対 1 の置き換えの lookup を足して、その番号を返す"""
+    subtable = otTables.SingleSubst()
+    subtable.mapping = mapping
+    lookup = otTables.Lookup()
+    lookup.LookupType, lookup.LookupFlag, lookup.SubTable, lookup.SubTableCount = 1, 0, [subtable], 1
+    gsub.LookupList.Lookup.append(lookup)
+    gsub.LookupList.LookupCount = len(gsub.LookupList.Lookup)
+    return len(gsub.LookupList.Lookup) - 1
+
+
+def new_feature(gsub, lookups: list[int]) -> int:
+    """lookups を持つ locl の機能を足して、その番号を返す (どの言語体系に入れるかは呼ぶ側が決める)"""
+    feature = otTables.Feature()
+    feature.FeatureParams, feature.LookupListIndex, feature.LookupCount = None, lookups, len(lookups)
+    record = otTables.FeatureRecord()
+    record.FeatureTag, record.Feature = FEATURE, feature
+    gsub.FeatureList.FeatureRecord.append(record)
+    gsub.FeatureList.FeatureCount = len(gsub.FeatureList.FeatureRecord)
+    return len(gsub.FeatureList.FeatureRecord) - 1
+
+
 def add(ud: TTFont, udp: TTFont) -> dict[str, int]:
     gsub = ud["GSUB"].table
     latn = next((r.Script for r in gsub.ScriptList.ScriptRecord if r.ScriptTag == "latn"), None)
@@ -124,10 +151,13 @@ def add(ud: TTFont, udp: TTFont) -> dict[str, int]:
     gsub.FeatureList.FeatureCount = len(gsub.FeatureList.FeatureRecord)
     new = len(gsub.FeatureList.FeatureRecord) - 1
 
-    # 日本語 (JAN) は、置き換えの無い今の機能のまま。欧字の既定 (dflt) にだけ locl を足す
+    # 日本語 (JAN) と、欧字のほかの用字系は、引用符とアポストロフィだけを置き換える locl
+    cmap = ud.getBestCmap()
+    quotes = {cmap[code]: mapping[cmap[code]] for code in spec.LATIN_QUOTES}
+    japanese_feature = new_feature(gsub, [single(gsub, quotes)])
     japanese = otTables.LangSys()
     japanese.LookupOrder, japanese.ReqFeatureIndex = None, latn.DefaultLangSys.ReqFeatureIndex
-    japanese.FeatureIndex = list(latn.DefaultLangSys.FeatureIndex)
+    japanese.FeatureIndex = list(latn.DefaultLangSys.FeatureIndex) + [japanese_feature]
     japanese.FeatureCount = len(japanese.FeatureIndex)
     system = otTables.LangSysRecord()
     system.LangSysTag, system.LangSys = "JAN ", japanese
@@ -135,6 +165,25 @@ def add(ud: TTFont, udp: TTFont) -> dict[str, int]:
     latn.LangSysCount = 1
     latn.DefaultLangSys.FeatureIndex = latn.DefaultLangSys.FeatureIndex + [new]
     latn.DefaultLangSys.FeatureCount = len(latn.DefaultLangSys.FeatureIndex)
+
+    # 縦組では BIZ UD の字に戻す (“ ” は BIZ UD に縦組の字が無く、縦組の字への置き換えより後の locl が
+    # BIZ UDP の横組の字にしてしまう)。lookup は番号の順にかかるので、locl より後の番号で vert・vrt2 に足す
+    back = single(gsub, {target: name for name, target in quotes.items()})
+    for record in gsub.FeatureList.FeatureRecord:
+        if record.FeatureTag in ("vert", "vrt2"):
+            record.Feature.LookupListIndex = record.Feature.LookupListIndex + [back]
+            record.Feature.LookupCount = len(record.Feature.LookupListIndex)
+
+    # 引用符とアポストロフィは、ほかの用字系 (和文・ギリシャ文字・キリル文字と、記号だけの DFLT) でも
+    # 置き換える。和文の後の “Hello の “ は、前の和文と同じ組に入る
+    for script in gsub.ScriptList.ScriptRecord:
+        if script.ScriptTag == "latn":
+            continue
+        if script.Script.LangSysRecord:
+            raise SystemExit(f"the {script.ScriptTag} script of BIZ UD has language systems")
+        system = script.Script.DefaultLangSys
+        system.FeatureIndex = system.FeatureIndex + [japanese_feature]
+        system.FeatureCount = len(system.FeatureIndex)
     sort_features(gsub)
     # glyphs は、足した字 → BIZ UDP の元の字 (hinting.py が、その字の命令を入れる)
     return {"symbols": len(chosen), "glyphs": sources}

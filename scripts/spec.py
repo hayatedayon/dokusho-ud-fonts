@@ -39,6 +39,12 @@ LATIN_SYMBOL_RANGES = [
 ]
 LATIN_SYMBOLS = [code for start, end in LATIN_SYMBOL_RANGES for code in range(start, end + 1)]
 
+# 横組では、どの用字系・言語でも BIZ UDP の字にする記号 (引用符とアポストロフィ)。日本語の文書 (lang="ja")
+# の中の “Hello” や It’s の前後が全角ぶん空かないように。和文の中の “本当” も BIZ UDP の字になる (和文の
+# 後の “Hello の “ は和文と同じ組に入り、フォントからは “本当” の “ と区別できない)。ほかの記号
+# (ダッシュ・三点リーダーなど) は、日本語の本の使い方 (OK―― など) があるので、日本語の文書では BIZ UD のまま
+LATIN_QUOTES = [0x2018, 0x2019, 0x201C, 0x201D]
+
 # BIZ UDP のヒンティングを付けない字 (hinting.py)。細い横線だけの字で、BIZ UDP のヒンティングは、
 # ある大きさで線の高さを 0 に丸めて消してしまう (FreeType では何も描かれず、Windows ではごく薄い
 # 線になる。BIZ UDP そのものでも同じ)。ハイフン・下線・マクロン・エンダッシュ・

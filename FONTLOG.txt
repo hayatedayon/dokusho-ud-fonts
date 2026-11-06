@@ -124,6 +124,15 @@ ChangeLog
   ı (ccmp). Letters with precomposed forms (é, が) are not affected. The
   half-width ´ ｀ ¨ of hwid, for which BIZ UD uses the glyphs of the
   combining accents, keep BIZ UD's spacing glyphs.
+- The quotation marks and apostrophe ‘ ’ “ ” take BIZ UDP's glyphs in
+  horizontal text everywhere: in documents in Japanese too, where up to
+  1.004 they kept BIZ UD's full-width glyphs, English passages included, and
+  in Japanese, Greek and Cyrillic text. Browsers put the “ of 画面に“Hello”
+  into the Japanese run and the ” into the Latin one, and a font cannot tell
+  that “ from the one of “本当”, so substituting only within Latin text would
+  leave the two marks unmatched. Vertical text keeps BIZ UD's glyphs (vert
+  and vrt2 turn them back). The other symbols, such as the dashes, still
+  keep BIZ UD's glyphs in documents in Japanese, as in OK――.
 - The soft hyphen (U+00AD) is hidden again in Latin text. Since 1.003 locl
   gave it BIZ UDP's glyph there, and HarfBuzz, which hides the soft hyphen
   and other invisible format characters, does not hide glyphs a font

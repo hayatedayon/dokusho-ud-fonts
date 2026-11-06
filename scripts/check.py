@@ -305,7 +305,8 @@ def drawing(font: TTFont, name: str) -> list:
 
 def check_latin_symbols(label: str, font: TTFont, ud: TTFont, udp: TTFont) -> None:
     """欧文の中の記号。できたフォントと BIZ UDP で違う記号は、欧字の用字系 (latn) の既定でだけ BIZ UDP の
-    字 (形と字幅) に置き換わり、日本語 (latn の JAN) と和文の用字系では置き換わらないこと。書式の文字
+    字 (形と字幅) に置き換わり、日本語 (latn の JAN) と和文などの用字系では、引用符とアポストロフィだけが
+    置き換わること。書式の文字
     (ソフトハイフンなど) は、どこでも置き換わらないこと"""
     cmap, cmap_ud, cmap_udp = font.getBestCmap(), ud.getBestCmap(), udp.getBestCmap()
     latin = latin_symbol_mapping(font, "latn", None)
@@ -332,9 +333,12 @@ def check_latin_symbols(label: str, font: TTFont, ud: TTFont, udp: TTFont) -> No
     for char in "‘’“”":
         check(cmap[ord(char)] in latin, f"{label}: {char} is not substituted in Latin text")
     check(lang_system(font, "latn", "JAN ") is not None, f"{label}: latn has no JAN language system")
-    for script, language in [("latn", "JAN "), ("hani", None), ("kana", None), ("DFLT", None)]:
-        check(not latin_symbol_mapping(font, script, language),
-              f"{label}: symbols are substituted in {script} {language or 'dflt'}")
+    # 日本語 (latn の JAN) と、和文などほかの用字系では、引用符とアポストロフィだけを置き換える
+    quotes = {cmap[code]: latin[cmap[code]] for code in spec.LATIN_QUOTES}
+    for script, language in [("latn", "JAN "), ("hani", None), ("kana", None), ("DFLT", None), ("grek", None),
+                             ("cyrl", None)]:
+        check(latin_symbol_mapping(font, script, language) == quotes,
+              f"{label}: other symbols than the quotation marks are substituted in {script} {language or 'dflt'}")
 
 
 # 描いて比べる大きさ (1 em の画素の数)。ヒンティングが効くのは小さな大きさ
@@ -1145,9 +1149,11 @@ def check_shaping(label: str, family: dict, weight: str) -> None:
     乗らなくなり (HarfBuzz の代わりの位置合わせは、GPOS の無いフォントでだけ働く)、1.003 の locl で、
     英語の文の中のソフトハイフンが隠れなくなった (HarfBuzz は、フォントが置き換えた字を隠さない)。
 
-    - 和文の文脈 (横組と縦組): 字を変えていない文字 (欧字・結合用の記号のほかで、形と字幅が BIZ UD と
-      同じ字) は、組んだ結果も BIZ UD と同じ。BIZ UD の GSUB の機能を 1 つずつかけても同じ (分数と
+    - 和文の文脈 (横組と縦組): 字を変えていない文字 (欧字・結合用の記号・引用符のほかで、形と字幅が
+      BIZ UD と同じ字) は、組んだ結果も BIZ UD と同じ。BIZ UD の GSUB の機能を 1 つずつかけても同じ (分数と
       上付き・下付きの機能は作り直したので除く。check_fractions が確かめる)
+    - 引用符とアポストロフィ ‘ ’ “ ” は、横組では和文の中でも日本語の文書でも BIZ UDP の字、縦組では
+      BIZ UD の字
     - BIZ UD の合字 (欧字から始まるものを除く) と異体字 (IVS) の並びは、BIZ UD と同じに組まれる
     - 英語の文脈 (横組): 欧字と欧文の中の記号は、BIZ UDP と同じに組まれる。縦組で正立する記号
       (Unicode の縦書きの向きが U・Tu・Tr) は、縦組でもインクの位置が BIZ UDP と同じ (1 単位まで)
@@ -1170,7 +1176,7 @@ def check_shaping(label: str, family: dict, weight: str) -> None:
 
     # 和文の文脈で、字を変えていない文字
     kept = [code for code in sorted(cmap_ud) if code >= 0x20 and code not in spec.LATIN and code not in marks
-            and code in cmap and same_glyph(font, cmap[code], font_ud, cmap_ud[code])]
+            and code not in spec.LATIN_QUOTES and code in cmap and same_glyph(font, cmap[code], font_ud, cmap_ud[code])]
     tags = sorted({r.FeatureTag for r in font_ud["GSUB"].table.FeatureList.FeatureRecord}
                   - {"aalt", *spec.FRACTION_FEATURES})
     for code in kept:
@@ -1185,6 +1191,19 @@ def check_shaping(label: str, family: dict, weight: str) -> None:
             for vertical in (False, True):
                 if ours.run(text, "ja", vertical, [tag], 1) != ud.run(text, "ja", vertical, [tag], 1):
                     report(f"with {tag} differs from BIZ UD", f"U+{code:04X}{' (vertical)' if vertical else ''}")
+
+    # 引用符とアポストロフィは、横組では、和文の中でも日本語の文書でも BIZ UDP の字。縦組は BIZ UD のまま
+    # (Chromium は、和文の後の “Hello の “ を和文の組に入れる)
+    for code in spec.LATIN_QUOTES:
+        expected = udp.run(LATIN_CONTEXT[0].format(chr(code)), "en", cluster=1)
+        for context, language in [*JAPANESE_CONTEXTS, (LATIN_CONTEXT[0], "ja"), ("{}", "ja"), ("あ{}", "ja")]:
+            text = context.format(chr(code))
+            index = context.index("{}")
+            cluster = len(context[:index].encode())
+            if ours.run(text, language, cluster=cluster) != expected:
+                report("quotation marks are not BIZ UDP's in horizontal text", f"U+{code:04X} in {context}")
+            if ours.run(text, language, True, cluster=cluster) != ud.run(text, language, True, cluster=cluster):
+                report("quotation marks are not BIZ UD's in vertical text", f"U+{code:04X} in {context}")
 
     # BIZ UD の合字と異体字
     first_codes = {name: code for code, name in sorted(cmap_ud.items(), reverse=True)}
