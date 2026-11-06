@@ -3,10 +3,11 @@
 元のフォントで小さい数字は、上付きの ¹ ² ³ ⁴ (BIZ UDP の字) だけで、分母の字は無い。BIZ UD・
 BIZ UDP の frac は 1 2 3 を上付きにするだけで、1/2 は分母も上付きになり、4/5 は変わらない。
 
-1. 上付きの数字 0〜9 をそろえる。1〜4 はデザインされた ¹ ² ³ ⁴。0・5〜9 は、普通の数字を、¹ ² ³ ⁴
+1. 上付きの数字 0〜9 と記号 ⁺ ⁻ ⁼ ⁽ ⁾ をそろえる。1〜4 はデザインされた ¹ ² ³ ⁴。0・5〜9 は、普通の数字を、¹ ² ³ ⁴
    と同じ割合で縮め、同じだけ線を太らせて作る (割合と太さは、1〜4 と ¹ ² ³ ⁴ を測って求める。
    ただ縮めると、線が細くなって ¹ ² ³ ⁴ とそろわない)。⁰ ⁵ ⁶ ⁷ ⁸ ⁹ (U+2070・U+2075〜2079) の文字も
-   割り当てる
+   割り当てる。記号は、+ − = ( ) を数字と同じだけ縮め、太らせ、持ち上げる (本文の数字との高さの
+   関係が、上付きの数字とのあいだでも同じになる)。左右の空きも同じ割合で縮める
 2. 分子と分母の数字 0〜9 は、上付きの数字と同じ形で、左右の空きを、普通の数字の空きを同じ割合で
    縮めたものにする (上付きの数字は等幅で、¹ の右は大きく空く)。分母は、下が数字の下
    (ベースライン) にそろうまで下げる
@@ -36,6 +37,11 @@ SUPERSCRIPTS = {1: 0x00B9, 2: 0x00B2, 3: 0x00B3, 4: 0x2074}  # 元のフォン�
 NEW_SUPERSCRIPTS = {0: 0x2070, 5: 0x2075, 6: 0x2076, 7: 0x2077, 8: 0x2078, 9: 0x2079}
 FULLWIDTH_DIGIT = 0xFF10
 SLASHES = [0x002F, 0x2044, 0xFF0F]  # 分数の斜線にする字 (/ ⁄ ／)
+# 上付きの記号 (⁺ ⁻ ⁼ ⁽ ⁾) → 元にする字と、sups でそれにする字。− は BIZ UDP の字 (読書 UD の文字が
+# 指すのは BIZ UD の − で、横線が + より短い。欧文の中でだけ BIZ UDP の字になる)。sups では - も ⁻ にする
+SUPERSCRIPT_SYMBOLS = {0x207A: (0x002B, [0x002B]), 0x207B: (0x2212, [0x2212, 0x002D]),
+                       0x207C: (0x003D, [0x003D]), 0x207D: (0x0028, [0x0028]), 0x207E: (0x0029, [0x0029])}
+SYMBOL_NAMES = {0x207A: "plus", 0x207B: "minus", 0x207C: "equal", 0x207D: "parenleft", 0x207E: "parenright"}
 
 
 # --- 輪郭 -----------------------------------------------------------------------------------
@@ -374,6 +380,26 @@ def add(font: TTFont, udp: TTFont) -> dict:
             if table.isUnicode():  # 同じ表を分け合う subtable もある
                 table.cmap[code] = superscripts[d]
 
+    # 上付きの記号。数字と同じ変換 (縮める・太らせる・rise だけ上げる)。字送りも同じ割合
+    symbols: dict[int, str] = {}
+    cmap_udp = udp.getBestCmap()
+    for code, (source, _inputs) in SUPERSCRIPT_SYMBOLS.items():
+        if code in cmap:
+            raise SystemExit(f"U+{code:04X} is already in the font")
+        base = udp if source == 0x2212 else font
+        name_source = (cmap_udp if base is udp else cmap)[source]
+        outline = embolden(transform(contours(base, name_source), params["sx"], params["sy"]),
+                           params["ex"], params["ey"])
+        outline = transform(outline, 1, 1, 0, rise)
+        width = base["hmtx"][name_source][0] * params["sx"] + params["ex"]
+        name = SYMBOL_NAMES[code] + SUPS_SUFFIX
+        _add_glyph(font, name, make_glyph(outline), round(width),
+                   (v_advance, round(origin_y - max(y for c in outline for _x, y, _o in c))))
+        symbols[code] = name
+        for table in font["cmap"].tables:
+            if table.isUnicode():
+                table.cmap[code] = name
+
     # 2. 分子と分母の数字。上付きの数字と同じ形で、左右の空き (side) は、普通の数字 (幅の狭い 1 を
     #    除く) の空きの平均を、上付きと同じ割合で縮めたもの。分母は、上付きの下 (rise) から
     #    ベースラインまで下げる
@@ -436,6 +462,9 @@ def add(font: TTFont, udp: TTFont) -> dict:
         for source in (digits[d], fullwidth[d]):
             numr_mapping[source] = numerators[d]
             sups_mapping[source] = superscripts[d]
+    for code, (_source, inputs) in SUPERSCRIPT_SYMBOLS.items():
+        for character in inputs:
+            sups_mapping[cmap[character]] = symbols[code]
     slashes = [cmap[code] for code in SLASHES]
     # frac は、下の文脈の lookup で作り直す (BIZ UD の frac の lookup は、数字と / を無条件に置き換える)
     frac_lookups = build.feature_lookups(gsub, "frac")
@@ -537,7 +566,11 @@ def add(font: TTFont, udp: TTFont) -> dict:
             values = list(current.get(source, []))
             if superscripts[d] not in values:
                 build.put_alternates(singles, multiples, source, values + [superscripts[d]])
+    current = build.alternates(gsub, "aalt", {cmap[source] for source, _ in SUPERSCRIPT_SYMBOLS.values()})
+    for code, (source, _inputs) in SUPERSCRIPT_SYMBOLS.items():
+        values = list(current.get(cmap[source], []))
+        build.put_alternates(singles, multiples, cmap[source], values + [symbols[code]])
 
     latin_symbols.sort_features(gsub)
-    return {"superscripts": len(NEW_SUPERSCRIPTS), "denominators": len(denominators), "side": side,
+    return {"superscripts": len(NEW_SUPERSCRIPTS) + len(symbols), "denominators": len(denominators), "side": side,
             "params": params, "rise": rise, "gaps": (target_before, target_after)}

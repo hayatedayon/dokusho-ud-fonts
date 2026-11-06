@@ -110,7 +110,7 @@ def check_font(family: dict, weight: str) -> None:
     # 文字の割り当ては BIZ UD のまま。足すのは、作った上付きの数字 ⁰ ⁵ ⁶ ⁷ ⁸ ⁹ だけ
     added = {code: cmap[code] for code in cmap.keys() - cmap_ud.keys()}
     check({code: g for code, g in cmap.items() if code in cmap_ud} == cmap_ud and set(added) == set(NEW_SUPERSCRIPTS),
-          f"{label}: the character map differs from BIZ UD by more than the superscripts ⁰ ⁵-⁹")
+          f"{label}: the character map differs from BIZ UD by more than the superscripts ⁰ ⁵-⁹ ⁺ ⁻ ⁼ ⁽ ⁾")
     # BIZ UD のグリフの後に、欧文の中の記号 (BIZ UDP の字) だけが足してあること
     order, order_ud = font.getGlyphOrder(), ud.getGlyphOrder()
     check(order[: len(order_ud)] == order_ud, f"{label}: the glyph order of BIZ UD is not kept")
@@ -431,7 +431,10 @@ def check_spacing(label: str, font: TTFont) -> None:
 
 SUPERSCRIPT_CODES = {0: 0x2070, 1: 0x00B9, 2: 0x00B2, 3: 0x00B3, 4: 0x2074,
                      **{d: 0x2070 + d for d in range(5, 10)}}
-NEW_SUPERSCRIPTS = {0x2070, *range(0x2075, 0x207A)}  # 元のフォントに無く、作った字
+NEW_SUPERSCRIPTS = {0x2070, *range(0x2075, 0x207F)}  # 元のフォントに無く、作った字 (⁰ ⁵〜⁹ ⁺ ⁻ ⁼ ⁽ ⁾)
+# 上付きの記号 → 元の字 (− は BIZ UDP の字) と、sups でそれになる字
+SUPERSCRIPT_SYMBOLS = {0x207A: (0x002B, "+"), 0x207B: (0x2212, "−-"), 0x207C: (0x003D, "="),
+                       0x207D: (0x0028, "("), 0x207E: (0x0029, ")")}
 
 
 def lookup_subtables(gsub, index: int) -> list:
@@ -633,6 +636,31 @@ def check_fractions(label: str, font: TTFont, udp: TTFont) -> None:
         for source in (digits[d], cmap[0xFF10 + d]):
             check(shape(font, chr(cmap_code(cmap, source)), {"sups"}) == [sups[d]], f"{label}: sups of {source}")
         check(sups[d] in gsub_alternates(font, "aalt").get(digits[d], []), f"{label}: aalt of {d} lacks its superscript")
+
+    # 上付きの記号: 本文の字との高さの関係が、数字と同じ (1〜4 の下と上から、本文の y を上付きの y に
+    # する式を求める)。インクの面積の比も、¹ ² ³ ⁴ と同じくらい
+    pairs = [(glyph_bounds(font, digits[d])[k], glyph_bounds(font, sups[d])[k]) for d in designed for k in (1, 3)]
+    mean_x = sum(x for x, _ in pairs) / len(pairs)
+    mean_y = sum(y for _, y in pairs) / len(pairs)
+    slope = sum((x - mean_x) * (y - mean_y) for x, y in pairs) / sum((x - mean_x) ** 2 for x, _ in pairs)
+    cmap_udp = udp.getBestCmap()
+    for code, (source, inputs) in SUPERSCRIPT_SYMBOLS.items():
+        name = cmap.get(code)
+        if name is None:
+            problems.append(f"{label}: U+{code:04X} is missing")
+            continue
+        base, base_name = (udp, cmap_udp[source]) if source == 0x2212 else (font, cmap[source])
+        body, sup = glyph_bounds(base, base_name), glyph_bounds(font, name)
+        for k in (1, 3):
+            want = mean_y + slope * (body[k] - mean_x)
+            check(abs(sup[k] - want) <= 25, f"{label}: U+{code:04X} {'bottom' if k == 1 else 'top'} is at "
+                                            f"{sup[k]:.0f}, not {want:.0f} as the digits")
+        ratio = ink_area(font, name) / ink_area(base, base_name)
+        check(low * 0.85 <= ratio <= high * 1.15, f"{label}: U+{code:04X} has {ratio:.3f} of the ink of its source")
+        program = getattr(font["glyf"][name], "program", None)
+        check(program is None or not program.getBytecode(), f"{label}: U+{code:04X} has hinting")
+        for char in inputs:
+            check(shape(font, char, {"sups"}) == [name], f"{label}: sups of {char} is not U+{code:04X}")
 
     # 分子・分母
     numr = {d: shape(font, str(d), {"numr"})[0] for d in range(10)}

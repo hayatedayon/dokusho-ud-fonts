@@ -84,6 +84,11 @@ ChangeLog
   regular digits reduced by the ratio, and emboldened by the stroke weight,
   measured between 1 2 3 4 and ¹ ² ³ ⁴ (reduced alone, their strokes would be
   thinner), and carry no hinting.
+- New in Dokusho UD: the superscript signs ⁺ ⁻ ⁼ ⁽ ⁾ (U+207A-207E), for
+  10⁻³ and the like, made from + − = ( ) with the same reduction, weight
+  and rise as the superscript digits, so that they keep their height
+  relative to the digits (⁻ from BIZ UDP's −, as long as +). sups also
+  turns + - − = ( ) into them.
 - The version string (name ID 5) of Dokusho UD Gothic names the versions of
   its sources correctly, BIZ UDGothic 1.05 and BIZ UDPGothic 1.051. Up to
   1.004 it said 1.06 for both, the version of the Mincho sources. The
