@@ -89,6 +89,11 @@ ChangeLog
   and rise as the superscript digits, so that they keep their height
   relative to the digits (⁻ from BIZ UDP's −, as long as +). sups also
   turns + - − = ( ) into them.
+- New in Dokusho UD: the subscript digits and signs ₀-₉ ₊ ₋ ₌ ₍ ₎
+  (U+2080-208E), for H₂O and the like: the superscripts moved down until
+  the bottom of ₍ meets the bottom of p, so that they stay within the line
+  (usWinDescent). subs and sinf, which the fonts lacked, turn digits and
+  + - − = ( ) into them.
 - The version string (name ID 5) of Dokusho UD Gothic names the versions of
   its sources correctly, BIZ UDGothic 1.05 and BIZ UDPGothic 1.051. Up to
   1.004 it said 1.06 for both, the version of the Mincho sources. The

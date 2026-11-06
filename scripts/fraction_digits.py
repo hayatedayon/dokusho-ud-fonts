@@ -8,6 +8,8 @@ BIZ UDP の frac は 1 2 3 を上付きにするだけで、1/2 は分母も上�
    ただ縮めると、線が細くなって ¹ ² ³ ⁴ とそろわない)。⁰ ⁵ ⁶ ⁷ ⁸ ⁹ (U+2070・U+2075〜2079) の文字も
    割り当てる。記号は、+ − = ( ) を数字と同じだけ縮め、太らせ、持ち上げる (本文の数字との高さの
    関係が、上付きの数字とのあいだでも同じになる)。左右の空きも同じ割合で縮める
+   下付きの数字と記号 (₀〜₉ ₊ ₋ ₌ ₍ ₎) は、上付きの字を、₍ の下が p の下 (欧字の下の線) にそろうまで
+   下げたもの (それより下げると、行の下からはみ出す)。subs・sinf で、数字と記号をこの字にする
 2. 分子と分母の数字 0〜9 は、上付きの数字と同じ形で、左右の空きを、普通の数字の空きを同じ割合で
    縮めたものにする (上付きの数字は等幅で、¹ の右は大きく空く)。分母は、下が数字の下
    (ベースライン) にそろうまで下げる
@@ -42,6 +44,8 @@ SLASHES = [0x002F, 0x2044, 0xFF0F]  # 分数の斜線にする字 (/ ⁄ ／)
 SUPERSCRIPT_SYMBOLS = {0x207A: (0x002B, [0x002B]), 0x207B: (0x2212, [0x2212, 0x002D]),
                        0x207C: (0x003D, [0x003D]), 0x207D: (0x0028, [0x0028]), 0x207E: (0x0029, [0x0029])}
 SYMBOL_NAMES = {0x207A: "plus", 0x207B: "minus", 0x207C: "equal", 0x207D: "parenleft", 0x207E: "parenright"}
+SUBSCRIPT_DIGIT = 0x2080  # ₀ (₁〜₉ が続く)
+SUBSCRIPT_OFFSET = 0x208A - 0x207A  # 下付きの記号 (₊ ₋ ₌ ₍ ₎) は、上付きの記号の 0x10 後
 
 
 # --- 輪郭 -----------------------------------------------------------------------------------
@@ -300,6 +304,7 @@ def make_glyph(outline) -> Glyph:
 # --- 組み込む -------------------------------------------------------------------------------
 
 SUPS_SUFFIX = ".sups"
+SUBS_SUFFIX = ".subs"
 NUMR_SUFFIX = ".numr"
 DNOM_SUFFIX = ".dnom"
 FRAC_SUFFIX = ".frac"
@@ -335,6 +340,22 @@ def _coverage(font: TTFont, glyphs) -> otTables.Coverage:
     coverage = otTables.Coverage()
     coverage.glyphs = sorted(set(glyphs), key=font.getGlyphID)
     return coverage
+
+
+def _new_feature(gsub, tag: str, lookup: int) -> None:
+    """どの用字系・言語体系でも使う機能を足す"""
+    feature = otTables.Feature()
+    feature.FeatureParams, feature.LookupListIndex, feature.LookupCount = None, [lookup], 1
+    record = otTables.FeatureRecord()
+    record.FeatureTag, record.Feature = tag, feature
+    gsub.FeatureList.FeatureRecord.append(record)
+    gsub.FeatureList.FeatureCount = len(gsub.FeatureList.FeatureRecord)
+    index = len(gsub.FeatureList.FeatureRecord) - 1
+    for script in gsub.ScriptList.ScriptRecord:
+        for system in [script.Script.DefaultLangSys] + [r.LangSys for r in script.Script.LangSysRecord]:
+            if system is not None:
+                system.FeatureIndex = system.FeatureIndex + [index]
+                system.FeatureCount = len(system.FeatureIndex)
 
 
 def add(font: TTFont, udp: TTFont) -> dict:
@@ -399,6 +420,23 @@ def add(font: TTFont, udp: TTFont) -> dict:
         for table in font["cmap"].tables:
             if table.isUnicode():
                 table.cmap[code] = name
+
+    # 下付きの数字と記号。上付きの字を、₍ の下が p の下にそろうまで下げる
+    descender = bounds(contours(font, cmap[0x70]))[1]
+    drop = descender - bounds(contours(font, symbols[0x207D]))[1]
+    subscripts: dict = {}
+    for key, name in [*superscripts.items(), *symbols.items()]:
+        code = SUBSCRIPT_DIGIT + key if key in range(10) else key + SUBSCRIPT_OFFSET
+        if code in cmap:
+            raise SystemExit(f"U+{code:04X} is already in the font")
+        outline = transform(contours(font, name), 1, 1, 0, drop)
+        new = (DIGITS[key] if key in range(10) else SYMBOL_NAMES[key]) + SUBS_SUFFIX
+        _add_glyph(font, new, make_glyph(outline), font["hmtx"][name][0],
+                   (v_advance, round(origin_y - max(y for c in outline for _x, y, _o in c))))
+        subscripts[key] = new
+        for table in font["cmap"].tables:
+            if table.isUnicode():
+                table.cmap[code] = new
 
     # 2. 分子と分母の数字。上付きの数字と同じ形で、左右の空き (side) は、普通の数字 (幅の狭い 1 を
     #    除く) の空きの平均を、上付きと同じ割合で縮めたもの。分母は、上付きの下 (rise) から
@@ -473,19 +511,17 @@ def add(font: TTFont, udp: TTFont) -> dict:
     dnom = otTables.SingleSubst()
     dnom.mapping = {source: denominators[d] for d in range(10) for source in (digits[d], fullwidth[d])}
     dnom.mapping[cmap[0x2F]] = wide_slash  # BIZ UDP の dnom と同じ
-    dnom_index = _lookup(gsub, 1, dnom)
-    feature = otTables.Feature()
-    feature.FeatureParams, feature.LookupListIndex, feature.LookupCount = None, [dnom_index], 1
-    record = otTables.FeatureRecord()
-    record.FeatureTag, record.Feature = "dnom", feature
-    gsub.FeatureList.FeatureRecord.append(record)
-    gsub.FeatureList.FeatureCount = len(gsub.FeatureList.FeatureRecord)
-    new_feature = len(gsub.FeatureList.FeatureRecord) - 1
-    for script in gsub.ScriptList.ScriptRecord:
-        for system in [script.Script.DefaultLangSys] + [r.LangSys for r in script.Script.LangSysRecord]:
-            if system is not None:
-                system.FeatureIndex = system.FeatureIndex + [new_feature]
-                system.FeatureCount = len(system.FeatureIndex)
+    _new_feature(gsub, "dnom", _lookup(gsub, 1, dnom))
+
+    # subs・sinf (新しい機能): 数字と記号を下付きに (同じ lookup)
+    subs = otTables.SingleSubst()
+    subs.mapping = {source: subscripts[d] for d in range(10) for source in (digits[d], fullwidth[d])}
+    for code, (_source, inputs) in SUPERSCRIPT_SYMBOLS.items():
+        for character in inputs:
+            subs.mapping[cmap[character]] = subscripts[code]
+    subs_index = _lookup(gsub, 1, subs)
+    for tag in ("subs", "sinf"):
+        _new_feature(gsub, tag, subs_index)
 
     # frac: 分数の数字だけを置き換える。1 1/2 の 1 や、and/or の / はそのまま
     # 1. 右から左へ (reverse chaining): / の直前の数字を最後の分子に、分子の直前の数字を分子に
@@ -564,13 +600,13 @@ def add(font: TTFont, udp: TTFont) -> dict:
     for d in range(10):
         for source in (digits[d], fullwidth[d]):
             values = list(current.get(source, []))
-            if superscripts[d] not in values:
-                build.put_alternates(singles, multiples, source, values + [superscripts[d]])
+            build.put_alternates(singles, multiples, source,
+                                 values + [g for g in (superscripts[d], subscripts[d]) if g not in values])
     current = build.alternates(gsub, "aalt", {cmap[source] for source, _ in SUPERSCRIPT_SYMBOLS.values()})
     for code, (source, _inputs) in SUPERSCRIPT_SYMBOLS.items():
         values = list(current.get(cmap[source], []))
-        build.put_alternates(singles, multiples, cmap[source], values + [symbols[code]])
+        build.put_alternates(singles, multiples, cmap[source], values + [symbols[code], subscripts[code]])
 
     latin_symbols.sort_features(gsub)
-    return {"superscripts": len(NEW_SUPERSCRIPTS) + len(symbols), "denominators": len(denominators), "side": side,
+    return {"superscripts": len(NEW_SUPERSCRIPTS) + len(symbols), "subscripts": len(subscripts), "drop": drop, "denominators": len(denominators), "side": side,
             "params": params, "rise": rise, "gaps": (target_before, target_after)}

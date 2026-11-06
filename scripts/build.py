@@ -439,7 +439,8 @@ def build(family: dict, weight: str) -> Path:
     ud.save(out)
     print(f"{out.relative_to(ROOT)}: Latin {stats['latin']} glyphs, {stats['mappings']} GSUB mappings, "
           f"{stats['targets']} GSUB targets from BIZ UDP; {kept} half-width glyphs of BIZ UD kept for hwid; "
-          f"{fractions['superscripts']} superscripts and {fractions['denominators']} denominators made; "
+          f"{fractions['superscripts']} superscripts, {fractions['subscripts']} subscripts and "
+          f"{fractions['denominators']} denominators made; "
           f"{symbols['symbols']} symbols in Latin text; "
           f"hinting of BIZ UDP on {hinted['hinted']} glyphs (cvt +{hinted['cvt']}); "
           f"halt {spaced['halt']}, vhal {spaced['vhal']} glyphs")

@@ -110,7 +110,7 @@ def check_font(family: dict, weight: str) -> None:
     # 文字の割り当ては BIZ UD のまま。足すのは、作った上付きの数字 ⁰ ⁵ ⁶ ⁷ ⁸ ⁹ だけ
     added = {code: cmap[code] for code in cmap.keys() - cmap_ud.keys()}
     check({code: g for code, g in cmap.items() if code in cmap_ud} == cmap_ud and set(added) == set(NEW_SUPERSCRIPTS),
-          f"{label}: the character map differs from BIZ UD by more than the superscripts ⁰ ⁵-⁹ ⁺ ⁻ ⁼ ⁽ ⁾")
+          f"{label}: the character map differs from BIZ UD by more than the superscripts and subscripts")
     # BIZ UD のグリフの後に、欧文の中の記号 (BIZ UDP の字) だけが足してあること
     order, order_ud = font.getGlyphOrder(), ud.getGlyphOrder()
     check(order[: len(order_ud)] == order_ud, f"{label}: the glyph order of BIZ UD is not kept")
@@ -431,7 +431,8 @@ def check_spacing(label: str, font: TTFont) -> None:
 
 SUPERSCRIPT_CODES = {0: 0x2070, 1: 0x00B9, 2: 0x00B2, 3: 0x00B3, 4: 0x2074,
                      **{d: 0x2070 + d for d in range(5, 10)}}
-NEW_SUPERSCRIPTS = {0x2070, *range(0x2075, 0x207F)}  # 元のフォントに無く、作った字 (⁰ ⁵〜⁹ ⁺ ⁻ ⁼ ⁽ ⁾)
+# 元のフォントに無く、作った字 (⁰ ⁵〜⁹ ⁺ ⁻ ⁼ ⁽ ⁾ と、₀〜₉ ₊ ₋ ₌ ₍ ₎)
+NEW_SUPERSCRIPTS = {0x2070, *range(0x2075, 0x207F), *range(0x2080, 0x208F)}
 # 上付きの記号 → 元の字 (− は BIZ UDP の字) と、sups でそれになる字
 SUPERSCRIPT_SYMBOLS = {0x207A: (0x002B, "+"), 0x207B: (0x2212, "−-"), 0x207C: (0x003D, "="),
                        0x207D: (0x0028, "("), 0x207E: (0x0029, ")")}
@@ -661,6 +662,30 @@ def check_fractions(label: str, font: TTFont, udp: TTFont) -> None:
         check(program is None or not program.getBytecode(), f"{label}: U+{code:04X} has hinting")
         for char in inputs:
             check(shape(font, char, {"sups"}) == [name], f"{label}: sups of {char} is not U+{code:04X}")
+
+    # 下付きの数字と記号: 上付きの字を同じだけ下げたもの。₍ の下が p の下にそろい、行の下
+    # (usWinDescent) からはみ出さない。subs・sinf で、数字と記号がこの字になる
+    drops_sub = set()
+    pairs_sub = [(0x2080 + d, SUPERSCRIPT_CODES[d], str(d)) for d in range(10)]
+    pairs_sub += [(code + 0x10, code, inputs) for code, (_source, inputs) in SUPERSCRIPT_SYMBOLS.items()]
+    for code, sup_code, inputs in pairs_sub:
+        name = cmap.get(code)
+        if name is None:
+            problems.append(f"{label}: U+{code:04X} is missing")
+            continue
+        moved = offset_of(font, name, cmap[sup_code])
+        check(moved is not None and moved[0] == 0, f"{label}: U+{code:04X} is not U+{sup_code:04X} moved down")
+        if moved is not None:
+            drops_sub.add(moved[1])
+        check(glyph_bounds(font, name)[1] >= -font["OS/2"].usWinDescent, f"{label}: U+{code:04X} goes below the line")
+        check(font["hmtx"][name] == font["hmtx"][cmap[sup_code]], f"{label}: U+{code:04X} is not as wide as U+{sup_code:04X}")
+        for char in inputs:
+            for tag in ("subs", "sinf"):
+                check(shape(font, char, {tag}) == [name], f"{label}: {tag} of {char} is not U+{code:04X}")
+    check(len(drops_sub) == 1, f"{label}: the subscripts are moved down by {sorted(drops_sub)}")
+    if 0x208D in cmap:
+        bottom = glyph_bounds(font, cmap[0x208D])[1] - glyph_bounds(font, cmap[0x70])[1]
+        check(abs(bottom) <= 2, f"{label}: ₍ does not reach the bottom of p ({bottom:.0f})")
 
     # 分子・分母
     numr = {d: shape(font, str(d), {"numr"})[0] for d in range(10)}
