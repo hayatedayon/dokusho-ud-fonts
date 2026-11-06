@@ -160,6 +160,15 @@ def merge_latin(ud: TTFont, udp: TTFont) -> dict:
     if missing:
         raise SystemExit(f"GSUB targets missing from BIZ UD: {missing[:10]}")
     taken_targets = [t for t in sorted(targets) if t not in latin_set and not same_glyph(ud, udp, t)]
+    # 元のフォントの post は形式 3 (グリフ名が無い) で、文字の割り当ての無いグリフの名前は、
+    # fontTools がグリフの番号から付ける (glyph12859 など)。BIZ UD と BIZ UDP でグリフの並びは
+    # 違うので、同じ名前でも同じ字とは限らない。形の違う置き換え先を写すのは、両方で同じ文字が
+    # 割り当てられた字だけにする (そうでなければ、BIZ UD の別の字を上書きしかねない)
+    encoded_ud = {name: code for code, name in cmap_ud.items()}
+    encoded_udp = {name: code for code, name in cmap_udp.items()}
+    unsure = [t for t in taken_targets if t not in encoded_ud or encoded_ud[t] != encoded_udp.get(t)]
+    if unsure:
+        raise SystemExit(f"GSUB targets of BIZ UDP that may be other glyphs in BIZ UD: {unsure[:10]}")
     for name in taken_targets:
         take_glyph(ud, udp, name)
     return {"latin": len(latin), "mappings": changed_mappings, "targets": len(taken_targets),
@@ -240,16 +249,21 @@ def merge_latin_alternates(gsub_ud, gsub_udp, latin: set[str], before: dict[str,
                 new.append(now)
         if new == old:
             continue
-        for subtable in singles:
-            subtable.mapping.pop(key, None)
-        for subtable in multiples:
-            subtable.alternates.pop(key, None)
-        if len(new) == 1:
-            singles[0].mapping[key] = new[0]
-        elif new:
-            multiples[0].alternates[key] = new
+        put_alternates(singles, multiples, key, new)
         changed += 1
     return changed
+
+
+def put_alternates(singles: list, multiples: list, key: str, values: list[str]) -> None:
+    """aalt の key の候補を values にする (候補が 1 つなら 1 対 1 の置き換え、いくつもなら候補の表)"""
+    for subtable in singles:
+        subtable.mapping.pop(key, None)
+    for subtable in multiples:
+        subtable.alternates.pop(key, None)
+    if len(values) == 1:
+        singles[0].mapping[key] = values[0]
+    elif values:
+        multiples[0].alternates[key] = values
 
 
 HALF_WIDTH_SUFFIX = ".hwid"
@@ -273,16 +287,28 @@ def keep_half_widths(ud: TTFont, saved: dict, changed: set[str]) -> int:
     """hwid の置き換え先のうち、BIZ UDP の字にしたもの (changed) は、BIZ UD の半角の字を
     <名前>.hwid として足し、hwid をそれにつなぐ (BIZ UDP の欧字につなぐと、半角にならない。
     ％ は全角より広くなる)。縦組の置き換え (vrt2) も、BIZ UD と同じ横に倒した字につなぐ。
-    BIZ UD のヒンティングは、BIZ UD の cvt のまま働く。足した字の数を返す"""
+    BIZ UD のヒンティングは、BIZ UD の cvt のまま働く。
+
+    読書 UD で足すこと (BIZ UD・BIZ UDP には無い):
+    - hwid は、プロポーショナルになった欧字 (A・1 など。横組の形か字幅が BIZ UD と違う字) からも、
+      半角の字にする。縦中横などで 2 字を 1 em に収められるように
+    - その字の字形の候補 (aalt) に、半角の字も出す。全角の字 (Ａ) の候補では、欧字 (A) のすぐ後に、
+      欧字の候補では、全角の字のすぐ後 (無ければ先頭) に置く
+
+    足した字の数を返す"""
     gsub = ud["GSUB"].table
     hwid = feature_subtables(gsub, "hwid", "mapping")
     vrt2 = feature_subtables(gsub, "vrt2", "mapping")
     renamed: dict[str, str] = {}
+    differs: set[str] = set()  # 横組の形か字幅が BIZ UD と違う字 (* などは同じで、縦組の字だけが違う)
     for name in sorted(set(saved["glyphs"]) & changed):
+        glyph, horizontal, vertical = saved["glyphs"][name]
+        if (ud["hmtx"][name], ud["vmtx"][name]) != (horizontal, vertical) or \
+                ud["glyf"][name].getCoordinates(ud["glyf"]) != glyph.getCoordinates(ud["glyf"]):
+            differs.add(name)
         new = name + HALF_WIDTH_SUFFIX
         if new in ud["hmtx"].metrics:
             raise SystemExit(f"{new} is already in BIZ UD")
-        glyph, horizontal, vertical = saved["glyphs"][name]
         order = ud.getGlyphOrder() + [new]
         ud.setGlyphOrder(order)
         ud["glyf"].glyphOrder = order
@@ -294,10 +320,33 @@ def keep_half_widths(ud: TTFont, saved: dict, changed: set[str]) -> int:
             if sideways in changed:
                 raise SystemExit(f"vrt2 of {name} in BIZ UD leads to {sideways}, which was changed")
             vrt2[0].mapping[new] = sideways
+    fullwidth: dict[str, list[str]] = {}  # 欧字 → それを半角にする全角の字 (｜ と ￤ は、どちらも |)
     for subtable in hwid:
         for key, value in subtable.mapping.items():
             if value in renamed:
                 subtable.mapping[key] = renamed[value]
+                fullwidth.setdefault(value, []).append(key)
+    renamed_differs = {name: new for name, new in renamed.items() if name in differs}
+    for name, new in renamed_differs.items():
+        if any(name in subtable.mapping for subtable in hwid):
+            raise SystemExit(f"hwid of BIZ UD already substitutes {name}")
+        hwid[0].mapping[name] = new
+
+    singles = feature_subtables(gsub, "aalt", "mapping")
+    multiples = feature_subtables(gsub, "aalt", "alternates")
+    keys = set(renamed) | {key for keys in fullwidth.values() for key in keys}
+    current = alternates(gsub, "aalt", keys)
+    for name, new in renamed_differs.items():
+        wides = fullwidth.get(name, [])
+        for wide in wides:
+            if name in current.get(wide, []):
+                values = list(current[wide])
+                values.insert(values.index(name) + 1, new)
+                put_alternates(singles, multiples, wide, values)
+        values = list(current.get(name, []))
+        after = [values.index(wide) + 1 for wide in wides if wide in values]
+        values.insert(after[0] if after else 0, new)
+        put_alternates(singles, multiples, name, values)
     return len(renamed)
 
 

@@ -58,6 +58,13 @@ ChangeLog
   (named .hwid), since the Latin letters that hwid led to are now BIZ UDP's.
   Up to 1.004 hwid gave the proportional letters, so that the digits did not
   fit two to an em, and ％ came out 1 em wide, as wide as its full-width form.
+- New in Dokusho UD (neither BIZ UD nor BIZ UDP has it): hwid also turns the
+  proportional Latin letters, digits and symbols (A, 1, % and so on, where
+  they differ from BIZ UD) into the same half-width glyphs, so that two digits
+  fit in one em in tate-chu-yoko where applications apply hwid. aalt offers
+  the half-width glyph next to the full-width one for the Latin letter, and
+  next to the proportional one for the full-width form, so that glyph panels
+  offer both the proportional A and the half-width A for Ａ.
 - The version string (name ID 5) of Dokusho UD Gothic names the versions of
   its sources correctly, BIZ UDGothic 1.05 and BIZ UDPGothic 1.051. Up to
   1.004 it said 1.06 for both, the version of the Mincho sources. The
@@ -65,7 +72,8 @@ ChangeLog
 - The checks now also draw, with hinting, the glyphs that the Latin letters
   are substituted with (superscripts, the slashed zero, the sideways letters
   of vertical text, the ligatures) and compare them with BIZ UDP, and check
-  that hwid gives BIZ UD's half-width glyphs.
+  that hwid gives BIZ UD's half-width glyphs, also from the Latin letters,
+  and that aalt offers them.
 
 2026-11-04 (hayatedayon) Dokusho UD 1.004
 - The glyphs taken from BIZ UDP (the Latin letters, their GSUB targets and

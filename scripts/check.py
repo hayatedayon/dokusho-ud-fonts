@@ -165,17 +165,33 @@ def check_font(family: dict, weight: str) -> None:
         missing = sorted(k for k, v in now.items() if v in udp_aalt.get(k, []) and v not in ours_aalt.get(k, []))
         check(not missing, f"{label}: aalt lacks the {tag} glyphs of {len(missing)} Latin letters, such as {missing[:3]}")
     # hwid (全角の英数字 Ａ ％ などを半角に) は、BIZ UD と同じ半角の字 (形・字幅・縦の字送り) になり、
-    # 縦組では BIZ UD と同じ横に倒した字になること (欧字を BIZ UDP の字にしても、半角のまま)
+    # 縦組では BIZ UD と同じ横に倒した字になること (欧字を BIZ UDP の字にしても、半角のまま)。
+    # BIZ UDP の字になった欧字 (A・1 など) も、hwid で BIZ UD の半角の字になること (読書 UD で足した)
     ours_hwid, ud_hwid = gsub_mapping(font, "hwid"), gsub_mapping(ud, "hwid")
     ours_vrt2, ud_vrt2 = gsub_mapping(font, "vrt2"), gsub_mapping(ud, "vrt2")
-    check(ours_hwid.keys() == ud_hwid.keys(), f"{label}: hwid covers other characters than in BIZ UD")
-    for key in sorted(ours_hwid.keys() & ud_hwid.keys()):
-        pairs = [(ours_hwid[key], ud_hwid[key])]
-        if ud_hwid[key] in ud_vrt2:
-            pairs.append((ours_vrt2.get(ours_hwid[key]), ud_vrt2[ud_hwid[key]]))
+    expected = dict(ud_hwid)
+    for name in set(ud_hwid.values()):
+        if name in font["hmtx"].metrics and (font["hmtx"][name] != ud["hmtx"][name] or outline(font, name) != outline(ud, name)):
+            expected[name] = name
+    check(ours_hwid.keys() == expected.keys(), f"{label}: hwid covers {len(ours_hwid)} glyphs, not {len(expected)}")
+    for key in sorted(ours_hwid.keys() & expected.keys()):
+        pairs = [(ours_hwid[key], expected[key])]
+        if expected[key] in ud_vrt2:
+            pairs.append((ours_vrt2.get(ours_hwid[key]), ud_vrt2[expected[key]]))
         for g, gu in pairs:
             check(g is not None and font["hmtx"][g] == ud["hmtx"][gu] and font["vmtx"][g] == ud["vmtx"][gu]
                   and outline(font, g) == outline(ud, gu), f"{label}: hwid of {key} gives {g}, not BIZ UD's {gu}")
+    # 字形の候補 (aalt) に、半角の字も出ること。欧字 (A) の候補にも、全角の字 (Ａ) の候補にも
+    # (BIZ UD で全角の字が欧字を候補に持つなら、プロポーショナルの欧字と半角の字の両方)
+    ud_aalt = gsub_alternates(ud, "aalt")
+    for key, name in sorted(ud_hwid.items()):
+        half = ours_hwid.get(key)
+        if half is None or half == name or name not in ours_hwid:
+            continue  # 欧字そのものが半角のままなら (横組の形が BIZ UDP と同じ *)、候補は増やさない
+        check(half in ours_aalt.get(name, []), f"{label}: aalt of {name} does not offer {half}")
+        if name in ud_aalt.get(key, []):
+            check(name in ours_aalt.get(key, []) and half in ours_aalt.get(key, []),
+                  f"{label}: aalt of {key} does not offer both {name} and {half}")
     features = {r.FeatureTag for r in font["GSUB"].table.FeatureList.FeatureRecord}
     check({"vert", "vrt2", "fwid"} <= features, f"{label}: vertical or full-width features are missing")
     check("vhea" in font and "vmtx" in font, f"{label}: vertical metrics are missing")
@@ -318,9 +334,15 @@ def check_hinting(label: str, font: TTFont, family: dict, weight: str, targets: 
         cases += [(f"{target} ({tag})", font.getGlyphID(target), udp, udp_font.getGlyphID(target))
                   for target, tag in sorted(targets.items())]
         cases += [(char, ours.char_index(ord(char)), ud, ud.char_index(ord(char))) for char in JAPANESE]
-        # hwid の置き換え先として残した、BIZ UD の半角の字
-        cases += [(f"{name} (hwid)", font.getGlyphID(name), ud, ud_font.getGlyphID(name.removesuffix(".hwid")))
-                  for name in sorted(set(gsub_mapping(font, "hwid").values())) if name.endswith(".hwid")]
+        # hwid の置き換え先として残した、BIZ UD の半角の字 (足した字。post は形式 3 で、名前は番号から
+        # 付くので、hwid の置き換えから BIZ UD の字を引く。欧字 A からの置き換えなら、BIZ UD の A)
+        order_ud = set(ud_font.getGlyphOrder())
+        ud_hwid = gsub_mapping(ud_font, "hwid")
+        half_widths = {half: ud_hwid.get(key, key) for key, half in gsub_mapping(font, "hwid").items()
+                       if half not in order_ud}
+        check(half_widths, f"{label}: no half widths for hwid to draw")
+        cases += [(f"{name} (hwid of {source})", font.getGlyphID(name), ud, ud_font.getGlyphID(source))
+                  for name, source in sorted(half_widths.items())]
         differ = []
         for what, ours_index, other, other_index in cases:
             for ppem in HINTING_PPEMS:
