@@ -109,7 +109,8 @@ def check_font(family: dict, weight: str) -> None:
 
     # 文字の割り当ては BIZ UD のまま。足すのは、作った上付きの数字 ⁰ ⁵ ⁶ ⁷ ⁸ ⁹ だけ
     added = {code: cmap[code] for code in cmap.keys() - cmap_ud.keys()}
-    check({code: g for code, g in cmap.items() if code in cmap_ud} == cmap_ud and set(added) == set(NEW_SUPERSCRIPTS),
+    check({code: g for code, g in cmap.items() if code in cmap_ud} == cmap_ud
+          and set(added) == set(NEW_SUPERSCRIPTS) | set(EXTRA_CODES),
           f"{label}: the character map differs from BIZ UD by more than the superscripts and subscripts")
     # BIZ UD のグリフの後に、欧文の中の記号 (BIZ UDP の字) だけが足してあること
     order, order_ud = font.getGlyphOrder(), ud.getGlyphOrder()
@@ -118,6 +119,8 @@ def check_font(family: dict, weight: str) -> None:
     extra = set(order[len(order_ud):])
     half_widths = {v for v in gsub_mapping(font, "hwid").values() if v not in order_ud}
     fraction_glyphs = (set(added.values()) | outputs(font, spec.FRACTION_FEATURES)) - set(order_ud)
+    # 縦組の ⸺ ⸻
+    fraction_glyphs |= {gsub_mapping(font, "vert").get(cmap.get(code)) for code in (0x2E3A, 0x2E3B)} - {None}
     check(extra == set(latin_symbol_mapping(font, "latn", None).values()) | half_widths | fraction_glyphs,
           f"{label}: glyphs other than the symbols for Latin text, the half widths for hwid and the fraction "
           "digits were added")
@@ -231,6 +234,8 @@ def check_font(family: dict, weight: str) -> None:
     check_hinting(label, font, family, weight, latin_targets(udp, latin_glyphs), udp, ud)
     check_spacing(label, font)
     check_fractions(label, font, udp)
+    check_extra(label, font)
+    check_proportional(label, font, udp)
 
 
 def gpos_values(font: TTFont, tag: str) -> dict:
@@ -763,6 +768,79 @@ def fraction_targets(udp: TTFont) -> tuple[float, float]:
         befores.append(ink_gap(upper, [slash]))
         afters.append(ink_gap([slash], lower))
     return median(befores), median(afters)
+
+
+# --- 足した文字と palt ----------------------------------------------------------------------
+
+INVISIBLE_CODES = [0x200B, 0x200C, 0x200D, 0x2060, 0xFEFF]
+SPACE_WIDTHS = {0x2000: 1 / 2, 0x2001: 1, 0x2002: 1 / 2, 0x2003: 1, 0x2004: 1 / 3, 0x2005: 1 / 4, 0x2006: 1 / 6,
+                0x2007: "0", 0x2008: ".", 0x2009: 1 / 5, 0x200A: 1 / 10, 0x202F: 1 / 5, 0x205F: 4 / 18}
+EXTRA_CODES = [*INVISIBLE_CODES, *SPACE_WIDTHS, 0x2011, 0x2E3A, 0x2E3B]
+
+
+def check_extra(label: str, font: TTFont) -> None:
+    """見えない文字は幅 0、空白は決まった幅で、どちらもインクが無い。‑ は - と同じ字。⸺ ⸻ は ― を
+    2 つ・3 つ横に並べた字で、縦組では縦組の ― を縦に並べた字になる"""
+    cmap, em = font.getBestCmap(), font["head"].unitsPerEm
+    for code in INVISIBLE_CODES + list(SPACE_WIDTHS):
+        name = cmap.get(code)
+        if name is None:
+            problems.append(f"{label}: U+{code:04X} is missing")
+            continue
+        width = SPACE_WIDTHS.get(code, 0)
+        want = font["hmtx"][cmap[ord(width)]][0] if isinstance(width, str) else round(em * width)
+        check(font["hmtx"][name][0] == want, f"{label}: U+{code:04X} is {font['hmtx'][name][0]} wide, not {want}")
+        check(font["glyf"][name].numberOfContours == 0, f"{label}: U+{code:04X} has ink")
+    check(cmap.get(0x2011) == cmap[0x2D], f"{label}: ‑ is not the glyph of -")
+    bar = cmap[0x2015]
+    upright = gsub_mapping(font, "vert")[bar]
+    for code, count in ((0x2E3A, 2), (0x2E3B, 3)):
+        name = cmap.get(code)
+        if name is None:
+            problems.append(f"{label}: U+{code:04X} is missing")
+            continue
+        a, b = outline(font, bar), outline(font, name)
+        want = [(x + em * k, y) for k in range(count) for x, y in a[0]]
+        check(list(map(tuple, b[0])) == want and font["hmtx"][name][0] == em * count,
+              f"{label}: U+{code:04X} is not {count} ― in a row")
+        for tag in ("vert", "vrt2"):
+            vertical = gsub_mapping(font, tag).get(name)
+            if vertical is None:
+                problems.append(f"{label}: {tag} has no vertical form of U+{code:04X}")
+                continue
+            c = outline(font, vertical)
+            want = [(x, y - em * k) for k in range(count) for x, y in outline(font, upright)[0]]
+            check(list(map(tuple, c[0])) == want and font["vmtx"][vertical][0] == em * count,
+                  f"{label}: the vertical form of U+{code:04X} is not {count} vertical ― in a column")
+
+
+def check_proportional(label: str, font: TTFont, udp: TTFont) -> None:
+    """palt で、仮名・約物・全角の字が BIZ UDP と同じ位置と字幅になること (インクの中心が 1 単位まで)。
+    BIZ UDP と字幅が違い、インクの外形が 20 単位まで同じ字は、どれも palt を持つこと"""
+    palt = gpos_values(font, "palt")
+    cmap, cmap_udp = font.getBestCmap(), udp.getBestCmap()
+    wrong, missing = [], []
+    for code in [*range(0x3000, 0x3100), *range(0xFF01, 0xFF61)]:
+        name, other = cmap.get(code), cmap_udp.get(code)
+        if name is None or other is None or font["glyf"][name].numberOfContours == 0:
+            continue
+        if font["hmtx"][name][0] == udp["hmtx"][other][0] and name not in palt:
+            continue
+        a, b = glyph_bounds(font, name), glyph_bounds(udp, other)
+        alike = (abs((a[2] - a[0]) - (b[2] - b[0])) <= 20 and abs(a[1] - b[1]) <= 20 and abs(a[3] - b[3]) <= 20)
+        if name not in palt:
+            if alike:
+                missing.append(chr(code))
+            continue
+        x, y, x_advance, y_advance = palt[name]
+        center = (a[0] + a[2]) / 2 + x - (b[0] + b[2]) / 2
+        if y or y_advance or abs(center) > 1 or font["hmtx"][name][0] + x_advance != udp["hmtx"][other][0]:
+            wrong.append(chr(code))
+    check(len(palt) > 200, f"{label}: palt has only {len(palt)} glyphs")
+    check(not wrong, f"{label}: palt does not set {len(wrong)} characters as BIZ UDP, such as {wrong[:5]}")
+    check(not missing, f"{label}: {len(missing)} characters lack palt, such as {missing[:5]}")
+    for char in "漢字読書":
+        check(cmap[ord(char)] not in palt, f"{label}: {char} has palt")
 
 
 def check_license() -> None:

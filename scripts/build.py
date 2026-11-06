@@ -15,7 +15,8 @@
    字にする (latin_symbols.py。日本語の文書では置き換えない)
 4. BIZ UDP から持ってきた字に、BIZ UDP のヒンティングを付ける (hinting.py)
 5. 名前を読書 UD に変え (BIZ UD はモリサワの商標)、等幅の印 (post.isFixedPitch) を外す
-6. 約物の詰め (halt・vhal) を足す (spacing.py)
+6. 見えない文字・空白・2 倍と 3 倍のダッシュを足す (extra_glyphs.py)
+7. 約物の詰め (halt・vhal) と、BIZ UDP の字幅で仮名・約物を詰める palt を足す (spacing.py)
 
 BIZ UD と BIZ UDP は、ヒンティングの cvt と prep が違う。BIZ UDP から持ってきた字の命令は、
 いったん外し (BIZ UD の cvt では正しく働かない)、hinting.py が cvt と prep を付け足してから、
@@ -33,6 +34,7 @@ from fontTools.misc.timeTools import epoch_diff as EPOCH_DIFF
 from fontTools.ttLib.tables._g_l_y_f import Glyph
 
 import fetch_sources
+import extra_glyphs
 import fraction_digits
 import hinting
 import latin_symbols
@@ -418,7 +420,8 @@ def build(family: dict, weight: str) -> Path:
     cmap_udp = udp.getBestCmap()
     unhinted = {cmap_udp[code] for code in spec.UNHINTED if code in cmap_udp}
     hinted = hinting.add(ud, udp, taken, unhinted)
-    spaced = spacing.add(ud)
+    extra = extra_glyphs.add(ud)
+    spaced = spacing.add(ud, udp)
 
     rename(ud, family, weight, versions)
     ud["post"].isFixedPitch = 0
@@ -443,7 +446,8 @@ def build(family: dict, weight: str) -> Path:
           f"{fractions['denominators']} denominators made; "
           f"{symbols['symbols']} symbols in Latin text; "
           f"hinting of BIZ UDP on {hinted['hinted']} glyphs (cvt +{hinted['cvt']}); "
-          f"halt {spaced['halt']}, vhal {spaced['vhal']} glyphs")
+          f"{extra['invisible']} invisible, {extra['spaces']} spaces and {extra['dashes']} dashes added; "
+          f"halt {spaced['halt']}, vhal {spaced['vhal']}, palt {spaced['palt']} glyphs")
     return out
 
 

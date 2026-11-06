@@ -94,6 +94,17 @@ ChangeLog
   the bottom of ₍ meets the bottom of p, so that they stay within the line
   (usWinDescent). subs and sinf, which the fonts lacked, turn digits and
   + - − = ( ) into them.
+- New in Dokusho UD: palt, the proportional widths of kana and punctuation
+  for headings and the like, taken from BIZ UDP, whose kana and
+  punctuation are BIZ UD's glyphs set with other widths: the glyphs are
+  placed and spaced as in BIZ UDP (their ink centered as BIZ UDP's where
+  BIZ UDP Mincho Bold redrew the outlines slightly). Body text stays solid.
+- New characters: the two- and three-em dashes ⸺ ⸻ (U+2E3A, U+2E3B, two
+  and three ― joined, with vertical forms in vert and vrt2), the
+  non-breaking hyphen ‑ (U+2011, the glyph of -), the spaces U+2000-200A,
+  U+202F and U+205F with the widths Unicode gives them, and the invisible
+  characters U+200B, U+200C, U+200D, U+2060 and U+FEFF as empty glyphs of
+  no width, which some environments otherwise draw as boxes.
 - The version string (name ID 5) of Dokusho UD Gothic names the versions of
   its sources correctly, BIZ UDGothic 1.05 and BIZ UDPGothic 1.051. Up to
   1.004 it said 1.06 for both, the version of the Mincho sources. The
