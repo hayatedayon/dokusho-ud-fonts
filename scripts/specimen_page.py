@@ -104,6 +104,7 @@ CONTENT = """
 <h2 class="label">見出し（palt）</h2>
 <h3 class="heading palt">プロポーショナルに詰めた見出し「ラ・カンパネラ」</h3>
 <h3 class="heading">ベタ組の見出し「ラ・カンパネラ」</h3>
+<p class="aside">縦書きでは palt ではなく vpal をかけます（palt は字を左右にずらすので、縦書きでかけると字が揺れます）。読書 UD には、まだ vpal がありません。</p>
 </section>
 """
 
@@ -159,6 +160,8 @@ header legend { float: left; color: #666; margin-right: 0.3rem; }
 .text.tnum { font-variant-numeric: tabular-nums; }
 .text.palt-all { font-feature-settings: "palt"; }
 .vertical #grid > .cell { writing-mode: vertical-rl; height: 26em; overflow-x: auto; }
+/* palt は横組で字を左右にずらす機能で、縦書きでかけると字が左右に揺れる。縦書きでは vpal にする */
+.vertical .text .palt, .vertical .text.palt-all { font-feature-settings: "vpal"; }
 .no-trim .text { text-spacing-trim: space-all; }
 .trim .text { text-spacing-trim: normal; }
 .autospace .text { text-autospace: normal; }

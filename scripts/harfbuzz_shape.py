@@ -47,6 +47,8 @@ def _load_library():
         "hb_buffer_set_language": ([c_void_p, c_void_p], None),
         "hb_buffer_set_direction": ([c_void_p, c_int], None),
         "hb_buffer_guess_segment_properties": ([c_void_p], None),
+        "hb_buffer_set_script": ([c_void_p, c_uint32], None),
+        "hb_script_from_string": ([c_char_p, c_int], c_uint32),
         "hb_language_from_string": ([c_char_p, c_int], c_void_p),
         "hb_feature_from_string": ([c_char_p, c_int, POINTER(_Feature)], c_int),
         "hb_shape": ([c_void_p, c_void_p, c_void_p, c_uint], None),
@@ -72,15 +74,18 @@ class Shaper:
         self.font = _hb.hb_font_create(self.face)
         self.languages: dict[str, int] = {}
 
-    def shape(self, text: str, language: str, vertical: bool = False, features=()) -> list[tuple]:
-        """[(グリフの番号, クラスター, 送り x, 送り y, ずれ x, ずれ y), ...]。用字系は文字から決める
-        (ブラウザのように、記号は前後の字の用字系に入れるには、前後に字を置く)"""
+    def shape(self, text: str, language: str, vertical: bool = False, features=(), script: str | None = None) -> list[tuple]:
+        """[(グリフの番号, クラスター, 送り x, 送り y, ずれ x, ずれ y), ...]。用字系は、script (ISO 15924 の
+        Latn・Hira など) が無ければ文字から決める (ブラウザのように、記号を前後の字の用字系に入れるには、
+        前後に字を置くか、script を指定する)"""
         if language not in self.languages:
             self.languages[language] = _hb.hb_language_from_string(language.encode(), -1)
         buffer = _hb.hb_buffer_create()
         data = text.encode()
         _hb.hb_buffer_add_utf8(buffer, data, len(data), 0, len(data))
         _hb.hb_buffer_set_language(buffer, self.languages[language])
+        if script is not None:
+            _hb.hb_buffer_set_script(buffer, _hb.hb_script_from_string(script.encode(), -1))
         _hb.hb_buffer_guess_segment_properties(buffer)
         if vertical:
             _hb.hb_buffer_set_direction(buffer, _TOP_TO_BOTTOM)

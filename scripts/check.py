@@ -128,6 +128,9 @@ def check_font(family: dict, weight: str) -> None:
     fraction_glyphs |= {gsub_mapping(font, "vert").get(cmap.get(code)) for code in (0x2E3A, 0x2E3B)} - {None}
     # 等幅の数字 (tnum) と、字を分け合っていた結合用の記号
     fraction_glyphs |= outputs(font, ["tnum", "calt"]) | {cmap[code] for code in remapped}
+    # 欧文の中の記号の、BIZ UDP の縦組の字
+    fraction_glyphs |= (set(latin_symbol_mapping(font, "latn", None, vertical=True).values())
+                        | outputs(font, ["vert", "vrt2"])) - set(order_ud)
     check(extra == set(latin_symbol_mapping(font, "latn", None).values()) | half_widths | fraction_glyphs,
           f"{label}: glyphs other than the symbols for Latin text, the half widths for hwid and the fraction "
           "digits were added")
@@ -279,8 +282,9 @@ def lang_system(font: TTFont, script: str, language: str | None):
     return next((r.LangSys for r in record.Script.LangSysRecord if r.LangSysTag == language), None)
 
 
-def latin_symbol_mapping(font: TTFont, script: str, language: str | None) -> dict:
-    """その用字系・言語体系で働く locl の置き換え"""
+def latin_symbol_mapping(font: TTFont, script: str, language: str | None, vertical: bool = False) -> dict:
+    """その用字系・言語体系で働く locl の置き換え。vertical が False なら、文字に割り当てた字 (横組の字)
+    からの置き換えだけ (locl は、BIZ UD の縦組の字を BIZ UDP の縦組の字にする置き換えも持つ)"""
     gsub = font["GSUB"].table
     system = lang_system(font, script, language)
     mapping: dict = {}
@@ -295,6 +299,9 @@ def latin_symbol_mapping(font: TTFont, script: str, language: str | None) -> dic
                 subtable = getattr(subtable, "ExtSubTable", subtable)
                 for key, value in getattr(subtable, "mapping", {}).items():
                     mapping.setdefault(key, value)  # 先の lookup のものを取る
+    if not vertical:
+        encoded = set(font.getBestCmap().values())
+        mapping = {key: value for key, value in mapping.items() if key in encoded}
     return mapping
 
 
@@ -1159,6 +1166,11 @@ class Shaped:
                 for g, c, xa, ya, xo, yo in self.shaper.shape(text, language, vertical, features)
                 if cluster is None or c == cluster]
 
+    def run_script(self, text: str, script: str, language: str, vertical: bool) -> list:
+        """用字系を指定して組む (ブラウザは、記号を前の字の用字系の組に入れる)"""
+        return [(self.outline_of(g), xa, ya, xo, yo)
+                for g, _c, xa, ya, xo, yo in self.shaper.shape(text, language, vertical, (), script)]
+
     def ink(self, text: str, language: str, vertical: bool = False) -> list:
         """組んだ字のインクの外形 (最初の字の原点から)。インクの無い字は None"""
         x = y = 0
@@ -1188,8 +1200,10 @@ def check_shaping(label: str, family: dict, weight: str) -> None:
     - 和文の文脈 (横組と縦組): 字を変えていない文字 (欧字・結合用の記号・引用符のほかで、形と字幅が
       BIZ UD と同じ字) は、組んだ結果も BIZ UD と同じ。BIZ UD の GSUB の機能を 1 つずつかけても同じ (分数と
       上付き・下付きの機能は作り直したので除く。check_fractions が確かめる)
-    - 引用符とアポストロフィ ‘ ’ “ ” は、横組では和文の中でも日本語の文書でも BIZ UDP の字、縦組では
-      BIZ UD の字
+    - 引用符とアポストロフィ ‘ ’ “ ” は、和文の中でも日本語の文書でも、横組は BIZ UDP の字、縦組は
+      BIZ UDP の縦組の字
+    - 縦書き (Chromium のように、字の向きで正立か横倒しかを決めて組む) でも、横書きで BIZ UDP (または
+      BIZ UD) と同じに組まれる欧字と記号は、その書体と同じに組まれる
     - BIZ UD の合字 (欧字から始まるものを除く) と異体字 (IVS) の並びは、BIZ UD と同じに組まれる
     - 英語の文脈 (横組): 欧字と欧文の中の記号は、BIZ UDP と同じに組まれる。1 字だけで組んでも (ブラウザ
       が行末に足すハイフンなど) 同じ。縦組で正立する記号
@@ -1229,8 +1243,8 @@ def check_shaping(label: str, family: dict, weight: str) -> None:
                 if ours.run(text, "ja", vertical, [tag], 1) != ud.run(text, "ja", vertical, [tag], 1):
                     report(f"with {tag} differs from BIZ UD", f"U+{code:04X}{' (vertical)' if vertical else ''}")
 
-    # 引用符とアポストロフィは、横組では、和文の中でも日本語の文書でも BIZ UDP の字。縦組は BIZ UD のまま
-    # (Chromium は、和文の後の “Hello の “ を和文の組に入れる)
+    # 引用符とアポストロフィは、和文の中でも日本語の文書でも BIZ UDP の字 (Chromium は、和文の後の “Hello の “
+    # を和文の組に入れる)。縦組も BIZ UDP の縦組の字 (Chromium は、縦組の引用符を正立させる)
     for code in spec.LATIN_QUOTES:
         expected = udp.run(LATIN_CONTEXT[0].format(chr(code)), "en", cluster=1)
         for context, language in [*JAPANESE_CONTEXTS, (LATIN_CONTEXT[0], "ja"), ("{}", "ja"), ("あ{}", "ja")]:
@@ -1239,8 +1253,8 @@ def check_shaping(label: str, family: dict, weight: str) -> None:
             cluster = len(context[:index].encode())
             if ours.run(text, language, cluster=cluster) != expected:
                 report("quotation marks are not BIZ UDP's in horizontal text", f"U+{code:04X} in {context}")
-            if ours.run(text, language, True, cluster=cluster) != ud.run(text, language, True, cluster=cluster):
-                report("quotation marks are not BIZ UD's in vertical text", f"U+{code:04X} in {context}")
+            if ours.run(text, language, True, cluster=cluster) != udp.run(text, language, True, cluster=cluster):
+                report("quotation marks are not BIZ UDP's in vertical text", f"U+{code:04X} in {context}")
 
     # BIZ UD の合字と異体字
     first_codes = {name: code for code, name in sorted(cmap_ud.items(), reverse=True)}
@@ -1279,6 +1293,46 @@ def check_shaping(label: str, family: dict, weight: str) -> None:
             a, b = ours.ink(text, language, True)[1], udp.ink(text, language, True)[1]
             if (a is None) != (b is None) or (a and any(abs(p - q) > 1 for p, q in zip(a, b))):
                 report("upright in vertical Latin text is not placed as in BIZ UDP", f"U+{code:04X}")
+
+    # 縦書き: 横書きで BIZ UDP (または BIZ UD) と同じに組まれる欧字・記号は、縦書きでも同じ書体と同じに
+    # 組まれる。Chromium のように、縦書きの向きが R の字は横に倒して横組のまま、U・Tu は正立させて縦組の
+    # 機能をかけ、Tr は縦組の字があれば正立させる。引用符 ‘ ’ “ ” は、Chromium が正立させる (Unicode では R)。
+    # 用字系は、前の字のものを引き継ぐ
+    upright = dict(orientation)
+    for code in spec.LATIN_QUOTES:
+        upright[code] = "Tu"
+
+    def vertical_run(item: Shaped, char: str, script: str, language: str):
+        horizontal = item.run_script(char, script, language, False)
+        kind = upright.get(ord(char), "R")
+        if kind == "R":
+            return horizontal
+        shaped_vertically = item.run_script(char, script, language, True)
+        if kind == "Tr" and [x[0] for x in shaped_vertically] == [x[0] for x in horizontal]:
+            return horizontal
+        return shaped_vertically
+
+    def near(a, b) -> bool:
+        """同じ字で、位置の違いが丸めの 1 単位まで (字幅の半分で真ん中に置くので)"""
+        return a == b or (len(a) == len(b) and all(
+            x[0] == y[0] and all(abs(p - q) <= 1 for p, q in zip(x[1:], y[1:])) for x, y in zip(a, b)))
+
+    for code in sorted(set(spec.LATIN) | set(spec.LATIN_SYMBOLS)):
+        if code not in cmap or code not in cmap_udp or code not in cmap_ud or code in marks or code in ignorable \
+                or unicodedata.category(chr(code)) in ("Cc", "Zs"):
+            continue
+        char = chr(code)
+        for script, language in [("Latn", "en"), ("Latn", "ja"), ("Zyyy", "en"), ("Zyyy", "ja"), ("Hira", "ja"),
+                                 ("Hira", "en"), ("Hani", "ja")]:
+            if unicodedata.category(char)[0] in "LN" and script != "Latn":
+                continue  # 欧字・数字は、いつも欧字の組
+            horizontal = ours.run_script(char, script, language, False)
+            follows = udp if horizontal == udp.run_script(char, script, language, False) else \
+                ud if horizontal == ud.run_script(char, script, language, False) else None
+            if follows is not None and not near(vertical_run(ours, char, script, language),
+                                                vertical_run(follows, char, script, language)):
+                report("in vertical text is not set as in the font it follows horizontally",
+                       f"U+{code:04X} ({script} {language})")
 
     # 見えない文字
     contexts = [*JAPANESE_CONTEXTS, LATIN_CONTEXT]

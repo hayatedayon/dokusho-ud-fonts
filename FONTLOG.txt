@@ -142,9 +142,14 @@ ChangeLog
   in Japanese, Greek and Cyrillic text. Browsers put the “ of 画面に“Hello”
   into the Japanese run and the ” into the Latin one, and a font cannot tell
   that “ from the one of “本当”, so substituting only within Latin text would
-  leave the two marks unmatched. Vertical text keeps BIZ UD's glyphs (vert
-  and vrt2 turn them back). The other symbols, such as the dashes, still
-  keep BIZ UD's glyphs in documents in Japanese, as in OK――.
+  leave the two marks unmatched. Vertical text takes BIZ UDP's vertical
+  forms (half an em high; Chromium sets the quotation marks upright), as
+  do the other symbols wherever they take BIZ UDP's glyphs (locl turns BIZ
+  UD's vertical forms into BIZ UDP's, and vert and vrt2 turn the substituted
+  glyphs that BIZ UD has no vertical form of). The vertical forms that BIZ
+  UD shares between vert and vrt2 (‐ ‘ ’) take BIZ UDP's vert form in both.
+  The other symbols, such as the dashes, still keep BIZ UD's glyphs in
+  documents in Japanese, as in OK――.
 - The soft hyphen (U+00AD) is hidden again in Latin text. Since 1.003 locl
   gave it BIZ UDP's glyph there, and HarfBuzz, which hides the soft hyphen
   and other invisible format characters, does not hide glyphs a font

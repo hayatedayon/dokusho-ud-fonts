@@ -11,13 +11,15 @@
   (kana・hani) などでも置き換える (横組では、いつも BIZ UDP の字)。和文の中に引いた英語 (画面に
   “Hello”と) では、開きの “ は前の和文と同じ組に入り、閉じの ” は英語に入る (Chromium で確かめた)。
   フォントは組の外の字を見られないので、“ の後ろが英語か和文かは分からない。どちらも BIZ UDP の
-  字にして、左右をそろえる。縦組では BIZ UD の字のまま (vert・vrt2 で戻す)
+  字にして、左右をそろえる
 - 記号だけの組 (用字系の決まらない DFLT。ブラウザは、行末に足すハイフン ‐ を 1 字で組む) も、
   欧字の用字系と同じにする。1.005 の前までは、英語の文の行末のハイフンが BIZ UD の全角の字だった
 - latn と DFLT に日本語の言語体系 (JAN) を足し、そこには引用符とアポストロフィの置き換えだけを入れる。
   ダッシュ・三点リーダーなどは、日本語の本の使い方 (OK―― など) があるので、日本語の文書では
   BIZ UD の記号のまま
 - 選ぶのは、BIZ UD と BIZ UDP で形か幅が違う記号だけ。同じものは置き換えない
+- 縦組でも、置き換える所では BIZ UDP の縦組の字にする (vertical_forms。Chromium は、縦組の引用符を
+  正立させ、縦組の字で組む。BIZ UDP の縦組の引用符は、字送りが半角)
 - 書式の文字 (一般カテゴリ Cf。ソフトハイフン U+00AD など) は置き換えない。HarfBuzz は、普段は
   見えないこれらの文字を幅 0 にして隠すが、フォントが GSUB で置き換えた字は隠さない (1.003 から
   1.004 まで、英語の文の中のソフトハイフンが、幅のある字として出ていた)
@@ -118,6 +120,55 @@ def new_feature(gsub, lookups: list[int]) -> int:
     return len(gsub.FeatureList.FeatureRecord) - 1
 
 
+def vertical_forms(ud: TTFont, udp: TTFont, chosen, mapping: dict, sources: dict):
+    """縦組の字を、横組と同じく BIZ UDP のものにする。BIZ UDP の縦組の字 (vert・vrt2 の置き換え先) を
+    <名前>.latn.vert・.latn.vrt2 として足す (BIZ UDP に縦組の字が無ければ、横組の字のまま正立させる)。
+
+    文字を並べる仕組みは lookup を番号の順にかけ、縦組の字への置き換え (BIZ UD の vert・vrt2) は locl より
+    先にかかる。そこで
+    - BIZ UD に縦組の字がある記号 (‘ ’ など) は、locl で、その BIZ UD の縦組の字を BIZ UDP の縦組の字に
+      する (返す vertical: BIZ UD の縦組の字 → (元の字, BIZ UDP の縦組の字))
+    - 無い記号 (“ ” × など) は、locl が BIZ UDP の横組の字にした後で、vert・vrt2 に足す lookup で BIZ UDP の
+      縦組の字にする (返す after: {機能: {横組の字: 縦組の字}})
+    BIZ UD の vert と vrt2 が同じ字で、BIZ UDP では違う字になる記号 (‐) は、vert のほうにする (返す shared)"""
+    import build
+
+    gsub_ud, gsub_udp = ud["GSUB"].table, udp["GSUB"].table
+    names = {name for _code, name, _name_udp in chosen}
+    vertical, after, shared = {}, {"vert": {}, "vrt2": {}}, []
+    for tag in ("vert", "vrt2"):
+        ud_forms = build.single_mapping(gsub_ud, tag, set(ud.getGlyphOrder()))
+        users: dict[str, set[str]] = {}
+        for key, value in ud_forms.items():
+            users.setdefault(value, set()).add(key)
+        for _code, name, name_udp in chosen:
+            form_udp = build.single_mapping(gsub_udp, tag, {name_udp}).get(name_udp)
+            # BIZ UDP に縦組の字が無ければ、横組の字のまま正立させる
+            target = mapping[name] if form_udp is None else f"{name}{SUFFIX}.{tag}"
+
+            def take() -> None:
+                if target != mapping[name] and target not in ud["hmtx"].metrics:
+                    add_glyph(ud, udp, form_udp, target)
+                    sources[target] = form_udp
+
+            form_ud = ud_forms.get(name)
+            if form_ud is None:
+                if target != mapping[name]:
+                    take()
+                    after[tag][mapping[name]] = target
+                continue
+            if users[form_ud] - names:
+                raise SystemExit(f"{tag} of {name} in BIZ UD is shared with {sorted(users[form_ud] - names)}")
+            if form_ud in vertical:
+                # BIZ UD の vert と vrt2 が同じ字で、BIZ UDP では違う字 (‐)。locl からはどちらで置き換えた
+                # 字か分からないので、ブラウザなどがかける vert のほうにする
+                shared.append(name)
+                continue
+            take()
+            vertical[form_ud] = (name, target)
+    return vertical, after, shared
+
+
 def add(ud: TTFont, udp: TTFont) -> dict[str, int]:
     gsub = ud["GSUB"].table
     latn = next((r.Script for r in gsub.ScriptList.ScriptRecord if r.ScriptTag == "latn"), None)
@@ -135,10 +186,11 @@ def add(ud: TTFont, udp: TTFont) -> dict[str, int]:
         add_glyph(ud, udp, name_udp, target)
         mapping[name] = target
         sources[target] = name_udp
+    vertical, after, shared = vertical_forms(ud, udp, chosen, mapping, sources)
 
     # 置き換えの lookup (1 対 1) と、それだけを持つ locl の機能
     subtable = otTables.SingleSubst()
-    subtable.mapping = mapping
+    subtable.mapping = {**mapping, **{key: value for key, (_name, value) in vertical.items()}}
     lookup = otTables.Lookup()
     lookup.LookupType, lookup.LookupFlag, lookup.SubTable = 1, 0, [subtable]
     lookup.SubTableCount = 1
@@ -155,7 +207,9 @@ def add(ud: TTFont, udp: TTFont) -> dict[str, int]:
 
     # 日本語 (JAN) と、欧字のほかの用字系は、引用符とアポストロフィだけを置き換える locl
     cmap = ud.getBestCmap()
+    quote_names = {cmap[code] for code in spec.LATIN_QUOTES}
     quotes = {cmap[code]: mapping[cmap[code]] for code in spec.LATIN_QUOTES}
+    quotes.update({key: value for key, (name, value) in vertical.items() if name in quote_names})
     japanese_feature = new_feature(gsub, [single(gsub, quotes)])
     japanese = otTables.LangSys()
     japanese.LookupOrder, japanese.ReqFeatureIndex = None, latn.DefaultLangSys.ReqFeatureIndex
@@ -168,13 +222,16 @@ def add(ud: TTFont, udp: TTFont) -> dict[str, int]:
     latn.DefaultLangSys.FeatureIndex = latn.DefaultLangSys.FeatureIndex + [new]
     latn.DefaultLangSys.FeatureCount = len(latn.DefaultLangSys.FeatureIndex)
 
-    # 縦組では BIZ UD の字に戻す (“ ” は BIZ UD に縦組の字が無く、縦組の字への置き換えより後の locl が
-    # BIZ UDP の横組の字にしてしまう)。lookup は番号の順にかかるので、locl より後の番号で vert・vrt2 に足す
-    back = single(gsub, {target: name for name, target in quotes.items()})
-    for record in gsub.FeatureList.FeatureRecord:
-        if record.FeatureTag in ("vert", "vrt2"):
-            record.Feature.LookupListIndex = record.Feature.LookupListIndex + [back]
-            record.Feature.LookupCount = len(record.Feature.LookupListIndex)
+    # BIZ UD に縦組の字が無い記号 (“ ” × など) は、locl が BIZ UDP の横組の字にした後で、BIZ UDP の
+    # 縦組の字にする。lookup は番号の順にかかるので、locl より後の番号で vert・vrt2 に足す
+    for tag, forms in after.items():
+        if not forms:
+            continue
+        index = single(gsub, forms)
+        for record in gsub.FeatureList.FeatureRecord:
+            if record.FeatureTag == tag:
+                record.Feature.LookupListIndex = record.Feature.LookupListIndex + [index]
+                record.Feature.LookupCount = len(record.Feature.LookupListIndex)
 
     # 引用符とアポストロフィは、ほかの用字系 (和文・ギリシャ文字・キリル文字と、記号だけの DFLT) でも
     # 置き換える。和文の後の “Hello の “ は、前の和文と同じ組に入る
@@ -200,4 +257,5 @@ def add(ud: TTFont, udp: TTFont) -> dict[str, int]:
         system.FeatureCount = len(system.FeatureIndex)
     sort_features(gsub)
     # glyphs は、足した字 → BIZ UDP の元の字 (hinting.py が、その字の命令を入れる)
-    return {"symbols": len(chosen), "glyphs": sources}
+    return {"symbols": len(chosen), "glyphs": sources, "vertical": len(vertical) + sum(map(len, after.values())),
+            "shared": shared}
