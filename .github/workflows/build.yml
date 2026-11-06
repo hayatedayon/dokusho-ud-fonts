@@ -34,6 +34,13 @@ jobs:
           python3 -m venv .venv
           .venv/bin/pip install -r requirements.txt
 
+      # check.py は、FreeType で字を描き、HarfBuzz で組んで、元のフォントと比べる (ctypes で呼ぶ)。
+      # 組んで比べるのには、Unicode の文字のデータ (見えない文字・縦書きの向き) も使う
+      - name: Install FreeType, HarfBuzz and the Unicode data
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends libfreetype6 libharfbuzz0b unicode-data
+
       - name: Fetch the original fonts
         run: .venv/bin/python scripts/fetch_sources.py
 

@@ -13,6 +13,7 @@ from fontTools.pens.recordingPen import DecomposingRecordingPen
 from fontTools.ttLib import TTFont
 
 import freetype_render
+import harfbuzz_shape
 import spec
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -246,6 +247,7 @@ def check_font(family: dict, weight: str) -> None:
     check_tabular(label, font)
     check_marks(label, font, ud)
     check_overflow(label, font, ud, udp)
+    check_shaping(label, family, weight)
 
 
 def gpos_values(font: TTFont, tag: str) -> dict:
@@ -1066,6 +1068,208 @@ def check_overflow(label: str, font: TTFont, ud: TTFont, udp: TTFont) -> None:
             found.append(name)
     check(not found, f"{label}: {len(found)} glyphs reach farther out of the line than in the original fonts, "
                      f"such as {found[:5]}")
+
+
+# --- 組んで確かめる (HarfBuzz) ----------------------------------------------------------------
+
+# 組むときに前後に置く字。記号には用字系が無く、前後の字の用字系に入る
+JAPANESE_CONTEXTS = [("あ{}あ", "ja"), ("漢{}漢", "ja")]
+LATIN_CONTEXT = ("a{}a", "en")
+UNICODE_DATA = Path("/usr/share/unicode")
+
+
+def unicode_property(name: str, field: str | None = None) -> dict[int, str]:
+    """Unicode の文字のデータ (DerivedCoreProperties.txt・VerticalOrientation.txt)。field が None なら、
+    その名前の性質を持つ文字 → 名前"""
+    path = UNICODE_DATA / name
+    if not path.exists():
+        raise SystemExit(f"{path} is needed to check the shaping (Debian / Ubuntu: unicode-data)")
+    result = {}
+    for line in path.read_text(encoding="utf-8").splitlines():
+        line = line.split("#")[0].strip()
+        if not line:
+            continue
+        fields = [f.strip() for f in line.split(";")]
+        if field is not None and fields[1] != field:
+            continue
+        first, _, last = fields[0].partition("..")
+        for code in range(int(first, 16), int(last or first, 16) + 1):
+            result[code] = fields[1]
+    return result
+
+
+class Shaped:
+    """組んだ字を、フォントをまたいで比べられる形にする (グリフの番号はフォントごとに違う)"""
+
+    def __init__(self, path: Path):
+        self.font = TTFont(path)
+        self.shaper = harfbuzz_shape.Shaper(path)
+        self.order = self.font.getGlyphOrder()
+        self.outlines: dict[int, tuple] = {}
+
+    def outline_of(self, glyph: int) -> tuple:
+        if glyph not in self.outlines:
+            coordinates, ends, _flags = outline(self.font, self.order[glyph])
+            self.outlines[glyph] = (tuple(coordinates), tuple(ends))
+        return self.outlines[glyph]
+
+    def run(self, text: str, language: str, vertical: bool = False, features=(), cluster: int | None = None):
+        """(輪郭, 送り x, 送り y, ずれ x, ずれ y) の並び。cluster を指定すれば、その字の所だけ"""
+        return [(self.outline_of(g), xa, ya, xo, yo)
+                for g, c, xa, ya, xo, yo in self.shaper.shape(text, language, vertical, features)
+                if cluster is None or c == cluster]
+
+    def ink(self, text: str, language: str, vertical: bool = False) -> list:
+        """組んだ字のインクの外形 (最初の字の原点から)。インクの無い字は None"""
+        x = y = 0
+        boxes = []
+        for g, _c, xa, ya, xo, yo in self.shaper.shape(text, language, vertical):
+            bounds = glyph_bounds(self.font, self.order[g])
+            boxes.append(None if bounds is None else
+                         (bounds[0] + x + xo, bounds[1] + y + yo, bounds[2] + x + xo, bounds[3] + y + yo))
+            x, y = x + xa, y + ya
+        return boxes
+
+    def close(self) -> None:
+        self.shaper.close()
+
+
+def same_glyph(font: TTFont, name: str, other: TTFont, other_name: str) -> bool:
+    return (font["hmtx"][name] == other["hmtx"][other_name] and font["vmtx"][name] == other["vmtx"][other_name]
+            and outline(font, name) == outline(other, other_name))
+
+
+def check_shaping(label: str, family: dict, weight: str) -> None:
+    """HarfBuzz で組んで、元のフォントと比べる。フォントの表を読むだけでは分からない、足した機能が元の
+    振る舞いを変えてしまう不具合 (デグレ) を見つける。1.002 で GPOS を足して、結合用の記号が前の字に
+    乗らなくなり (HarfBuzz の代わりの位置合わせは、GPOS の無いフォントでだけ働く)、1.003 の locl で、
+    英語の文の中のソフトハイフンが隠れなくなった (HarfBuzz は、フォントが置き換えた字を隠さない)。
+
+    - 和文の文脈 (横組と縦組): 字を変えていない文字 (欧字・結合用の記号のほかで、形と字幅が BIZ UD と
+      同じ字) は、組んだ結果も BIZ UD と同じ。BIZ UD の GSUB の機能を 1 つずつかけても同じ (分数と
+      上付き・下付きの機能は作り直したので除く。check_fractions が確かめる)
+    - BIZ UD の合字 (欧字から始まるものを除く) と異体字 (IVS) の並びは、BIZ UD と同じに組まれる
+    - 英語の文脈 (横組): 欧字と欧文の中の記号は、BIZ UDP と同じに組まれる。縦組で正立する記号
+      (Unicode の縦書きの向きが U・Tu・Tr) は、縦組でもインクの位置が BIZ UDP と同じ (1 単位まで)
+    - 見えない文字 (Default_Ignorable_Code_Point) は、どの文脈でも幅 0
+    - 結合用の記号は、前の字のインクの上か下の真ん中に、触れずに付く (欧字・ギリシャ文字・キリル文字。
+      合成済みの字が無い組み合わせ)。濁点・半濁点は、横組でも縦組でも、前の仮名の枠の中に付く"""
+    paths = {"ours": FONTS / spec.output_name(family, weight), "ud": SOURCES / f"{family['ud']}-{weight}.ttf",
+             "udp": SOURCES / f"{family['udp']}-{weight}.ttf"}
+    shaped = {key: Shaped(path) for key, path in paths.items()}
+    ours, ud, udp = shaped["ours"], shaped["ud"], shaped["udp"]
+    font, font_ud, font_udp = ours.font, ud.font, udp.font
+    cmap, cmap_ud, cmap_udp = font.getBestCmap(), font_ud.getBestCmap(), font_udp.getBestCmap()
+    marks = set(combining_codes(cmap))
+    ignorable = unicode_property("DerivedCoreProperties.txt", "Default_Ignorable_Code_Point")
+    orientation = unicode_property("VerticalOrientation.txt")
+    found: dict[str, list[str]] = {}
+
+    def report(what: str, item: str) -> None:
+        found.setdefault(what, []).append(item)
+
+    # 和文の文脈で、字を変えていない文字
+    kept = [code for code in sorted(cmap_ud) if code >= 0x20 and code not in spec.LATIN and code not in marks
+            and code in cmap and same_glyph(font, cmap[code], font_ud, cmap_ud[code])]
+    tags = sorted({r.FeatureTag for r in font_ud["GSUB"].table.FeatureList.FeatureRecord}
+                  - {"aalt", *spec.FRACTION_FEATURES})
+    for code in kept:
+        for context, language in JAPANESE_CONTEXTS:
+            text = context.format(chr(code))
+            for vertical in (False, True):
+                if ours.run(text, language, vertical, cluster=1) != ud.run(text, language, vertical, cluster=1):
+                    report(f"in Japanese {'vertical' if vertical else 'horizontal'} text differs from BIZ UD",
+                           f"U+{code:04X}")
+        text = JAPANESE_CONTEXTS[0][0].format(chr(code))
+        for tag in tags:
+            for vertical in (False, True):
+                if ours.run(text, "ja", vertical, [tag], 1) != ud.run(text, "ja", vertical, [tag], 1):
+                    report(f"with {tag} differs from BIZ UD", f"U+{code:04X}{' (vertical)' if vertical else ''}")
+
+    # BIZ UD の合字と異体字
+    first_codes = {name: code for code, name in sorted(cmap_ud.items(), reverse=True)}
+    for tag, ligatures in sorted({tag: gsub_ligatures(font_ud, tag) for tag in ("ccmp", "liga", "dlig")}.items()):
+        for first, entries in ligatures.items():
+            for components, _target in entries:
+                sequence = [first, *components]
+                if not all(g in first_codes for g in sequence) or first_codes[first] in spec.LATIN:
+                    continue
+                text = "あ" + "".join(chr(first_codes[g]) for g in sequence)
+                for vertical in (False, True):
+                    if ours.run(text, "ja", vertical, [tag]) != ud.run(text, "ja", vertical, [tag]):
+                        report(f"{tag} ligatures differ from BIZ UD", " ".join(f"U+{ord(c):04X}" for c in text[1:]))
+    for table in font_ud["cmap"].tables:
+        if table.format != 14:
+            continue
+        for selector, pairs in table.uvsDict.items():
+            for base, _glyph in pairs:
+                text = chr(base) + chr(selector)
+                for vertical in (False, True):
+                    if ours.run(text, "ja", vertical) != ud.run(text, "ja", vertical):
+                        report("variation sequences differ from BIZ UD", f"U+{base:04X} U+{selector:04X}")
+
+    # 英語の文脈の欧字と記号
+    context, language = LATIN_CONTEXT
+    for code in sorted(set(spec.LATIN) | set(spec.LATIN_SYMBOLS)):
+        if code not in cmap or code not in cmap_udp or code in marks or code in ignorable:
+            continue
+        text = context.format(chr(code))
+        if ours.run(text, language, cluster=1) != udp.run(text, language, cluster=1):
+            report("in Latin text differs from BIZ UDP", f"U+{code:04X}")
+        if orientation.get(code, "R") != "R":
+            a, b = ours.ink(text, language, True)[1], udp.ink(text, language, True)[1]
+            if (a is None) != (b is None) or (a and any(abs(p - q) > 1 for p, q in zip(a, b))):
+                report("upright in vertical Latin text is not placed as in BIZ UDP", f"U+{code:04X}")
+
+    # 見えない文字
+    contexts = [*JAPANESE_CONTEXTS, LATIN_CONTEXT]
+    for code in sorted(c for c in cmap if c in ignorable):
+        for context, language in contexts:
+            for vertical in (False, True):
+                if any(xa or ya for _o, xa, ya, _xo, _yo in ours.run(context.format(chr(code)), language, vertical, cluster=1)):
+                    report("invisible characters are not of zero width", f"U+{code:04X}"
+                           f"{' (vertical)' if vertical else ''} after {context[0]}")
+
+    # 結合用の記号
+    bases = [code for code in sorted(cmap) if (code in spec.LATIN or 0x0370 <= code <= 0x052F)
+             and unicodedata.category(chr(code))[0] in "LN" and glyph_bounds(font, cmap[code]) is not None]
+    for mark in sorted(marks):
+        combining = unicodedata.combining(chr(mark))
+        if combining not in (220, 230):
+            continue
+        for base in bases:
+            text = chr(base) + chr(mark)
+            boxes = ours.ink(text, "en")
+            if len(boxes) != 2:
+                continue  # 合成済みの字になった (é など)
+            (bx0, by0, bx1, by1), (mx0, my0, mx1, my1) = boxes
+            centered = abs((bx0 + bx1) / 2 - (mx0 + mx1) / 2) <= 1
+            clear = my0 > by1 if combining == 230 else my1 < by1
+            if not (centered and clear):
+                report("combining marks do not sit on the letter", f"U+{base:04X} U+{mark:04X}")
+    em = font["head"].unitsPerEm
+    for mark in (0x3099, 0x309A):
+        for base in [c for c in range(0x3041, 0x3100) if c in cmap and unicodedata.category(chr(c)) == "Lo"]:
+            text = chr(base) + chr(mark)
+            if unicodedata.normalize("NFC", text) != text:
+                continue
+            for vertical in (False, True):
+                boxes = ours.ink(text, "ja", vertical)
+                if len(boxes) != 2 or boxes[1] is None:
+                    continue  # 合字になった (か゚ など)
+                _base_box, (mx0, my0, mx1, my1) = boxes
+                # 仮名の枠: 横組は (0, -usWinDescent)〜(em, usWinAscent)、縦組は x が -em/2〜em/2、y が -em〜0
+                # (HarfBuzz は、縦組の字の位置を、縦組の原点 (枠の上の真ん中) からのずれで返す)
+                inside = (-em / 2 <= mx0 and mx1 <= em / 2 and -em <= my0 and my1 <= 0) if vertical else \
+                    (0 <= mx0 and mx1 <= em and -font["OS/2"].usWinDescent <= my0 and my1 <= font["OS/2"].usWinAscent)
+                if not inside:
+                    report("kana marks are not in the box of the kana", f"U+{base:04X} U+{mark:04X}"
+                           f"{' (vertical)' if vertical else ''}")
+    for item in shaped.values():
+        item.close()
+    label = spec.output_name(family, weight)
+    for what, items in found.items():
+        problems.append(f"{label}: {len(items)} {what}, such as {', '.join(items[:5])}")
 
 
 def check_license() -> None:
