@@ -124,6 +124,11 @@ ChangeLog
   ı (ccmp). Letters with precomposed forms (é, が) are not affected. The
   half-width ´ ｀ ¨ of hwid, for which BIZ UD uses the glyphs of the
   combining accents, keep BIZ UD's spacing glyphs.
+- The soft hyphen (U+00AD) is hidden again in Latin text. Since 1.003 locl
+  gave it BIZ UDP's glyph there, and HarfBuzz, which hides the soft hyphen
+  and other invisible format characters, does not hide glyphs a font
+  substitutes, so a word with a soft hyphen showed a wide blank in it. The
+  format characters (general category Cf) keep BIZ UD's glyphs everywhere.
 - The version string (name ID 5) of Dokusho UD Gothic names the versions of
   its sources correctly, BIZ UDGothic 1.05 and BIZ UDPGothic 1.051. Up to
   1.004 it said 1.06 for both, the version of the Mincho sources. The

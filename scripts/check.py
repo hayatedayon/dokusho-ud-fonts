@@ -303,7 +303,8 @@ def drawing(font: TTFont, name: str) -> list:
 
 def check_latin_symbols(label: str, font: TTFont, ud: TTFont, udp: TTFont) -> None:
     """欧文の中の記号。できたフォントと BIZ UDP で違う記号は、欧字の用字系 (latn) の既定でだけ BIZ UDP の
-    字 (形と字幅) に置き換わり、日本語 (latn の JAN) と和文の用字系では置き換わらないこと"""
+    字 (形と字幅) に置き換わり、日本語 (latn の JAN) と和文の用字系では置き換わらないこと。書式の文字
+    (ソフトハイフンなど) は、どこでも置き換わらないこと"""
     cmap, cmap_ud, cmap_udp = font.getBestCmap(), ud.getBestCmap(), udp.getBestCmap()
     latin = latin_symbol_mapping(font, "latn", None)
     for code in spec.LATIN_SYMBOLS:
@@ -314,6 +315,10 @@ def check_latin_symbols(label: str, font: TTFont, ud: TTFont, udp: TTFont) -> No
         name, name_udp = cmap[code], cmap_udp[code]
         differs = font["hmtx"][name] != udp["hmtx"][name_udp] or drawing(font, name) != drawing(udp, name_udp)
         target = latin.get(name)
+        # 書式の文字 (ソフトハイフンなど) は置き換えない。HarfBuzz は、フォントが置き換えた字を隠さない
+        if unicodedata.category(chr(code)) == "Cf":
+            check(target is None, f"{label}: the format character U+{code:04X} is substituted in Latin text")
+            continue
         if not differs:
             check(target is None, f"{label}: U+{code:04X} is the same in BIZ UDP but is substituted")
             continue

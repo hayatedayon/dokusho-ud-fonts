@@ -11,9 +11,13 @@
   左右がそろわない。日本語の文書 (lang="ja") では置き換えない。latn に日本語の言語体系 (JAN)
   を足し、そこには置き換えを入れない。日本語の本の中の英語は、これまでどおり BIZ UD の記号になる
 - 選ぶのは、BIZ UD と BIZ UDP で形か幅が違う記号だけ。同じものは置き換えない
+- 書式の文字 (一般カテゴリ Cf。ソフトハイフン U+00AD など) は置き換えない。HarfBuzz は、普段は
+  見えないこれらの文字を幅 0 にして隠すが、フォントが GSUB で置き換えた字は隠さない (1.003 から
+  1.004 まで、英語の文の中のソフトハイフンが、幅のある字として出ていた)
 """
 
 import copy
+import unicodedata
 
 from fontTools.pens.recordingPen import DecomposingRecordingPen
 from fontTools.pens.ttGlyphPen import TTGlyphPen
@@ -34,7 +38,7 @@ def symbols(ud: TTFont, udp: TTFont) -> list[tuple[int, str, str]]:
     chosen = []
     for code in spec.LATIN_SYMBOLS:
         name, name_udp = cmap_ud.get(code), cmap_udp.get(code)
-        if name is None or name_udp is None:
+        if name is None or name_udp is None or unicodedata.category(chr(code)) == "Cf":
             continue
         if ud["hmtx"][name] == udp["hmtx"][name_udp] and drawing(glyphs_ud, name) == drawing(glyphs_udp, name_udp):
             continue

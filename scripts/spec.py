@@ -41,10 +41,10 @@ LATIN_SYMBOLS = [code for start, end in LATIN_SYMBOL_RANGES for code in range(st
 
 # BIZ UDP のヒンティングを付けない字 (hinting.py)。細い横線だけの字で、BIZ UDP のヒンティングは、
 # ある大きさで線の高さを 0 に丸めて消してしまう (FreeType では何も描かれず、Windows ではごく薄い
-# 線になる。BIZ UDP そのものでも同じ)。ハイフン・下線・ソフトハイフン・マクロン・エンダッシュ・
+# 線になる。BIZ UDP そのものでも同じ)。ハイフン・下線・マクロン・エンダッシュ・
 # エムダッシュ・上線・マイナス。1.003 までと同じく、命令の無いまま描く。check.py が、ヒンティングで消える
 # 字がほかに無いことを確かめる
-UNHINTED = [0x002D, 0x005F, 0x00AD, 0x00AF, 0x2013, 0x2014, 0x203E, 0x2212]
+UNHINTED = [0x002D, 0x005F, 0x00AF, 0x2013, 0x2014, 0x203E, 0x2212]
 
 # 欧字から置き換える GSUB の機能。BIZ UDP は、ここで欧字を自分の幅のグリフにつなぐ
 # (vrt2 は縦組で横に倒した欧字、zero は斜線の 0、frac・numr は分数の斜線、sups は上付き)。
