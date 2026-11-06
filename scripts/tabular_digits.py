@@ -1,9 +1,16 @@
-"""等幅の数字 (tnum) を作る。build.py が使う。
+"""等幅の数字 (tnum) と、数字の間のコロンを作る。build.py が使う。
 
 BIZ UDP の数字は、1 だけがほかの数字より狭い (明朝 Regular では 1065、ほかは 1393)。表や目次の
 ページ番号で桁がそろうように、1 の左右に同じだけ空きを足して、ほかの数字と同じ字幅にした字
 (one.tnum) を足し、tnum でそれにする。形とヒンティングは 1 のまま (横にずらすだけ)。プロポーショナル
 の数字 (pnum) は、今の数字のままなので足さない。
+
+BIZ UDP のコロンは、欧文の文章用に、ベースラインから x の高さまでの所にある。数字は x の高さより高い
+ので、11:11 や 0213:2004 では、コロンが数字の真ん中より下に見える (BIZ UD の半角のコロンは、数字の
+真ん中にある)。前後が数字のときだけ、数字の真ん中まで持ち上げたコロン (colon.num) にする (calt。
+ブラウザは既定でかける)。Note: のように語の後のコロンは、そのまま。作った字にはヒンティングを付けない
+(BIZ UDP の命令は、点をベースラインと x の高さに合わせて戻す)。縦組では、元のコロンに戻す (vert・vrt2。
+縦組の数字の間で、コロンが上の字に寄らないように)
 """
 
 import copy
@@ -15,6 +22,7 @@ import fraction_digits
 import latin_symbols
 
 SUFFIX = ".tnum"
+COLON_SUFFIX = ".num"
 
 
 def add(font: TTFont) -> dict[str, int]:
@@ -47,3 +55,64 @@ def add(font: TTFont) -> dict[str, int]:
     fraction_digits._new_feature(gsub, "tnum", fraction_digits._lookup(gsub, 1, subtable))
     latin_symbols.sort_features(gsub)
     return {"tabular": len(mapping), "width": width}
+
+
+def ink(font: TTFont, name: str):
+    from fontTools.pens.boundsPen import BoundsPen
+    glyph_set = font.getGlyphSet()
+    pen = BoundsPen(glyph_set)
+    glyph_set[name].draw(pen)
+    return pen.bounds
+
+
+def raise_colon(font: TTFont) -> dict[str, int]:
+    """数字の間のコロンを、数字の真ん中まで持ち上げる (calt)。持ち上げた量を返す"""
+    import build
+    from statistics import median
+
+    cmap = font.getBestCmap()
+    gsub = font["GSUB"].table
+    if any(r.FeatureTag == "calt" for r in gsub.FeatureList.FeatureRecord):
+        raise SystemExit("the font already has calt")
+    colon = cmap[0x3A]
+    digits = [cmap[0x30 + d] for d in range(10)]
+    # tnum の 1 と、斜線の 0 (zero) の後でも
+    digits += [build.single_mapping(gsub, tag, set(digits)).get(d) for tag in ("tnum", "zero") for d in digits]
+    digits = sorted({d for d in digits if d}, key=font.getGlyphID)
+    middle = median((ink(font, d)[1] + ink(font, d)[3]) / 2 for d in digits)
+    _x0, y0, _x1, y1 = ink(font, colon)
+    dy = round(middle - (y0 + y1) / 2)
+
+    glyph = copy.deepcopy(font["glyf"][colon])
+    glyph.expand(font["glyf"])
+    if glyph.isComposite():
+        raise SystemExit("the colon is a composite glyph")
+    glyph.coordinates.translate((0, dy))
+    glyph.removeHinting()
+    raised = colon + COLON_SUFFIX
+    advance, _side = font["hmtx"][colon]
+    fraction_digits._add_glyph(font, raised, glyph, advance, font["vmtx"][colon])
+
+    single = otTables.SingleSubst()
+    single.mapping = {colon: raised}
+    nested = fraction_digits._lookup(gsub, 1, single)
+    chain = otTables.ChainContextSubst()
+    chain.Format = 3
+    chain.BacktrackGlyphCount, chain.BacktrackCoverage = 1, [fraction_digits._coverage(font, digits)]
+    chain.InputGlyphCount, chain.InputCoverage = 1, [fraction_digits._coverage(font, [colon])]
+    chain.LookAheadGlyphCount, chain.LookAheadCoverage = 1, [fraction_digits._coverage(font, digits)]
+    record = otTables.SubstLookupRecord()
+    record.SequenceIndex, record.LookupListIndex = 0, nested
+    chain.SubstCount, chain.SubstLookupRecord = 1, [record]
+    fraction_digits._new_feature(gsub, "calt", fraction_digits._lookup(gsub, 6, chain))
+
+    # 縦組では元のコロンに戻す。lookup は番号の順にかかるので、calt より後の番号で vert・vrt2 に足す
+    back = otTables.SingleSubst()
+    back.mapping = {raised: colon}
+    index = fraction_digits._lookup(gsub, 1, back)
+    for record in gsub.FeatureList.FeatureRecord:
+        if record.FeatureTag in ("vert", "vrt2"):
+            record.Feature.LookupListIndex = record.Feature.LookupListIndex + [index]
+            record.Feature.LookupCount = len(record.Feature.LookupListIndex)
+    latin_symbols.sort_features(gsub)
+    return {"raise": dy}

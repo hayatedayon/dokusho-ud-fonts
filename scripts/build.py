@@ -16,7 +16,7 @@
 4. BIZ UDP から持ってきた字に、BIZ UDP のヒンティングを付ける (hinting.py)
 5. 名前を読書 UD に変え (BIZ UD はモリサワの商標)、等幅の印 (post.isFixedPitch) を外す
 6. 見えない文字・空白・2 倍と 3 倍のダッシュを足す (extra_glyphs.py)
-7. 等幅の数字 (tnum) を足す (tabular_digits.py)
+7. 等幅の数字 (tnum) と、数字の間で持ち上げるコロン (calt) を足す (tabular_digits.py)
 8. 結合用の記号 (アクセントと、仮名の濁点・半濁点) を、前の字に乗せる (combining_marks.py。字幅を
    0 にするのは、欧字を BIZ UDP の字にする前。hwid の置き換え先なら、BIZ UD の字を残す)
 9. 約物の詰め (halt・vhal) と、BIZ UDP の字幅で仮名・約物を詰める palt を足す (spacing.py。
@@ -434,6 +434,7 @@ def build(family: dict, weight: str) -> Path:
     hinted = hinting.add(ud, udp, taken, unhinted)
     extra = extra_glyphs.add(ud)
     tabular = tabular_digits.add(ud)
+    colon = tabular_digits.raise_colon(ud)
     marks = combining_marks.add(ud, prepared)
     spaced = spacing.add(ud, udp, marks["fea"])
 
@@ -461,7 +462,7 @@ def build(family: dict, weight: str) -> Path:
           f"{symbols['symbols']} symbols in Latin text; "
           f"hinting of BIZ UDP on {hinted['hinted']} glyphs (cvt +{hinted['cvt']}); "
           f"{extra['invisible']} invisible, {extra['spaces']} spaces and {extra['dashes']} dashes added; "
-          f"tnum {tabular['tabular']} glyph; {marks['marks']} combining marks on {marks['bases']} bases; "
+          f"tnum {tabular['tabular']} glyph; colon between digits raised by {colon['raise']}; {marks['marks']} combining marks on {marks['bases']} bases; "
           f"halt {spaced['halt']}, vhal {spaced['vhal']}, palt {spaced['palt']} glyphs")
     return out
 

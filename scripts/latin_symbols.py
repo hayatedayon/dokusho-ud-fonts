@@ -12,7 +12,9 @@
   “Hello”と) では、開きの “ は前の和文と同じ組に入り、閉じの ” は英語に入る (Chromium で確かめた)。
   フォントは組の外の字を見られないので、“ の後ろが英語か和文かは分からない。どちらも BIZ UDP の
   字にして、左右をそろえる。縦組では BIZ UD の字のまま (vert・vrt2 で戻す)
-- latn に日本語の言語体系 (JAN) を足し、そこには引用符とアポストロフィの置き換えだけを入れる。
+- 記号だけの組 (用字系の決まらない DFLT。ブラウザは、行末に足すハイフン ‐ を 1 字で組む) も、
+  欧字の用字系と同じにする。1.005 の前までは、英語の文の行末のハイフンが BIZ UD の全角の字だった
+- latn と DFLT に日本語の言語体系 (JAN) を足し、そこには引用符とアポストロフィの置き換えだけを入れる。
   ダッシュ・三点リーダーなどは、日本語の本の使い方 (OK―― など) があるので、日本語の文書では
   BIZ UD の記号のまま
 - 選ぶのは、BIZ UD と BIZ UDP で形か幅が違う記号だけ。同じものは置き換えない
@@ -182,7 +184,19 @@ def add(ud: TTFont, udp: TTFont) -> dict[str, int]:
         if script.Script.LangSysRecord:
             raise SystemExit(f"the {script.ScriptTag} script of BIZ UD has language systems")
         system = script.Script.DefaultLangSys
-        system.FeatureIndex = system.FeatureIndex + [japanese_feature]
+        if script.ScriptTag == "DFLT":
+            # 記号だけの組 (ブラウザが行末に足すハイフン ‐ など、記号を 1 字で組むとき) は、欧字の
+            # 用字系と同じにする。日本語の文書 (JAN) では、引用符とアポストロフィだけ
+            dflt_japanese = otTables.LangSys()
+            dflt_japanese.LookupOrder, dflt_japanese.ReqFeatureIndex = None, system.ReqFeatureIndex
+            dflt_japanese.FeatureIndex = list(system.FeatureIndex) + [japanese_feature]
+            dflt_japanese.FeatureCount = len(dflt_japanese.FeatureIndex)
+            record = otTables.LangSysRecord()
+            record.LangSysTag, record.LangSys = "JAN ", dflt_japanese
+            script.Script.LangSysRecord, script.Script.LangSysCount = [record], 1
+            system.FeatureIndex = system.FeatureIndex + [new]
+        else:
+            system.FeatureIndex = system.FeatureIndex + [japanese_feature]
         system.FeatureCount = len(system.FeatureIndex)
     sort_features(gsub)
     # glyphs は、足した字 → BIZ UDP の元の字 (hinting.py が、その字の命令を入れる)

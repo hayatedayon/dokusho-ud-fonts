@@ -109,6 +109,12 @@ ChangeLog
   the other digits (1065 against 1393 in Mincho Regular), so that columns of
   figures did not line up; with tnum it is as wide as the others, with the
   same shape and the extra space split between both sides.
+- New in Dokusho UD: a colon between two digits is raised to the middle of
+  the digits (calt), as in 11:11 and 0213:2004. BIZ UDP's colon sits
+  between the baseline and the x-height, which suits text but looked low
+  between digits; BIZ UD's half-width colon is centered on them. The raised
+  colon has no hinting, which would pull it back to the baseline. A colon
+  after a word (Note:) and colons in vertical text keep BIZ UDP's glyph.
 - Combining marks sit on the letter before them again. The accents of
   U+0300-036F and the kana voiced and semi-voiced marks U+3099 and U+309A
   had widths of their own (half and full width) in the original fonts,
@@ -124,6 +130,10 @@ ChangeLog
   ı (ccmp). Letters with precomposed forms (é, が) are not affected. The
   half-width ´ ｀ ¨ of hwid, for which BIZ UD uses the glyphs of the
   combining accents, keep BIZ UD's spacing glyphs.
+- Symbols set on their own, in the DFLT script, follow the symbols in Latin
+  text (in documents that are not in Japanese). Browsers set the hyphen ‐
+  they add at the end of a line on its own, and it was BIZ UD's full-width
+  glyph in English text, with a gap after the word; it is BIZ UDP's now.
 - The quotation marks and apostrophe ‘ ’ “ ” take BIZ UDP's glyphs in
   horizontal text everywhere: in documents in Japanese too, where up to
   1.004 they kept BIZ UD's full-width glyphs, English passages included, and

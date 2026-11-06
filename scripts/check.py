@@ -127,7 +127,7 @@ def check_font(family: dict, weight: str) -> None:
     # 縦組の ⸺ ⸻
     fraction_glyphs |= {gsub_mapping(font, "vert").get(cmap.get(code)) for code in (0x2E3A, 0x2E3B)} - {None}
     # 等幅の数字 (tnum) と、字を分け合っていた結合用の記号
-    fraction_glyphs |= outputs(font, ["tnum"]) | {cmap[code] for code in remapped}
+    fraction_glyphs |= outputs(font, ["tnum", "calt"]) | {cmap[code] for code in remapped}
     check(extra == set(latin_symbol_mapping(font, "latn", None).values()) | half_widths | fraction_glyphs,
           f"{label}: glyphs other than the symbols for Latin text, the half widths for hwid and the fraction "
           "digits were added")
@@ -248,6 +248,7 @@ def check_font(family: dict, weight: str) -> None:
     check_marks(label, font, ud)
     check_overflow(label, font, ud, udp)
     check_shaping(label, family, weight)
+    check_colon(label, family, weight)
 
 
 def gpos_values(font: TTFont, tag: str) -> dict:
@@ -335,7 +336,9 @@ def check_latin_symbols(label: str, font: TTFont, ud: TTFont, udp: TTFont) -> No
     check(lang_system(font, "latn", "JAN ") is not None, f"{label}: latn has no JAN language system")
     # 日本語 (latn の JAN) と、和文などほかの用字系では、引用符とアポストロフィだけを置き換える
     quotes = {cmap[code]: latin[cmap[code]] for code in spec.LATIN_QUOTES}
-    for script, language in [("latn", "JAN "), ("hani", None), ("kana", None), ("DFLT", None), ("grek", None),
+    # 記号だけの組 (DFLT) は欧字の用字系と同じ (ブラウザが行末に足すハイフンは、1 字で組まれる)
+    check(latin_symbol_mapping(font, "DFLT", None) == latin, f"{label}: DFLT does not substitute as latn does")
+    for script, language in [("latn", "JAN "), ("DFLT", "JAN "), ("hani", None), ("kana", None), ("grek", None),
                              ("cyrl", None)]:
         check(latin_symbol_mapping(font, script, language) == quotes,
               f"{label}: other symbols than the quotation marks are substituted in {script} {language or 'dflt'}")
@@ -900,6 +903,38 @@ def check_tabular(label: str, font: TTFont) -> None:
           f"{label}: tnum changes the fraction 1/2")
 
 
+def check_colon(label: str, family: dict, weight: str) -> None:
+    """数字の間のコロン (calt)。HarfBuzz で組んで、前後が数字のときだけ、インクの上下の真ん中が数字の
+    真ん中 (中央値) にあり、ヒンティングが無いこと。語の後 (Note:)・字の間 (a:b)・縦組では、元の
+    コロン (BIZ UDP の字) のまま"""
+    path = FONTS / spec.output_name(family, weight)
+    font = TTFont(path)
+    shaper = harfbuzz_shape.Shaper(path)
+    order, cmap = font.getGlyphOrder(), font.getBestCmap()
+    colon = cmap[0x3A]
+    middles = sorted((glyph_bounds(font, cmap[0x30 + d])[1] + glyph_bounds(font, cmap[0x30 + d])[3]) / 2
+                     for d in range(10))
+    middle = (middles[4] + middles[5]) / 2
+
+    def colon_of(text: str, language: str, vertical: bool = False, features=()) -> str:
+        index = len(text[:text.index(":")].encode())  # クラスターは UTF-8 のバイトの位置
+        return next(order[g] for g, c, *_ in shaper.shape(text, language, vertical, features) if c == index)
+
+    for text, language, features in [("11:11", "ja", ()), ("0213:2004", "en", ()), ("1:2", "en", ("tnum",)),
+                                     ("10:01", "en", ("zero",)), ("時刻11:11", "ja", ())]:
+        name = colon_of(text, language, features=features)
+        bounds = glyph_bounds(font, name)
+        check(name != colon and abs((bounds[1] + bounds[3]) / 2 - middle) <= 1,
+              f"{label}: the colon of {text} {list(features)} is not raised to the middle of the digits")
+        program = getattr(font["glyf"][name], "program", None)
+        check(program is None or not program.getBytecode(), f"{label}: the raised colon has hinting")
+    for text, language, vertical in [("Note: 3", "en", False), ("a:b", "en", False), ("1:a", "en", False),
+                                     ("1:2", "ja", True)]:
+        check(colon_of(text, language, vertical) == colon,
+              f"{label}: the colon of {text}{' (vertical)' if vertical else ''} is raised")
+    shaper.close()
+
+
 def mark_attachments(font: TTFont, kind: int) -> list:
     """mark (kind 4) か mkmk (kind 6) の lookup のサブテーブル"""
     gpos = font["GPOS"].table
@@ -1077,7 +1112,7 @@ def check_overflow(label: str, font: TTFont, ud: TTFont, udp: TTFont) -> None:
 # --- 組んで確かめる (HarfBuzz) ----------------------------------------------------------------
 
 # 組むときに前後に置く字。記号には用字系が無く、前後の字の用字系に入る
-JAPANESE_CONTEXTS = [("あ{}あ", "ja"), ("漢{}漢", "ja")]
+JAPANESE_CONTEXTS = [("あ{}あ", "ja"), ("漢{}漢", "ja"), ("{}", "ja")]
 LATIN_CONTEXT = ("a{}a", "en")
 UNICODE_DATA = Path("/usr/share/unicode")
 
@@ -1155,7 +1190,8 @@ def check_shaping(label: str, family: dict, weight: str) -> None:
     - 引用符とアポストロフィ ‘ ’ “ ” は、横組では和文の中でも日本語の文書でも BIZ UDP の字、縦組では
       BIZ UD の字
     - BIZ UD の合字 (欧字から始まるものを除く) と異体字 (IVS) の並びは、BIZ UD と同じに組まれる
-    - 英語の文脈 (横組): 欧字と欧文の中の記号は、BIZ UDP と同じに組まれる。縦組で正立する記号
+    - 英語の文脈 (横組): 欧字と欧文の中の記号は、BIZ UDP と同じに組まれる。1 字だけで組んでも (ブラウザ
+      が行末に足すハイフンなど) 同じ。縦組で正立する記号
       (Unicode の縦書きの向きが U・Tu・Tr) は、縦組でもインクの位置が BIZ UDP と同じ (1 単位まで)
     - 見えない文字 (Default_Ignorable_Code_Point) は、どの文脈でも幅 0
     - 結合用の記号は、前の字のインクの上か下の真ん中に、触れずに付く (欧字・ギリシャ文字・キリル文字。
@@ -1235,6 +1271,9 @@ def check_shaping(label: str, family: dict, weight: str) -> None:
         text = context.format(chr(code))
         if ours.run(text, language, cluster=1) != udp.run(text, language, cluster=1):
             report("in Latin text differs from BIZ UDP", f"U+{code:04X}")
+        # 1 字だけで組む (ブラウザが行末に足すハイフンなど)
+        if ours.run(chr(code), language) != udp.run(chr(code), language):
+            report("alone in Latin text differs from BIZ UDP", f"U+{code:04X}")
         if orientation.get(code, "R") != "R":
             a, b = ours.ink(text, language, True)[1], udp.ink(text, language, True)[1]
             if (a is None) != (b is None) or (a and any(abs(p - q) > 1 for p, q in zip(a, b))):
