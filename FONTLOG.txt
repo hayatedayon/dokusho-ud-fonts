@@ -113,8 +113,10 @@ ChangeLog
   the digits (calt), as in 11:11 and 0213:2004. BIZ UDP's colon sits
   between the baseline and the x-height, which suits text but looked low
   between digits; BIZ UD's half-width colon is centered on them. The raised
-  colon has no hinting, which would pull it back to the baseline. A colon
-  after a word (Note:) and colons in vertical text keep BIZ UDP's glyph.
+  colon has no hinting, which would pull it back to the baseline. So is a
+  colon after Japanese (時刻:), which browsers put into the Japanese run and
+  which looked low next to kanji. A colon after a Latin word (Note:) and
+  colons in vertical text keep BIZ UDP's glyph.
 - Combining marks sit on the letter before them again. The accents of
   U+0300-036F and the kana voiced and semi-voiced marks U+3099 and U+309A
   had widths of their own (half and full width) in the original fonts,

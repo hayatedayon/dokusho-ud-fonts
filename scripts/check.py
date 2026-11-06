@@ -904,7 +904,7 @@ def check_tabular(label: str, font: TTFont) -> None:
 
 
 def check_colon(label: str, family: dict, weight: str) -> None:
-    """数字の間のコロン (calt)。HarfBuzz で組んで、前後が数字のときだけ、インクの上下の真ん中が数字の
+    """数字の間と和文の後のコロン (calt)。HarfBuzz で組んで、前後が数字のときと和文の後で、インクの上下の真ん中が数字の
     真ん中 (中央値) にあり、ヒンティングが無いこと。語の後 (Note:)・字の間 (a:b)・縦組では、元の
     コロン (BIZ UDP の字) のまま"""
     path = FONTS / spec.output_name(family, weight)
@@ -921,7 +921,8 @@ def check_colon(label: str, family: dict, weight: str) -> None:
         return next(order[g] for g, c, *_ in shaper.shape(text, language, vertical, features) if c == index)
 
     for text, language, features in [("11:11", "ja", ()), ("0213:2004", "en", ()), ("1:2", "en", ("tnum",)),
-                                     ("10:01", "en", ("zero",)), ("時刻11:11", "ja", ())]:
+                                     ("10:01", "en", ("zero",)), ("時刻11:11", "ja", ()),
+                                     ("時刻: 11", "ja", ()), ("時刻:", "en", ()), ("カナ:かな", "ja", ())]:
         name = colon_of(text, language, features=features)
         bounds = glyph_bounds(font, name)
         check(name != colon and abs((bounds[1] + bounds[3]) / 2 - middle) <= 1,

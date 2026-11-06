@@ -8,7 +8,8 @@ BIZ UDP の数字は、1 だけがほかの数字より狭い (明朝 Regular �
 BIZ UDP のコロンは、欧文の文章用に、ベースラインから x の高さまでの所にある。数字は x の高さより高い
 ので、11:11 や 0213:2004 では、コロンが数字の真ん中より下に見える (BIZ UD の半角のコロンは、数字の
 真ん中にある)。前後が数字のときだけ、数字の真ん中まで持ち上げたコロン (colon.num) にする (calt。
-ブラウザは既定でかける)。Note: のように語の後のコロンは、そのまま。作った字にはヒンティングを付けない
+ブラウザは既定でかける)。和文の後のコロン (時刻: など。和文の用字系の組に入る) も、漢字の横で低く
+見えないように持ち上げる。Note: のように欧文の語の後のコロンは、そのまま。作った字にはヒンティングを付けない
 (BIZ UDP の命令は、点をベースラインと x の高さに合わせて戻す)。縦組では、元のコロンに戻す (vert・vrt2。
 縦組の数字の間で、コロンが上の字に寄らないように)
 """
@@ -104,7 +105,30 @@ def raise_colon(font: TTFont) -> dict[str, int]:
     record = otTables.SubstLookupRecord()
     record.SequenceIndex, record.LookupListIndex = 0, nested
     chain.SubstCount, chain.SubstLookupRecord = 1, [record]
-    fraction_digits._new_feature(gsub, "calt", fraction_digits._lookup(gsub, 6, chain))
+    between = fraction_digits._lookup(gsub, 6, chain)
+    fraction_digits._new_feature(gsub, "calt", between)
+
+    # 和文の後のコロン (時刻: など) も持ち上げる。ブラウザは和文の後の記号を和文の組 (kana・hani) に入れる。
+    # 文字を並べる仕組みは、1 つの言語体系で同じタグの機能を 1 つしか使わないので、和文の用字系の calt は、
+    # 数字の間の lookup と合わせた別の機能にする
+    japanese = otTables.SingleSubst()
+    japanese.mapping = {colon: raised}
+    feature = otTables.Feature()
+    feature.FeatureParams = None
+    feature.LookupListIndex = [between, fraction_digits._lookup(gsub, 1, japanese)]
+    feature.LookupCount = 2
+    record = otTables.FeatureRecord()
+    record.FeatureTag, record.Feature = "calt", feature
+    gsub.FeatureList.FeatureRecord.append(record)
+    gsub.FeatureList.FeatureCount = len(gsub.FeatureList.FeatureRecord)
+    common = next(i for i, r in enumerate(gsub.FeatureList.FeatureRecord)
+                  if r.FeatureTag == "calt" and r.Feature.LookupListIndex == [between])
+    for script in gsub.ScriptList.ScriptRecord:
+        if script.ScriptTag in ("kana", "hani"):
+            system = script.Script.DefaultLangSys
+            system.FeatureIndex = [i for i in system.FeatureIndex if i != common] + \
+                [len(gsub.FeatureList.FeatureRecord) - 1]
+            system.FeatureCount = len(system.FeatureIndex)
 
     # 縦組では元のコロンに戻す。lookup は番号の順にかかるので、calt より後の番号で vert・vrt2 に足す
     back = otTables.SingleSubst()
