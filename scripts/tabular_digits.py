@@ -1,0 +1,49 @@
+"""等幅の数字 (tnum) を作る。build.py が使う。
+
+BIZ UDP の数字は、1 だけがほかの数字より狭い (明朝 Regular では 1065、ほかは 1393)。表や目次の
+ページ番号で桁がそろうように、1 の左右に同じだけ空きを足して、ほかの数字と同じ字幅にした字
+(one.tnum) を足し、tnum でそれにする。形とヒンティングは 1 のまま (横にずらすだけ)。プロポーショナル
+の数字 (pnum) は、今の数字のままなので足さない。
+"""
+
+import copy
+
+from fontTools.ttLib import TTFont
+from fontTools.ttLib.tables import otTables
+
+import fraction_digits
+import latin_symbols
+
+SUFFIX = ".tnum"
+
+
+def add(font: TTFont) -> dict[str, int]:
+    cmap = font.getBestCmap()
+    digits = [cmap[0x30 + d] for d in range(10)]
+    widths = {font["hmtx"][name][0] for name in digits}
+    width = font["hmtx"][digits[0]][0]
+    narrow = [name for name in digits if font["hmtx"][name][0] != width]
+    if len(widths) > 2 or any(font["hmtx"][name][0] > width for name in digits):
+        raise SystemExit(f"the digits have unexpected widths: {sorted(widths)}")
+    gsub = font["GSUB"].table
+    if any(r.FeatureTag == "tnum" for r in gsub.FeatureList.FeatureRecord):
+        raise SystemExit("the font already has tnum")
+
+    mapping = {}
+    for name in narrow:
+        glyph = copy.deepcopy(font["glyf"][name])
+        glyph.expand(font["glyf"])
+        if glyph.isComposite():
+            raise SystemExit(f"{name} is a composite glyph")
+        advance, _side = font["hmtx"][name]
+        dx = (width - advance) // 2
+        glyph.coordinates.translate((dx, 0))
+        new = name + SUFFIX
+        fraction_digits._add_glyph(font, new, glyph, width, font["vmtx"][name])
+        mapping[name] = new
+
+    subtable = otTables.SingleSubst()
+    subtable.mapping = mapping
+    fraction_digits._new_feature(gsub, "tnum", fraction_digits._lookup(gsub, 1, subtable))
+    latin_symbols.sort_features(gsub)
+    return {"tabular": len(mapping), "width": width}

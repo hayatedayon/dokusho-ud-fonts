@@ -16,7 +16,11 @@
 4. BIZ UDP から持ってきた字に、BIZ UDP のヒンティングを付ける (hinting.py)
 5. 名前を読書 UD に変え (BIZ UD はモリサワの商標)、等幅の印 (post.isFixedPitch) を外す
 6. 見えない文字・空白・2 倍と 3 倍のダッシュを足す (extra_glyphs.py)
-7. 約物の詰め (halt・vhal) と、BIZ UDP の字幅で仮名・約物を詰める palt を足す (spacing.py)
+7. 等幅の数字 (tnum) を足す (tabular_digits.py)
+8. 結合用の記号 (アクセントと、仮名の濁点・半濁点) を、前の字に乗せる (combining_marks.py。字幅を
+   0 にするのは、欧字を BIZ UDP の字にする前。hwid の置き換え先なら、BIZ UD の字を残す)
+9. 約物の詰め (halt・vhal) と、BIZ UDP の字幅で仮名・約物を詰める palt を足す (spacing.py。
+   結合用の記号の mark・mkmk と GDEF も、ここで一緒に組み込む)
 
 BIZ UD と BIZ UDP は、ヒンティングの cvt と prep が違う。BIZ UDP から持ってきた字の命令は、
 いったん外し (BIZ UD の cvt では正しく働かない)、hinting.py が cvt と prep を付け足してから、
@@ -34,12 +38,14 @@ from fontTools.misc.timeTools import epoch_diff as EPOCH_DIFF
 from fontTools.ttLib.tables._g_l_y_f import Glyph
 
 import fetch_sources
+import combining_marks
 import extra_glyphs
 import fraction_digits
 import hinting
 import latin_symbols
 import spacing
 import spec
+import tabular_digits
 
 ROOT = Path(__file__).resolve().parent.parent
 SOURCES = ROOT / "sources"
@@ -289,7 +295,7 @@ def save_half_widths(ud: TTFont) -> dict:
     return {"glyphs": saved, "vrt2": single_mapping(gsub, "vrt2", targets)}
 
 
-def keep_half_widths(ud: TTFont, saved: dict, changed: set[str]) -> int:
+def keep_half_widths(ud: TTFont, saved: dict, changed: set[str], marks: set[str] = frozenset()) -> int:
     """hwid の置き換え先のうち、BIZ UDP の字にしたもの (changed) は、BIZ UD の半角の字を
     <名前>.hwid として足し、hwid をそれにつなぐ (BIZ UDP の欧字につなぐと、半角にならない。
     ％ は全角より広くなる)。縦組の置き換え (vrt2) も、BIZ UD と同じ横に倒した字につなぐ。
@@ -301,6 +307,9 @@ def keep_half_widths(ud: TTFont, saved: dict, changed: set[str]) -> int:
     - その字の字形の候補 (aalt) に、半角の字も出す。全角の字 (Ａ) の候補では、欧字 (A) のすぐ後に、
       欧字の候補では、全角の字のすぐ後 (無ければ先頭) に置く
 
+    marks は、字幅 0 にした結合用の記号 (combining_marks.py)。BIZ UD の字を残して hwid をつなぐが、
+    記号そのものからは hwid も字形の候補も足さない
+
     足した字の数を返す"""
     gsub = ud["GSUB"].table
     hwid = feature_subtables(gsub, "hwid", "mapping")
@@ -309,7 +318,9 @@ def keep_half_widths(ud: TTFont, saved: dict, changed: set[str]) -> int:
     differs: set[str] = set()  # 横組の形か字幅が BIZ UD と違う字 (* などは同じで、縦組の字だけが違う)
     for name in sorted(set(saved["glyphs"]) & changed):
         glyph, horizontal, vertical = saved["glyphs"][name]
-        if (ud["hmtx"][name], ud["vmtx"][name]) != (horizontal, vertical) or \
+        if name in marks:
+            pass
+        elif (ud["hmtx"][name], ud["vmtx"][name]) != (horizontal, vertical) or \
                 ud["glyf"][name].getCoordinates(ud["glyf"]) != glyph.getCoordinates(ud["glyf"]):
             differs.add(name)
         new = name + HALF_WIDTH_SUFFIX
@@ -411,8 +422,9 @@ def build(family: dict, weight: str) -> Path:
         raise SystemExit("BIZ UD and BIZ UDP have different units per em")
     versions = (source_version(ud), source_version(udp))
     half_widths = save_half_widths(ud)
+    prepared = combining_marks.prepare(ud)
     stats = merge_latin(ud, udp)
-    kept = keep_half_widths(ud, half_widths, set(stats["glyphs"]))
+    kept = keep_half_widths(ud, half_widths, set(stats["glyphs"]) | prepared["changed"], prepared["changed"])
     fractions = fraction_digits.add(ud, udp)
     symbols = latin_symbols.add(ud, udp)
     # BIZ UDP から持ってきた字 (読書 UD のグリフ名 → BIZ UDP のグリフ名)
@@ -421,7 +433,9 @@ def build(family: dict, weight: str) -> Path:
     unhinted = {cmap_udp[code] for code in spec.UNHINTED if code in cmap_udp}
     hinted = hinting.add(ud, udp, taken, unhinted)
     extra = extra_glyphs.add(ud)
-    spaced = spacing.add(ud, udp)
+    tabular = tabular_digits.add(ud)
+    marks = combining_marks.add(ud, prepared)
+    spaced = spacing.add(ud, udp, marks["fea"])
 
     rename(ud, family, weight, versions)
     ud["post"].isFixedPitch = 0
@@ -447,6 +461,7 @@ def build(family: dict, weight: str) -> Path:
           f"{symbols['symbols']} symbols in Latin text; "
           f"hinting of BIZ UDP on {hinted['hinted']} glyphs (cvt +{hinted['cvt']}); "
           f"{extra['invisible']} invisible, {extra['spaces']} spaces and {extra['dashes']} dashes added; "
+          f"tnum {tabular['tabular']} glyph; {marks['marks']} combining marks on {marks['bases']} bases; "
           f"halt {spaced['halt']}, vhal {spaced['vhal']}, palt {spaced['palt']} glyphs")
     return out
 

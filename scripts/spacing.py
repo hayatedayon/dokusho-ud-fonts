@@ -136,8 +136,9 @@ def proportional(font: TTFont, udp: TTFont) -> dict[str, tuple[int, int, int, in
     return values
 
 
-def add(font: TTFont, udp: TTFont) -> dict[str, int]:
-    """GPOS に halt・vhal・palt を作る (元の BIZ UD には GPOS が無い)。用字系は GSUB と同じにする"""
+def add(font: TTFont, udp: TTFont, extra: str = "") -> dict[str, int]:
+    """GPOS に halt・vhal・palt を作る (元の BIZ UD には GPOS が無い)。用字系は GSUB と同じにする。
+    extra は、一緒に組み込む機能ファイルの文 (結合用の記号の mark・mkmk と GDEF。combining_marks.py)"""
     if "GPOS" in font:
         raise SystemExit("the font already has GPOS; merge the features instead of replacing it")
     values = plan(font)
@@ -149,5 +150,7 @@ def add(font: TTFont, udp: TTFont) -> dict[str, int]:
         for glyph, (x, y, x_advance, y_advance) in sorted(glyphs.items()):
             lines.append(f"  pos {glyph} <{x} {y} {x_advance} {y_advance}>;")
         lines.append(f"}} {tag};")
-    addOpenTypeFeaturesFromString(font, "\n".join(lines) + "\n", tables=["GPOS"])
+    lines.append(extra)
+    tables = ["GPOS", "GDEF"] if "table GDEF" in extra else ["GPOS"]
+    addOpenTypeFeaturesFromString(font, "\n".join(lines) + "\n", tables=tables)
     return {tag: len(glyphs) for tag, glyphs in values.items()}

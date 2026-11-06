@@ -4,6 +4,7 @@ build.py とは別の書き方で、できたものだけを見る。1 つでも
 """
 
 import sys
+import unicodedata
 from pathlib import Path
 from statistics import median
 
@@ -107,10 +108,13 @@ def check_font(family: dict, weight: str) -> None:
     cmap, cmap_ud, cmap_udp = font.getBestCmap(), ud.getBestCmap(), udp.getBestCmap()
     em = font["head"].unitsPerEm
 
-    # 文字の割り当ては BIZ UD のまま。足すのは、作った上付きの数字 ⁰ ⁵ ⁶ ⁷ ⁸ ⁹ だけ
+    # 文字の割り当ては BIZ UD のまま。足すのは、作った上付きの数字 ⁰ ⁵ ⁶ ⁷ ⁸ ⁹ などだけ。変えるのは、
+    # ほかの文字と字を分け合っていた結合用の記号 (˜ U+02DC と同じ字の U+0303) だけ
     added = {code: cmap[code] for code in cmap.keys() - cmap_ud.keys()}
-    check({code: g for code, g in cmap.items() if code in cmap_ud} == cmap_ud
-          and set(added) == set(NEW_SUPERSCRIPTS) | set(EXTRA_CODES),
+    remapped = {code for code in cmap_ud if cmap.get(code) != cmap_ud[code]}
+    shared_marks = {code for code in combining_codes(cmap_ud)
+                    if any(c != code and g == cmap_ud[code] for c, g in cmap_ud.items())}
+    check(remapped <= shared_marks and set(added) == set(NEW_SUPERSCRIPTS) | set(EXTRA_CODES),
           f"{label}: the character map differs from BIZ UD by more than the superscripts and subscripts")
     # BIZ UD のグリフの後に、欧文の中の記号 (BIZ UDP の字) だけが足してあること
     order, order_ud = font.getGlyphOrder(), ud.getGlyphOrder()
@@ -121,6 +125,8 @@ def check_font(family: dict, weight: str) -> None:
     fraction_glyphs = (set(added.values()) | outputs(font, spec.FRACTION_FEATURES)) - set(order_ud)
     # 縦組の ⸺ ⸻
     fraction_glyphs |= {gsub_mapping(font, "vert").get(cmap.get(code)) for code in (0x2E3A, 0x2E3B)} - {None}
+    # 等幅の数字 (tnum) と、字を分け合っていた結合用の記号
+    fraction_glyphs |= outputs(font, ["tnum"]) | {cmap[code] for code in remapped}
     check(extra == set(latin_symbol_mapping(font, "latn", None).values()) | half_widths | fraction_glyphs,
           f"{label}: glyphs other than the symbols for Latin text, the half widths for hwid and the fraction "
           "digits were added")
@@ -181,7 +187,8 @@ def check_font(family: dict, weight: str) -> None:
     ours_hwid, ud_hwid = gsub_mapping(font, "hwid"), gsub_mapping(ud, "hwid")
     ours_vrt2, ud_vrt2 = gsub_mapping(font, "vrt2"), gsub_mapping(ud, "vrt2")
     expected = dict(ud_hwid)
-    for name in set(ud_hwid.values()):
+    mark_glyphs = {cmap_ud[code] for code in combining_codes(cmap_ud)}
+    for name in set(ud_hwid.values()) - mark_glyphs:  # 字幅 0 にした結合用の記号からは、hwid は無い
         if name in font["hmtx"].metrics and (font["hmtx"][name] != ud["hmtx"][name] or outline(font, name) != outline(ud, name)):
             expected[name] = name
     check(ours_hwid.keys() == expected.keys(), f"{label}: hwid covers {len(ours_hwid)} glyphs, not {len(expected)}")
@@ -236,6 +243,9 @@ def check_font(family: dict, weight: str) -> None:
     check_fractions(label, font, udp)
     check_extra(label, font)
     check_proportional(label, font, udp)
+    check_tabular(label, font)
+    check_marks(label, font, ud)
+    check_overflow(label, font, ud, udp)
 
 
 def gpos_values(font: TTFont, tag: str) -> dict:
@@ -841,6 +851,216 @@ def check_proportional(label: str, font: TTFont, udp: TTFont) -> None:
     check(not missing, f"{label}: {len(missing)} characters lack palt, such as {missing[:5]}")
     for char in "漢字読書":
         check(cmap[ord(char)] not in palt, f"{label}: {char} has palt")
+
+
+# --- 等幅の数字・結合用の記号・行からのはみ出し ------------------------------------------------
+
+def combining_codes(cmap: dict) -> list[int]:
+    return sorted(code for code in cmap if unicodedata.category(chr(code)) in ("Mn", "Me"))
+
+
+def moved_by(font: TTFont, name: str, other: TTFont, other_name: str):
+    """font の name の輪郭が、other の other_name の輪郭を平行に動かしたものなら、その (dx, dy)"""
+    a, b = outline(font, name), outline(other, other_name)
+    if a[1:] != b[1:] or not a[0]:
+        return None
+    dx, dy = a[0][0][0] - b[0][0][0], a[0][0][1] - b[0][0][1]
+    return (dx, dy) if all((x - u, y - v) == (dx, dy) for (x, y), (u, v) in zip(a[0], b[0])) else None
+
+
+def check_tabular(label: str, font: TTFont) -> None:
+    """tnum で、数字 0〜9 が同じ字幅になり、狭い字 (1) は形を変えずに左右に同じだけ空きを足したもので
+    あること。分数 (frac) と一緒にかけても、分数は変わらないこと"""
+    cmap = font.getBestCmap()
+    tnum = gsub_mapping(font, "tnum")
+    digits = [cmap[0x30 + d] for d in range(10)]
+    tabular = [tnum.get(g, g) for g in digits]
+    widths = {font["hmtx"][g][0] for g in tabular}
+    check(len(widths) == 1, f"{label}: tnum gives digits of the widths {sorted(widths)}")
+    width = font["hmtx"][digits[0]][0]
+    for g, t in zip(digits, tabular):
+        if t == g:
+            continue
+        extra = width - font["hmtx"][g][0]
+        check(moved_by(font, t, font, g) == (extra // 2, 0),
+              f"{label}: tnum of {g} is not {g} with {extra // 2} more on each side")
+    check(set(tnum) <= set(digits), f"{label}: tnum changes other glyphs than the digits")
+    check(shape(font, "1/2", {"frac", "tnum"}) == shape(font, "1/2", {"frac"}),
+          f"{label}: tnum changes the fraction 1/2")
+
+
+def mark_attachments(font: TTFont, kind: int) -> list:
+    """mark (kind 4) か mkmk (kind 6) の lookup のサブテーブル"""
+    gpos = font["GPOS"].table
+    tag = "mark" if kind == 4 else "mkmk"
+    result = []
+    for record in gpos.FeatureList.FeatureRecord:
+        if record.FeatureTag == tag:
+            for index in record.Feature.LookupListIndex:
+                lookup = gpos.LookupList.Lookup[index]
+                if lookup.LookupType == kind:
+                    result += [s for s in lookup.SubTable if s not in result]
+    return result
+
+
+def attach(font: TTFont, base: str, mark: str, kind: int = 4):
+    """base の後の mark の、インクの外形 (base の原点からの位置)。付けられなければ None"""
+    for subtable in mark_attachments(font, kind):
+        if kind == 4:
+            bases, marks = subtable.BaseCoverage.glyphs, subtable.MarkCoverage.glyphs
+            records = subtable.BaseArray.BaseRecord
+        else:
+            bases, marks = subtable.Mark2Coverage.glyphs, subtable.Mark1Coverage.glyphs
+            records = subtable.Mark2Array.Mark2Record
+        if base not in bases or mark not in marks:
+            continue
+        mark_array = subtable.MarkArray if kind == 4 else subtable.Mark1Array
+        mark_record = mark_array.MarkRecord[marks.index(mark)]
+        record = records[bases.index(base)]
+        base_anchor = (record.BaseAnchor if kind == 4 else record.Mark2Anchor)[mark_record.Class]
+        if base_anchor is None:
+            continue
+        dx = base_anchor.XCoordinate - mark_record.MarkAnchor.XCoordinate
+        dy = base_anchor.YCoordinate - mark_record.MarkAnchor.YCoordinate
+        x0, y0, x1, y1 = glyph_bounds(font, mark)
+        return x0 + dx, y0 + dy, x1 + dx, y1 + dy
+    return None
+
+
+def check_marks(label: str, font: TTFont, ud: TTFont) -> None:
+    """結合用の記号 (アクセント U+0300〜036F と、濁点・半濁点 U+3099・U+309A)。
+    - 字幅が 0 で、形は BIZ UD の字を横に動かしただけ。GDEF で記号の字
+    - 上の記号は、欧字・ギリシャ文字・キリル文字の上の真ん中に、字に触れずに乗る。下の記号は、
+      下の真ん中に付き、ディセンダーのある字では、その下に下がる
+    - 上の記号を 2 つ続けると、後の記号は前の記号の上に乗る (mkmk)
+    - 濁点・半濁点は、仮名の枠の中で、高さは BIZ UD の字のまま、右の端が合成済みの字 (が など) の
+      濁点の右の端の範囲に入る
+    - i の後に上の記号が続くと、点の無い ı になる (ccmp)
+    - BIZ UD の半角の ´ ｀ ¨ (hwid) は、BIZ UD の字のまま"""
+    cmap, cmap_ud = font.getBestCmap(), ud.getBestCmap()
+    em = font["head"].unitsPerEm
+    if "GDEF" not in font or font["GDEF"].table.GlyphClassDef is None:
+        problems.append(f"{label}: no GDEF glyph classes")
+        return
+    classes = font["GDEF"].table.GlyphClassDef.classDefs
+    codes = combining_codes(cmap)
+    check(codes == combining_codes(cmap_ud), f"{label}: other combining marks than in BIZ UD")
+    for code in codes:
+        g = cmap[code]
+        check(font["hmtx"][g][0] == 0 and font["vmtx"][g][0] == 0, f"{label}: U+{code:04X} is not of zero width")
+        check(classes.get(g) == 3, f"{label}: U+{code:04X} is not a mark in GDEF")
+        moved = moved_by(font, g, ud, cmap_ud[code])
+        check(moved is not None and moved[1] == 0 and moved[0] < 0,
+              f"{label}: U+{code:04X} is not BIZ UD's glyph moved to the left")
+
+    x_height = glyph_bounds(font, cmap[0x78])[3]
+    bases = [cmap[c] for c in cmap
+             if (c in spec.LATIN or 0x0370 <= c <= 0x052F) and unicodedata.category(chr(c))[0] in "LN"
+             and glyph_bounds(font, cmap[c]) is not None]
+    above = [c for c in codes if unicodedata.combining(chr(c)) == 230]
+    below = [c for c in codes if unicodedata.combining(chr(c)) == 220]
+    for base in bases:
+        bx0, by0, bx1, by1 = glyph_bounds(font, base)
+        center = (bx0 + bx1) / 2
+        for code in above + below:
+            placed = attach(font, base, cmap[code])
+            if placed is None:
+                problems.append(f"{label}: U+{code:04X} does not attach to {base}")
+                continue
+            x0, y0, x1, y1 = placed
+            check(abs((x0 + x1) / 2 - center) <= 1, f"{label}: U+{code:04X} is not centered on {base}")
+            if code in above:
+                check(y0 > by1, f"{label}: U+{code:04X} touches {base}")
+            else:
+                lowered = by0 if by0 < -em / 16 else 0  # ディセンダーのある字だけ、その下へ
+                check(abs(y1 - (glyph_bounds(font, cmap[code])[3] + lowered)) <= 1,
+                      f"{label}: U+{code:04X} is not under {base}")
+    for code in above:
+        first = attach(font, cmap[0x6F], cmap[code])
+        second = attach(font, cmap[code], cmap[code], 6)
+        check(first is not None and second is not None and second[1] + (first[1] - glyph_bounds(font, cmap[code])[1]) > first[3],
+              f"{label}: U+{code:04X} does not stack on itself")
+
+    for mark in (0x3099, 0x309A):
+        ends = []
+        for code in range(0x3041, 0x3100):
+            parts = unicodedata.decomposition(chr(code)).split()
+            if len(parts) == 2 and int(parts[1], 16) == mark:
+                ends.append((int(parts[0], 16), glyph_bounds(font, cmap[code])[2]))
+        low, high = min(e for _, e in ends), max(e for _, e in ends)
+        design = glyph_bounds(ud, cmap_ud[mark])
+        for base_code, _end in ends:
+            placed = attach(font, cmap[base_code], cmap[mark])
+            if placed is None:
+                problems.append(f"{label}: U+{mark:04X} does not attach to U+{base_code:04X}")
+                continue
+            x0, y0, x1, y1 = placed
+            check(0 <= x0 and x1 <= em and low <= x1 <= high and (y0, y1) == (design[1], design[3]),
+                  f"{label}: U+{mark:04X} on U+{base_code:04X} is not where the precomposed kana have it")
+
+    # i と上の記号 → ı (ccmp の文脈の置き換え)
+    gsub = font["GSUB"].table
+    i, dotless = cmap[0x69], cmap[0x131]
+    found = False
+    for index in feature_lookup_indexes(font, {"ccmp"}):
+        if lookup_type(gsub, index) != 6:
+            continue
+        for subtable in lookup_subtables(gsub, index):
+            if (subtable.Format == 3 and i in subtable.InputCoverage[0].glyphs and subtable.LookAheadCoverage
+                    and {cmap[c] for c in above} <= set(subtable.LookAheadCoverage[0].glyphs)):
+                found = all(dict(next(iter(lookup_subtables(gsub, r.LookupListIndex))).mapping).get(i) == dotless
+                            for r in subtable.SubstLookupRecord)
+    check(found, f"{label}: i before marks above does not become dotless")
+
+    # BIZ UD の hwid の置き換え先だった結合用の記号 (半角の ´ ｀ ¨) は、BIZ UD の字のまま
+    hwid, hwid_ud = gsub_mapping(font, "hwid"), gsub_mapping(ud, "hwid")
+    marks_ud = {cmap_ud[c] for c in codes}
+    for key, value in hwid_ud.items():
+        if value in marks_ud:
+            ours = hwid.get(key)
+            check(ours is not None and font["hmtx"][ours] == ud["hmtx"][value] and outline(font, ours) == outline(ud, value),
+                  f"{label}: hwid of {key} is not BIZ UD's half-width {value}")
+
+
+def overflow(font: TTFont, name: str) -> tuple[int, int]:
+    """字のインクが、行の上 (usWinAscent) と下 (usWinDescent) から出る量"""
+    bounds = glyph_bounds(font, name)
+    if bounds is None:
+        return 0, 0
+    os2 = font["OS/2"]
+    return max(0, bounds[3] - os2.usWinAscent), max(0, -os2.usWinDescent - bounds[1])
+
+
+def check_overflow(label: str, font: TTFont, ud: TTFont, udp: TTFont) -> None:
+    """行の上と下 (usWinAscent・usWinDescent。Windows はその外を描かない) からのはみ出しが、元の
+    フォントより増えていないこと。BIZ UD の字は、同じ名前の BIZ UD か BIZ UDP の字 (欧字は BIZ UDP の
+    字にした) より出ないこと。足した字は、出ないか、元のフォントのはみ出す字をそのまま写したもの。
+    縦組の ⸺ ⸻ (下へ 2 em・3 em 伸びる、縦の字送りの向きの字) は除く"""
+    order_ud = set(ud.getGlyphOrder())
+    names_udp = set(udp.getGlyphOrder())
+    cmap = font.getBestCmap()
+    vertical_dashes = {gsub_mapping(font, "vert").get(cmap.get(code)) for code in (0x2E3A, 0x2E3B)}
+    copies = {}
+    for source in (ud, udp):
+        for name in source.getGlyphOrder():
+            out = overflow(source, name)
+            if any(out):
+                copies.setdefault(tuple(outline(source, name)[0]), out)
+    found = []
+    for name in font.getGlyphOrder():
+        out = overflow(font, name)
+        if not any(out) or name in vertical_dashes:
+            continue
+        if name in order_ud:
+            allowed = [overflow(ud, name)] + ([overflow(udp, name)] if name in names_udp else [])
+            ok = any(out[0] <= a[0] and out[1] <= a[1] for a in allowed)
+        else:
+            source = copies.get(tuple(outline(font, name)[0]))
+            ok = source is not None and out[0] <= source[0] and out[1] <= source[1]
+        if not ok:
+            found.append(name)
+    check(not found, f"{label}: {len(found)} glyphs reach farther out of the line than in the original fonts, "
+                     f"such as {found[:5]}")
 
 
 def check_license() -> None:

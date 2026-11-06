@@ -105,6 +105,25 @@ ChangeLog
   U+202F and U+205F with the widths Unicode gives them, and the invisible
   characters U+200B, U+200C, U+200D, U+2060 and U+FEFF as empty glyphs of
   no width, which some environments otherwise draw as boxes.
+- New in Dokusho UD: tabular figures (tnum). BIZ UDP's 1 is narrower than
+  the other digits (1065 against 1393 in Mincho Regular), so that columns of
+  figures did not line up; with tnum it is as wide as the others, with the
+  same shape and the extra space split between both sides.
+- Combining marks sit on the letter before them again. The accents of
+  U+0300-036F and the kana voiced and semi-voiced marks U+3099 and U+309A
+  had widths of their own (half and full width) in the original fonts,
+  which have no GPOS; HarfBuzz (Chromium, Firefox, Android) then zeroes
+  their widths and places them over the letter itself, but no longer does
+  so in fonts with GPOS, which Dokusho UD has had since 1.002 for halt. So
+  q̃ had its tilde right of the q, and あ゙ its mark after あ. They now have
+  no width, are moved left over the letter before them, and attach with
+  mark (centered above or below the Latin, Greek and Cyrillic letters, as
+  in моло́ко, and lowered under descenders) and mkmk (stacked); GDEF marks
+  them. The kana marks attach where the precomposed kana (が, ぱ) have
+  theirs, in vertical text too. i before a mark above becomes the dotless
+  ı (ccmp). Letters with precomposed forms (é, が) are not affected. The
+  half-width ´ ｀ ¨ of hwid, for which BIZ UD uses the glyphs of the
+  combining accents, keep BIZ UD's spacing glyphs.
 - The version string (name ID 5) of Dokusho UD Gothic names the versions of
   its sources correctly, BIZ UDGothic 1.05 and BIZ UDPGothic 1.051. Up to
   1.004 it said 1.06 for both, the version of the Mincho sources. The
@@ -115,7 +134,11 @@ ChangeLog
   that hwid gives BIZ UD's half-width glyphs, also from the Latin letters,
   and that aalt offers them. They apply frac to check the fractions and the
   spacing around the slash, and compare the weight of the new superscripts
-  with ¹ ² ³ ⁴.
+  with ¹ ² ³ ⁴. They check tnum and where the combining marks attach, and
+  that no glyph reaches farther above usWinAscent or below usWinDescent
+  (where Windows GDI stops drawing) than in the original fonts: ‚ „ and,
+  in Mincho Bold, the Greek letters with tonos do, by 16 to 51 units, as
+  in BIZ UD and BIZ UDP. scripts/overflow_page.py draws them.
 
 2026-11-04 (hayatedayon) Dokusho UD 1.004
 - The glyphs taken from BIZ UDP (the Latin letters, their GSUB targets and

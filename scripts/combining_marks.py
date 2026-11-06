@@ -1,0 +1,264 @@
+"""結合用の記号 (アクセント U+0300〜036F と、仮名の濁点・半濁点 U+3099・U+309A) を、前の字に乗せる。
+build.py が使う。
+
+元のフォントの結合用の記号は、字幅のある字 (アクセントは半角、濁点・半濁点は全角) で、GPOS も GDEF
+も無い。HarfBuzz (Chromium・Firefox・Android など) は、GPOS の無いフォントでは、結合用の記号の
+字幅を 0 にして、前の字の上か下に置く (代わりの位置合わせ)。読書 UD は halt などの GPOS を足したので、
+これが働かず、q̃ の ~ が q の右に、あ゙ の濁点が あ の後ろに出ていた。合成済みの字 (é・が など) の
+ある組み合わせは、文字を並べる仕組みが合成済みの字にするので変わらない。
+
+1. 結合用の記号の字を、字幅 0 にして、前の字に重なるように左へずらす (アクセントは元の字幅の半角
+   だけ、二つの字にかかる記号 ͡ は半角の半分、濁点・半濁点は、前の字の枠の右上になる所へ)。BIZ UD
+   は、半角の ´ ｀ ¨ (hwid の置き換え先) にも結合用のアクセントの字を使うので、その字は build.py が
+   BIZ UD の字のまま <名前>.hwid として残す。˜ (U+02DC) と同じ字の U+0303 には、別の字
+   (<名前>.mark) を足す。合字 (ccmp の ə と結合用のアクセントなど) は、そのままつながる
+2. GDEF で、新しい字を記号、前に来る字 (欧字・ギリシャ文字・キリル文字と仮名) を基底の字とし、
+   GPOS の mark と mkmk を作る (spacing.py が halt などと一緒に組み込む)。アンカーの位置は:
+   - 上の記号 (結合クラス 230): 字のインクの左右の真ん中の、インクの上。x の高さより低い字は x の
+     高さ。記号のアンカーは x の高さなので、x の高さの字では、記号は元の字の高さのまま
+   - 右上の記号 (232): 字のインクの右の上
+   - 下の記号 (220): ベースライン。ディセンダーのある字 (インクの下が em の 1/16 より下) は、
+     インクの下
+   - 重ねる記号 (1): x の高さか字の高さの半分
+   - 濁点・半濁点: 合成済みの濁音・半濁音の字 (が・ぱ など) の、濁点・半濁点の右の端の中央値に、
+     記号の右の端がそろう所。高さは元の字のまま
+   - 上の記号の上と、下の記号の下に、もう一つ重ねられる (mkmk)
+3. i の後に上の記号が続くときは、点の無い ı にする (ccmp)
+"""
+
+import copy
+import unicodedata
+from statistics import median
+
+from fontTools.pens.boundsPen import BoundsPen
+from fontTools.ttLib import TTFont
+from fontTools.ttLib.tables import otTables
+
+import fraction_digits
+import spec
+
+SUFFIX = ".mark"
+KANA_MARKS = {0x3099: "voiced", 0x309A: "semivoiced"}
+# 結合クラス → 記号の置き方
+KINDS = {230: "above", 232: "aboveright", 220: "below", 1: "overlay", 233: "double", 234: "double"}
+# アクセントを乗せる字 (欧字と、全角のギリシャ文字・キリル文字。キリル文字の強勢記号 моло́ко など)
+BASE_RANGES = [(0x0370, 0x03FF), (0x0400, 0x052F)]
+KANA_RANGES = [(0x3041, 0x30FF), (0x31F0, 0x31FF)]
+
+
+def kind(code: int) -> str:
+    if code in KANA_MARKS:
+        return "kana"
+    combining = unicodedata.combining(chr(code))
+    if combining not in KINDS:
+        raise SystemExit(f"U+{code:04X} has the combining class {combining}, which is not handled")
+    return KINDS[combining]
+
+
+def ink(font: TTFont, name: str):
+    """インクの外形 (曲線そのものの外形。glyf の外形は、曲線の外の制御点も含む)"""
+    glyph_set = font.getGlyphSet()
+    pen = BoundsPen(glyph_set)
+    glyph_set[name].draw(pen)
+    return pen.bounds
+
+
+def unicode_tables(font: TTFont):
+    return [table for table in font["cmap"].tables if table.isUnicode()]
+
+
+def kana_target(font: TTFont, mark: int) -> float:
+    """合成済みの濁音・半濁音の字の、インクの右の端 (濁点・半濁点の右の端) の中央値"""
+    cmap = font.getBestCmap()
+    ends = []
+    for code in range(0x3041, 0x3100):
+        parts = unicodedata.decomposition(chr(code)).split()
+        if len(parts) == 2 and int(parts[1], 16) == mark and code in cmap:
+            ends.append(ink(font, cmap[code])[2])
+    if len(ends) < 5:
+        raise SystemExit(f"too few precomposed kana with U+{mark:04X}")
+    return median(ends)
+
+
+def prepare(font: TTFont) -> dict:
+    """結合用の記号の字を、字幅 0 にして左へずらす。BIZ UD のヒンティングはそのまま。欧字を BIZ UDP
+    の字にする前 (˜ U+02DC が BIZ UDP の字になる前) に、hwid の字を取っておいた後で呼ぶ。返す changed
+    は、その場で変えた字 (build.keep_half_widths が、hwid の置き換え先なら BIZ UD の字を残す)"""
+    cmap = font.getBestCmap()
+    em = font["head"].unitsPerEm
+    glyf, hmtx, vmtx = font["glyf"], font["hmtx"], font["vmtx"]
+    marks = {code: name for code, name in cmap.items() if unicodedata.category(chr(code)) in ("Mn", "Me")}
+    unexpected = [code for code in marks if not (0x0300 <= code <= 0x036F or code in KANA_MARKS)]
+    if unexpected:
+        raise SystemExit(f"combining marks not handled: {[f'U+{c:04X}' for c in unexpected]}")
+    # ほかの文字 (˜ U+02DC など) にも割り当てられた字は、結合用の記号に別の字を足す
+    shared = {name for code, name in cmap.items() if code not in marks and name in marks.values()}
+    composite = {c.glyphName for name in font.getGlyphOrder() if glyf[name].isComposite()
+                 for c in glyf[name].components}
+    targets = {code: kana_target(font, code) for code in KANA_MARKS if code in marks}
+    kinds: dict[str, str] = {}
+    changed: set[str] = set()
+    for code, old in sorted(marks.items()):
+        if old in composite:
+            raise SystemExit(f"U+{code:04X}: {old} is a component of other glyphs")
+        k = kind(code)
+        glyph = glyf[old]
+        glyph.expand(glyf)
+        if old in shared:
+            glyph = copy.deepcopy(glyph)
+        if glyph.isComposite() or not glyph.numberOfContours:
+            raise SystemExit(f"U+{code:04X}: expected a simple glyph with an outline")
+        advance = hmtx[old][0]
+        if k == "kana":
+            dx = round(targets[code] - em - ink(font, old)[2])  # 前の字の枠の右上
+        elif k == "double":
+            dx = -advance // 2
+        else:
+            dx = -advance
+        glyph.coordinates.translate((dx, 0))
+        glyph.recalcBounds(glyf)
+        if old in shared:
+            name = old + SUFFIX
+            fraction_digits._add_glyph(font, name, glyph, 0, (0, vmtx[old][1]))
+            for table in unicode_tables(font):
+                if table.cmap.get(code) == old:
+                    table.cmap[code] = name
+        else:
+            name = old
+            hmtx[name] = (0, glyph.xMin)
+            vmtx[name] = (0, vmtx[name][1])
+            changed.add(name)
+        kinds[name] = k
+    return {"kinds": kinds, "changed": changed, "targets": targets}
+
+
+def add(font: TTFont, prepared: dict) -> dict:
+    """GPOS と GDEF の機能ファイルの文を返し (spacing.add に渡す)、ccmp に ı を足す"""
+    kinds, targets = prepared["kinds"], prepared["targets"]
+    gsub = font["GSUB"].table
+    cmap = font.getBestCmap()
+    x_height = ink(font, cmap[0x78])[3]
+    em = font["head"].unitsPerEm
+    descender = -em / 16  # これより下に出る字 (ディセンダーのある字) だけ、下の記号を下げる。丸い字の
+    # オーバーシュート (o の下で -41 ほど) は、ベースラインとみなす
+    mark_names = set(kinds)
+    latin_bases, kana_bases = {}, set()
+    base_codes = list(spec.LATIN) + [c for start, end in BASE_RANGES for c in range(start, end + 1)]
+    for code in base_codes:
+        name = cmap.get(code)
+        if name and name not in mark_names and unicodedata.category(chr(code))[0] in "LN":
+            bounds = ink(font, name)
+            if bounds:
+                latin_bases[name] = bounds
+    vertical = {}
+    for tag in ("vert", "vrt2"):
+        for record in gsub.FeatureList.FeatureRecord:
+            if record.FeatureTag == tag:
+                for index in record.Feature.LookupListIndex:
+                    for subtable in gsub.LookupList.Lookup[index].SubTable:
+                        subtable = getattr(subtable, "ExtSubTable", subtable)
+                        for key, value in getattr(subtable, "mapping", {}).items():
+                            vertical.setdefault(key, set()).add(value)
+    for code in [c for start, end in KANA_RANGES for c in range(start, end + 1)]:
+        name = cmap.get(code)
+        if name and name not in mark_names and unicodedata.category(chr(code))[0] == "L":
+            kana_bases.add(name)
+            kana_bases.update(vertical.get(name, ()))
+    if set(latin_bases) & kana_bases:
+        raise SystemExit("a glyph is both a Latin and a kana base")
+
+    def anchor(x: float, y: float) -> str:
+        return f"<anchor {round(x)} {round(y)}>"
+
+    lines = []
+    above, below = [], []
+    for name, k in sorted(kinds.items()):
+        x0, y0, x1, y1 = ink(font, name)
+        center = (x0 + x1) / 2
+        if k == "above":
+            lines.append(f"markClass {name} {anchor(center, x_height)} @above;")
+            above.append(name)
+        elif k == "aboveright":
+            lines.append(f"markClass {name} {anchor(x0, x_height)} @aboveright;")
+            above.append(name)
+        elif k == "below":
+            lines.append(f"markClass {name} {anchor(center, 0)} @below;")
+            below.append(name)
+        elif k == "overlay":
+            lines.append(f"markClass {name} {anchor(center, x_height / 2)} @overlay;")
+        elif k == "kana":
+            lines.append(f"markClass {name} {anchor(x1 - targets[cmap_code(cmap, name)], 0)} @kana;")
+    used = set(kinds.values())
+    lines.append("lookup MarkLatin {")
+    for name, (x0, y0, x1, y1) in sorted(latin_bases.items()):
+        center, top = (x0 + x1) / 2, max(y1, x_height)
+        parts = [f"{anchor(center, top)} mark @above"]
+        if "aboveright" in used:
+            parts.append(f"{anchor(x1, top)} mark @aboveright")
+        if "below" in used:
+            parts.append(f"{anchor(center, y0 if y0 < descender else 0)} mark @below")
+        if "overlay" in used:
+            parts.append(f"{anchor(center, top / 2)} mark @overlay")
+        lines.append(f"  pos base {name} {' '.join(parts)};")
+    lines.append("} MarkLatin;")
+    if "kana" in used:
+        lines.append("lookup MarkKana {")
+        lines.append(f"  pos base [{' '.join(sorted(kana_bases))}] <anchor 0 0> mark @kana;")
+        lines.append("} MarkKana;")
+    lines.append("feature mark {")
+    lines.append("  lookup MarkLatin;")
+    if "kana" in used:
+        lines.append("  lookup MarkKana;")
+    lines.append("} mark;")
+
+    # 上の記号の上に上の記号を、下の記号の下に下の記号を重ねる。ほかの種類の記号は飛ばす
+    lines.append("feature mkmk {")
+    for label, group, cls in (("Above", above, "@above"), ("Below", below, "@below")):
+        stacked = [n for n in group if kinds[n] != "aboveright"]
+        if not stacked:
+            continue
+        lines.append(f"  lookup Mkmk{label} {{")
+        lines.append(f"    lookupflag UseMarkFilteringSet [{' '.join(sorted(stacked))}];")
+        for name in sorted(stacked):
+            x0, y0, x1, y1 = ink(font, name)
+            lines.append(f"    pos mark {name} {anchor((x0 + x1) / 2, y1 if label == 'Above' else y0)} mark {cls};")
+        lines.append(f"  }} Mkmk{label};")
+    lines.append("} mkmk;")
+
+    lines.append("table GDEF {")
+    lines.append(f"  GlyphClassDef [{' '.join(sorted(set(latin_bases) | kana_bases))}], , "
+                 f"[{' '.join(sorted(mark_names))}], ;")
+    lines.append("} GDEF;")
+
+    # i と上の記号 → ı と上の記号
+    dotless_i(font, gsub, cmap, above)
+    return {"marks": len(kinds), "bases": len(latin_bases) + len(kana_bases), "fea": "\n".join(lines) + "\n"}
+
+
+def cmap_code(cmap: dict, name: str) -> int:
+    return next(code for code, glyph in cmap.items() if glyph == name)
+
+
+def dotless_i(font: TTFont, gsub, cmap: dict, above: list[str]) -> int:
+    i, dotless = cmap[0x69], cmap.get(0x131)
+    if dotless is None or not above:
+        return 0
+    single = otTables.SingleSubst()
+    single.mapping = {i: dotless}
+    nested = fraction_digits._lookup(gsub, 1, single)
+    chain = otTables.ChainContextSubst()
+    chain.Format = 3
+    chain.BacktrackGlyphCount, chain.BacktrackCoverage = 0, []
+    chain.InputGlyphCount, chain.InputCoverage = 1, [fraction_digits._coverage(font, [i])]
+    chain.LookAheadGlyphCount, chain.LookAheadCoverage = 1, [fraction_digits._coverage(font, above)]
+    record = otTables.SubstLookupRecord()
+    record.SequenceIndex, record.LookupListIndex = 0, nested
+    chain.SubstCount, chain.SubstLookupRecord = 1, [record]
+    index = fraction_digits._lookup(gsub, 6, chain)
+    records = [r for r in gsub.FeatureList.FeatureRecord if r.FeatureTag == "ccmp"]
+    if not records:
+        raise SystemExit("the font has no ccmp")
+    for r in records:
+        r.Feature.LookupListIndex = r.Feature.LookupListIndex + [index]
+        r.Feature.LookupCount = len(r.Feature.LookupListIndex)
+    return 1
