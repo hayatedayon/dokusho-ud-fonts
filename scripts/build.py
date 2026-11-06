@@ -8,6 +8,9 @@
    (spec.LATIN_LIGATURE_FEATURES) を BIZ UDP と同じにする。置き換え先のグリフの形か字送りが
    違えば、それも BIZ UDP のものにする。字形の候補 (aalt) の欧字の候補も、それに合わせる。
    全角の英数字を半角にする hwid は、BIZ UD の半角の字を別のグリフとして残し、それにつなぐ
+   (欧字からも)
+   分数と上付きの数字 (frac・numr・dnom・sups) は作り直す。0〜9 の上付きの数字と、分子・分母の
+   数字、分数の斜線を足す (fraction_digits.py)
 3. 欧文の中の記号 (引用符・アポストロフィ・ダッシュなど) を、欧字の用字系の中でだけ BIZ UDP の
    字にする (latin_symbols.py。日本語の文書では置き換えない)
 4. BIZ UDP から持ってきた字に、BIZ UDP のヒンティングを付ける (hinting.py)
@@ -30,6 +33,7 @@ from fontTools.misc.timeTools import epoch_diff as EPOCH_DIFF
 from fontTools.ttLib.tables._g_l_y_f import Glyph
 
 import fetch_sources
+import fraction_digits
 import hinting
 import latin_symbols
 import spacing
@@ -407,6 +411,7 @@ def build(family: dict, weight: str) -> Path:
     half_widths = save_half_widths(ud)
     stats = merge_latin(ud, udp)
     kept = keep_half_widths(ud, half_widths, set(stats["glyphs"]))
+    fractions = fraction_digits.add(ud, udp)
     symbols = latin_symbols.add(ud, udp)
     # BIZ UDP から持ってきた字 (読書 UD のグリフ名 → BIZ UDP のグリフ名)
     taken = {name: name for name in stats["glyphs"]} | symbols["glyphs"]
@@ -434,6 +439,7 @@ def build(family: dict, weight: str) -> Path:
     ud.save(out)
     print(f"{out.relative_to(ROOT)}: Latin {stats['latin']} glyphs, {stats['mappings']} GSUB mappings, "
           f"{stats['targets']} GSUB targets from BIZ UDP; {kept} half-width glyphs of BIZ UD kept for hwid; "
+          f"{fractions['superscripts']} superscripts and {fractions['denominators']} denominators made; "
           f"{symbols['symbols']} symbols in Latin text; "
           f"hinting of BIZ UDP on {hinted['hinted']} glyphs (cvt +{hinted['cvt']}); "
           f"halt {spaced['halt']}, vhal {spaced['vhal']} glyphs")

@@ -5,6 +5,7 @@ build.py とは別の書き方で、できたものだけを見る。1 つでも
 
 import sys
 from pathlib import Path
+from statistics import median
 
 from fontTools.pens.boundsPen import BoundsPen
 from fontTools.pens.recordingPen import DecomposingRecordingPen
@@ -106,15 +107,20 @@ def check_font(family: dict, weight: str) -> None:
     cmap, cmap_ud, cmap_udp = font.getBestCmap(), ud.getBestCmap(), udp.getBestCmap()
     em = font["head"].unitsPerEm
 
-    check(cmap == cmap_ud, f"{label}: the character map differs from BIZ UD")
+    # 文字の割り当ては BIZ UD のまま。足すのは、作った上付きの数字 ⁰ ⁵ ⁶ ⁷ ⁸ ⁹ だけ
+    added = {code: cmap[code] for code in cmap.keys() - cmap_ud.keys()}
+    check({code: g for code, g in cmap.items() if code in cmap_ud} == cmap_ud and set(added) == set(NEW_SUPERSCRIPTS),
+          f"{label}: the character map differs from BIZ UD by more than the superscripts ⁰ ⁵-⁹")
     # BIZ UD のグリフの後に、欧文の中の記号 (BIZ UDP の字) だけが足してあること
     order, order_ud = font.getGlyphOrder(), ud.getGlyphOrder()
     check(order[: len(order_ud)] == order_ud, f"{label}: the glyph order of BIZ UD is not kept")
     # と、hwid の置き換え先として残した BIZ UD の半角の字
     extra = set(order[len(order_ud):])
     half_widths = {v for v in gsub_mapping(font, "hwid").values() if v not in order_ud}
-    check(extra == set(latin_symbol_mapping(font, "latn", None).values()) | half_widths,
-          f"{label}: glyphs other than the symbols for Latin text and the half widths for hwid were added")
+    fraction_glyphs = (set(added.values()) | outputs(font, spec.FRACTION_FEATURES)) - set(order_ud)
+    check(extra == set(latin_symbol_mapping(font, "latn", None).values()) | half_widths | fraction_glyphs,
+          f"{label}: glyphs other than the symbols for Latin text, the half widths for hwid and the fraction "
+          "digits were added")
 
     check(latin_codes(cmap) == latin_codes(cmap_udp), f"{label}: BIZ UDP has other Latin letters than BIZ UD")
     for code in latin_codes(cmap):
@@ -138,6 +144,8 @@ def check_font(family: dict, weight: str) -> None:
 
     latin_glyphs = {cmap[c] for c in latin_codes(cmap)}
     for tag in spec.LATIN_FEATURES:
+        if tag in spec.FRACTION_FEATURES:
+            continue  # check_fractions が確かめる
         ours = {k: v for k, v in gsub_mapping(font, tag).items() if k in latin_glyphs}
         theirs = {k: v for k, v in gsub_mapping(udp, tag).items() if k in latin_glyphs}
         check(ours == theirs, f"{label}: {tag} of the Latin letters differs from BIZ UDP")
@@ -222,6 +230,7 @@ def check_font(family: dict, weight: str) -> None:
     check_latin_symbols(label, font, ud, udp)
     check_hinting(label, font, family, weight, latin_targets(udp, latin_glyphs), udp, ud)
     check_spacing(label, font)
+    check_fractions(label, font, udp)
 
 
 def gpos_values(font: TTFont, tag: str) -> dict:
@@ -416,6 +425,291 @@ def check_spacing(label: str, font: TTFont) -> None:
         check(vhal.get(upright) == vertical, f"{label}: vhal of {char} is {vhal.get(upright)}, not {vertical}")
     scripts = {r.ScriptTag for r in font["GPOS"].table.ScriptList.ScriptRecord}
     check({"hani", "kana", "DFLT"} <= scripts, f"{label}: GPOS scripts {sorted(scripts)}")
+
+
+# --- 分数と上付きの数字 -----------------------------------------------------------------------
+
+SUPERSCRIPT_CODES = {0: 0x2070, 1: 0x00B9, 2: 0x00B2, 3: 0x00B3, 4: 0x2074,
+                     **{d: 0x2070 + d for d in range(5, 10)}}
+NEW_SUPERSCRIPTS = {0x2070, *range(0x2075, 0x207A)}  # 元のフォントに無く、作った字
+
+
+def lookup_subtables(gsub, index: int) -> list:
+    return [getattr(s, "ExtSubTable", s) for s in gsub.LookupList.Lookup[index].SubTable]
+
+
+def lookup_type(gsub, index: int) -> int:
+    lookup = gsub.LookupList.Lookup[index]
+    return lookup.SubTable[0].ExtensionLookupType if lookup.LookupType == 7 else lookup.LookupType
+
+
+def feature_lookup_indexes(font: TTFont, tags) -> dict[int, set[str]]:
+    """欧字の用字系の既定で、tags の機能が使う lookup → その機能"""
+    gsub = font["GSUB"].table
+    result: dict[int, set[str]] = {}
+    for index in lang_system(font, "latn", None).FeatureIndex:
+        record = gsub.FeatureList.FeatureRecord[index]
+        if record.FeatureTag in tags:
+            for lookup in record.Feature.LookupListIndex:
+                result.setdefault(lookup, set()).add(record.FeatureTag)
+    return result
+
+
+def outputs(font: TTFont, tags) -> set[str]:
+    """tags の機能 (文脈の lookup から呼ぶ lookup も) が置き換えてできる字"""
+    gsub = font["GSUB"].table
+    pending, seen, result = list(feature_lookup_indexes(font, tags)), set(), set()
+    while pending:
+        index = pending.pop()
+        if index in seen:
+            continue
+        seen.add(index)
+        for subtable in lookup_subtables(gsub, index):
+            result |= set(getattr(subtable, "mapping", {}).values()) | set(getattr(subtable, "Substitute", []))
+            pending += [record.LookupListIndex for record in getattr(subtable, "SubstLookupRecord", [])]
+    return result
+
+
+def apply_features(font: TTFont, glyphs: list[str], masks: list[set[str]]) -> list[str]:
+    """GSUB の、1 対 1 (1)・文脈 (6 の形式 3)・右からの文脈 (8) の lookup を、文字を並べる仕組みと同じ
+    順 (lookup の番号の順) にかける。masks は、字ごとにかける機能 (分数を作る仕組みを確かめるため。
+    build.py とは別に書く)"""
+    gsub = font["GSUB"].table
+    glyphs = list(glyphs)
+
+    def single(index: int, glyph: str) -> str:
+        for subtable in lookup_subtables(gsub, index):
+            if glyph in getattr(subtable, "mapping", {}):
+                return subtable.mapping[glyph]
+        return glyph
+
+    for index, tags in sorted(feature_lookup_indexes(font, {t for m in masks for t in m}).items()):
+        kind = lookup_type(gsub, index)
+        on = [bool(tags & mask) for mask in masks]
+        if kind == 1:
+            glyphs = [single(index, g) if on[i] else g for i, g in enumerate(glyphs)]
+        elif kind == 6:
+            for i in range(len(glyphs)):
+                if not on[i]:
+                    continue
+                for subtable in lookup_subtables(gsub, index):
+                    if subtable.Format != 3 or subtable.InputGlyphCount != 1:
+                        raise SystemExit(f"lookup {index}: only one-glyph chained contexts of format 3 are checked")
+                    back = [c.glyphs for c in subtable.BacktrackCoverage]
+                    ahead = [c.glyphs for c in subtable.LookAheadCoverage]
+                    if (glyphs[i] in subtable.InputCoverage[0].glyphs
+                            and i >= len(back) and all(glyphs[i - 1 - k] in back[k] for k in range(len(back)))
+                            and i + len(ahead) < len(glyphs)
+                            and all(glyphs[i + 1 + k] in ahead[k] for k in range(len(ahead)))):
+                        for record in subtable.SubstLookupRecord:
+                            glyphs[i] = single(record.LookupListIndex, glyphs[i])
+                        break
+        elif kind == 8:
+            for i in reversed(range(len(glyphs))):
+                if not on[i]:
+                    continue
+                for subtable in lookup_subtables(gsub, index):
+                    back = [c.glyphs for c in subtable.BacktrackCoverage]
+                    ahead = [c.glyphs for c in subtable.LookAheadCoverage]
+                    covered = subtable.Coverage.glyphs
+                    if (glyphs[i] in covered
+                            and i >= len(back) and all(glyphs[i - 1 - k] in back[k] for k in range(len(back)))
+                            and i + len(ahead) < len(glyphs)
+                            and all(glyphs[i + 1 + k] in ahead[k] for k in range(len(ahead)))):
+                        glyphs[i] = subtable.Substitute[covered.index(glyphs[i])]
+                        break
+        else:
+            raise SystemExit(f"lookup {index} of {sorted(tags)} has type {kind}, which the check cannot apply")
+    return glyphs
+
+
+def shape(font: TTFont, text: str, tags: set[str]) -> list[str]:
+    cmap = font.getBestCmap()
+    return apply_features(font, [cmap[ord(c)] for c in text], [set(tags)] * len(text))
+
+
+def flattened(font: TTFont, name: str, dx: float = 0, dy: float = 0) -> list[list[tuple[float, float]]]:
+    """グリフの輪郭を、折れ線にしたもの (曲線は 16 に分ける)"""
+    pen = DecomposingRecordingPen(font.getGlyphSet())
+    font.getGlyphSet()[name].draw(pen)
+    polygons, current, start = [], [], None
+    for op, args in pen.value:
+        if op == "moveTo":
+            current, start = [args[0]], args[0]
+        elif op == "lineTo":
+            current.append(args[0])
+        elif op == "qCurveTo":
+            points = list(args)
+            if points[-1] is None:  # 曲線の上の点が無い輪郭
+                raise SystemExit(f"{name}: contours without on-curve points are not checked")
+            p0 = current[-1]
+            controls, end = points[:-1], points[-1]
+            for k, control in enumerate(controls):
+                target = end if k == len(controls) - 1 else (
+                    ((control[0] + controls[k + 1][0]) / 2, (control[1] + controls[k + 1][1]) / 2))
+                for step in range(1, 17):
+                    t = step / 16
+                    current.append(((1 - t) ** 2 * p0[0] + 2 * t * (1 - t) * control[0] + t * t * target[0],
+                                    (1 - t) ** 2 * p0[1] + 2 * t * (1 - t) * control[1] + t * t * target[1]))
+                p0 = target
+        elif op in ("closePath", "endPath"):
+            if current:
+                polygons.append(current)
+            current = []
+    return [[(x + dx, y + dy) for x, y in polygon] for polygon in polygons]
+
+
+def row(polygons, y: float) -> list[float]:
+    xs = []
+    for polygon in polygons:
+        for (x0, y0), (x1, y1) in zip(polygon, polygon[1:] + polygon[:1]):
+            if (y0 <= y < y1) or (y1 <= y < y0):
+                xs.append(x0 + (y - y0) / (y1 - y0) * (x1 - x0))
+    return sorted(xs)
+
+
+def ink_gap(left, right) -> float:
+    """left のインクの右から right のインクの左までの、同じ高さどうしのいちばん近い横の距離"""
+    ys = [y for polygon in left + right for _x, y in polygon]
+    best = None
+    for y in range(int(min(ys)), int(max(ys)) + 1, 3):
+        a, b = row(left, y + 0.5), row(right, y + 0.5)
+        if a and b:
+            best = b[0] - a[-1] if best is None else min(best, b[0] - a[-1])
+    return best
+
+
+def ink_area(font: TTFont, name: str) -> float:
+    total = 0.0
+    for polygon in flattened(font, name):
+        total += sum(x0 * y1 - x1 * y0 for (x0, y0), (x1, y1) in zip(polygon, polygon[1:] + polygon[:1])) / 2
+    return abs(total)
+
+
+def glyph_bounds(font: TTFont, name: str):
+    pen = BoundsPen(font.getGlyphSet())
+    font.getGlyphSet()[name].draw(pen)
+    return pen.bounds
+
+
+def offset_of(font: TTFont, name: str, other: str):
+    """name の輪郭が other の輪郭を平行に動かしたものなら、その (dx, dy)。違えば None"""
+    a, b = outline(font, name), outline(font, other)
+    if a[1:] != b[1:] or not a[0]:
+        return None
+    dx, dy = a[0][0][0] - b[0][0][0], a[0][0][1] - b[0][0][1]
+    return (dx, dy) if all((x - u, y - v) == (dx, dy) for (x, y), (u, v) in zip(a[0], b[0])) else None
+
+
+def check_fractions(label: str, font: TTFont, udp: TTFont) -> None:
+    """上付きの数字 0〜9 (sups と ⁰ ¹ … ⁹)、分子 (numr)・分母 (dnom) の数字、frac の分数。
+    - 上付きの数字: 1〜4 は BIZ UDP の ¹ ² ³ ⁴。作った 0・5〜9 は、普通の数字に対するインクの面積の比
+      (縮めて太らせた度合い) と高さが、¹ ² ³ ⁴ と同じくらい
+    - 分子・分母は上付きの数字と同じ形で、分母はそれを同じだけ下げたもの (下が数字の下にそろう)
+    - frac は分数の数字だけを置き換え、数字と斜線のインクの距離が、BIZ UDP の合成済みの分数
+      (¼ ½ ¾ ⅓ …) の中央値になる"""
+    cmap = font.getBestCmap()
+    digits = [cmap[0x30 + d] for d in range(10)]
+    sups = {d: cmap[code] for d, code in SUPERSCRIPT_CODES.items()}
+    for tag in spec.FRACTION_FEATURES:
+        check(tag in {r.FeatureTag for r in font["GSUB"].table.FeatureList.FeatureRecord}, f"{label}: no {tag}")
+
+    # 上付きの数字
+    ratios = {d: ink_area(font, sups[d]) / ink_area(font, digits[d]) for d in range(10)}
+    heights = {d: glyph_bounds(font, sups[d])[3] - glyph_bounds(font, sups[d])[1] for d in range(10)}
+    bottoms = {d: glyph_bounds(font, sups[d])[1] for d in range(10)}
+    designed = [1, 2, 3, 4]
+    low, high = min(ratios[d] for d in designed), max(ratios[d] for d in designed)
+    for d in (0, 5, 6, 7, 8, 9):
+        check(low * 0.9 <= ratios[d] <= high * 1.1,
+              f"{label}: superscript {d} has {ratios[d]:.3f} of the ink of {d}, not like ¹ ² ³ ⁴ ({low:.3f}-{high:.3f})")
+        check(abs(heights[d] - sum(heights[k] for k in designed) / 4) <= 0.06 * heights[2],
+              f"{label}: superscript {d} is {heights[d]:.0f} high, not like ¹ ² ³ ⁴")
+        check(min(bottoms[k] for k in designed) - 30 <= bottoms[d] <= max(bottoms[k] for k in designed) + 30,
+              f"{label}: superscript {d} does not sit as ¹ ² ³ ⁴ do")
+        program = getattr(font["glyf"][sups[d]], "program", None)
+        check(program is None or not program.getBytecode(), f"{label}: superscript {d} has hinting")
+    for d in range(10):
+        for source in (digits[d], cmap[0xFF10 + d]):
+            check(shape(font, chr(cmap_code(cmap, source)), {"sups"}) == [sups[d]], f"{label}: sups of {source}")
+        check(sups[d] in gsub_alternates(font, "aalt").get(digits[d], []), f"{label}: aalt of {d} lacks its superscript")
+
+    # 分子・分母
+    numr = {d: shape(font, str(d), {"numr"})[0] for d in range(10)}
+    dnom = {d: shape(font, str(d), {"dnom"})[0] for d in range(10)}
+    drops = set()
+    for d in range(10):
+        n, m = offset_of(font, numr[d], sups[d]), offset_of(font, dnom[d], sups[d])
+        check(n is not None and n[1] == 0, f"{label}: numr of {d} is not the superscript {d}")
+        check(m is not None, f"{label}: dnom of {d} is not the superscript {d} moved down")
+        if m is not None:
+            drops.add(m[1])
+    check(len(drops) == 1, f"{label}: the denominators are moved down by {sorted(drops)}")
+    two = glyph_bounds(font, dnom[2])[1] - glyph_bounds(font, digits[2])[1] * 0.5
+    check(abs(two) <= 40, f"{label}: the denominator 2 does not sit on the baseline ({two:.0f})")
+
+    # frac: どの字が分子・分母・斜線になるか
+    slash = shape(font, "1/2", {"frac"})[1]
+    check(slash != cmap[0x2F], f"{label}: frac does not make a fraction slash")
+    for text, expect in [("1/2", "nsd"), ("10/25", "nnsdd"), ("1 1/2", "--nsd"), ("and/or", "------"),
+                         ("2026", "----"), ("１／２", "nsd"), ("3⁄4", "nsd")]:
+        got = shape(font, text, {"frac"})
+        kinds = "".join("s" if g == slash else "-" if g == cmap[ord(c)] else
+                        fraction_kind(font, g, sups, drops) or "?" for g, c in zip(got, text))
+        check(kinds == expect, f"{label}: frac of {text!r} gives {kinds}, not {expect}")
+    # ⁄ (U+2044) では、文字を並べる仕組みが分子に numr、分母に dnom、全体に frac をかける
+    auto = apply_features(font, [cmap[ord(c)] for c in "12⁄34"],
+                          [{"numr", "frac"}, {"numr", "frac"}, {"frac"}, {"dnom", "frac"}, {"dnom", "frac"}])
+    check(auto == shape(font, "12/34", {"frac"}), f"{label}: 12⁄34 is not set as 12/34 with frac")
+
+    # frac: 数字と斜線のインクの距離 (どの数字の組でも)
+    want_before, want_after = fraction_targets(udp)
+    worst = []
+    for a in range(10):
+        for b in range(10):
+            glyphs = shape(font, f"{a}/{b}", {"frac"})
+            x = 0
+            placed = []
+            for g in glyphs:
+                placed.append(flattened(font, g, x))
+                x += font["hmtx"][g][0]
+            before, after = ink_gap(placed[0], placed[1]), ink_gap(placed[1], placed[2])
+            if abs(before - want_before) > 4 or abs(after - want_after) > 4:
+                worst.append(f"{a}/{b} ({before:.0f}, {after:.0f})")
+    check(not worst, f"{label}: {len(worst)} fractions are not spaced as BIZ UDP's ({want_before:.0f}, "
+                     f"{want_after:.0f}), such as {worst[:3]}")
+
+
+def cmap_code(cmap: dict, name: str) -> int:
+    return next(code for code, g in cmap.items() if g == name)
+
+
+def fraction_kind(font: TTFont, name: str, sups: dict, drops: set) -> str | None:
+    """上付きの数字を横に動かしただけの字なら "n" (分子)、分母の高さまで下げた字なら "d" (分母)"""
+    for sup in sups.values():
+        moved = offset_of(font, name, sup)
+        if moved is not None:
+            return "n" if moved[1] == 0 else "d" if moved[1] in drops else None
+    return None
+
+
+def fraction_targets(udp: TTFont) -> tuple[float, float]:
+    """BIZ UDP の合成済みの分数の、分子と斜線、斜線と分母のインクの距離の中央値"""
+    cmap = udp.getBestCmap()
+    befores, afters = [], []
+    for code in [0x00BC, 0x00BD, 0x00BE, *range(0x2153, 0x215F)]:
+        if code not in cmap:
+            continue
+        polygons = flattened(udp, cmap[code])
+        heights = [max(y for _x, y in p) - min(y for _x, y in p) for p in polygons]
+        slash = polygons[heights.index(max(heights))]
+        middle = (max(y for _x, y in slash) + min(y for _x, y in slash)) / 2
+        rest = [p for p in polygons if p is not slash]
+        upper = [p for p in rest if (max(y for _x, y in p) + min(y for _x, y in p)) / 2 > middle]
+        lower = [p for p in rest if (max(y for _x, y in p) + min(y for _x, y in p)) / 2 <= middle]
+        befores.append(ink_gap(upper, [slash]))
+        afters.append(ink_gap([slash], lower))
+    return median(befores), median(afters)
 
 
 def check_license() -> None:

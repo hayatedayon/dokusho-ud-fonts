@@ -65,6 +65,25 @@ ChangeLog
   the half-width glyph next to the full-width one for the Latin letter, and
   next to the proportional one for the full-width form, so that glyph panels
   offer both the proportional A and the half-width A for Ａ.
+- New in Dokusho UD: fractions. With frac, 1/2 and 10/25 become fractions
+  with small numerators, a fraction slash and small denominators on the
+  baseline; the whole number of 1 1/2 and the / of and/or stay as they are
+  (a reverse chaining lookup finds the digits that a slash follows). Text
+  with ⁄ (U+2044) is set the same way through numr and dnom, which shaping
+  engines apply around it. The numerators and denominators have the shapes of
+  the superscripts below, with the side bearings of the regular digits
+  reduced alike, and the digit right before and right after the slash gets
+  its own spacing, so that the ink of every digit keeps the distance to the
+  slash that BIZ UDP's precomposed fractions (¼ ½ ¾ ⅓ ⅔ ⅕) have in the
+  median. The slash is BIZ UDP's fraction slash with no advance width. BIZ
+  UD and BIZ UDP had no dnom, and their frac only raised 1, 2 and 3, so that
+  1/2 had a raised denominator and 4/5 did not change.
+- New in Dokusho UD: superscript digits from 0 to 9, also as the
+  characters ⁰ ⁵ ⁶ ⁷ ⁸ ⁹ (U+2070, U+2075-2079), and in sups. The original
+  fonts have only ¹ ² ³ ⁴ (BIZ UDP's, kept as they are). The new ones are the
+  regular digits reduced by the ratio, and emboldened by the stroke weight,
+  measured between 1 2 3 4 and ¹ ² ³ ⁴ (reduced alone, their strokes would be
+  thinner), and carry no hinting.
 - The version string (name ID 5) of Dokusho UD Gothic names the versions of
   its sources correctly, BIZ UDGothic 1.05 and BIZ UDPGothic 1.051. Up to
   1.004 it said 1.06 for both, the version of the Mincho sources. The
@@ -73,7 +92,9 @@ ChangeLog
   are substituted with (superscripts, the slashed zero, the sideways letters
   of vertical text, the ligatures) and compare them with BIZ UDP, and check
   that hwid gives BIZ UD's half-width glyphs, also from the Latin letters,
-  and that aalt offers them.
+  and that aalt offers them. They apply frac to check the fractions and the
+  spacing around the slash, and compare the weight of the new superscripts
+  with ¹ ² ³ ⁴.
 
 2026-11-04 (hayatedayon) Dokusho UD 1.004
 - The glyphs taken from BIZ UDP (the Latin letters, their GSUB targets and

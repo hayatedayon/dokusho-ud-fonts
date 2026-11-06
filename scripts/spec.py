@@ -52,6 +52,10 @@ UNHINTED = [0x002D, 0x005F, 0x00AD, 0x00AF, 0x2013, 0x2014, 0x203E, 0x2212]
 # プロポーショナル)。hwid (全角の英数字を半角に) も、BIZ UD の半角の字を別に残してつなぐ (build.py)
 LATIN_FEATURES = ["frac", "numr", "sups", "zero", "vrt2"]
 
+# 分数と上付きの機能。fraction_digits.py が、欧字を BIZ UDP の字にした後に作り直す (分子・分母の数字と
+# 0〜9 の上付きの数字を足す。BIZ UD・BIZ UDP の frac は 1 2 3 を上付きにするだけで、分母が無い)
+FRACTION_FEATURES = ["frac", "numr", "dnom", "sups"]
+
 # 欧字から始まる合字 (GSUB の ligature) を置き換える機能。BIZ UDP は、ccmp と liga で、f i を ﬁ に、
 # æ ə ɑ などと結合用のアクセントを 1 つの字につなぐ (BIZ UD は f i をつながず、アクセントの付いた
 # 字は BIZ UD の幅の字につなぐ)。dlig (!? など) は、欧文の中では locl で BIZ UDP の字になるので
