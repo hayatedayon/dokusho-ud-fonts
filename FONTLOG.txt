@@ -52,13 +52,20 @@ ChangeLog
   feature, for 115 letters, and lacked BIZ UDP's sideways forms of 47 more
   letters, such as Æ and the accented letters. The other alternates
   (full-width and circled forms and so on) stay as in BIZ UD.
+- hwid, which turns the full-width forms (Ａ ％ １ and so on) half width,
+  gives BIZ UD's half-width glyphs again, with their hinting and their
+  sideways forms for vertical text (vrt2). They are kept as new glyphs
+  (named .hwid), since the Latin letters that hwid led to are now BIZ UDP's.
+  Up to 1.004 hwid gave the proportional letters, so that the digits did not
+  fit two to an em, and ％ came out 1 em wide, as wide as its full-width form.
 - The version string (name ID 5) of Dokusho UD Gothic names the versions of
   its sources correctly, BIZ UDGothic 1.05 and BIZ UDPGothic 1.051. Up to
   1.004 it said 1.06 for both, the version of the Mincho sources. The
   versions are now read from the original fonts.
 - The checks now also draw, with hinting, the glyphs that the Latin letters
   are substituted with (superscripts, the slashed zero, the sideways letters
-  of vertical text, the ligatures) and compare them with BIZ UDP.
+  of vertical text, the ligatures) and compare them with BIZ UDP, and check
+  that hwid gives BIZ UD's half-width glyphs.
 
 2026-11-04 (hayatedayon) Dokusho UD 1.004
 - The glyphs taken from BIZ UDP (the Latin letters, their GSUB targets and

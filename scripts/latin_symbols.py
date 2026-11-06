@@ -26,8 +26,9 @@ SUFFIX = ".latn"
 FEATURE = "locl"
 
 
-def symbols(ud: TTFont, udp: TTFont) -> list[tuple[int, str]]:
-    """置き換える記号 (コードポイント, BIZ UD のグリフ名)。BIZ UD と BIZ UDP で形か幅が違うもの"""
+def symbols(ud: TTFont, udp: TTFont) -> list[tuple[int, str, str]]:
+    """置き換える記号 (コードポイント, BIZ UD のグリフ名, BIZ UDP のグリフ名)。BIZ UD と BIZ UDP で
+    形か幅が違うもの"""
     cmap_ud, cmap_udp = ud.getBestCmap(), udp.getBestCmap()
     glyphs_ud, glyphs_udp = ud.getGlyphSet(), udp.getGlyphSet()
     chosen = []
@@ -37,7 +38,7 @@ def symbols(ud: TTFont, udp: TTFont) -> list[tuple[int, str]]:
             continue
         if ud["hmtx"][name] == udp["hmtx"][name_udp] and drawing(glyphs_ud, name) == drawing(glyphs_udp, name_udp):
             continue
-        chosen.append((code, name))
+        chosen.append((code, name, name_udp))
     return chosen
 
 
@@ -95,11 +96,12 @@ def add(ud: TTFont, udp: TTFont) -> dict[str, int]:
         raise SystemExit(f"the latn script of BIZ UD already has {FEATURE}")
 
     chosen = symbols(ud, udp)
-    mapping = {}
-    for _code, name in chosen:
+    mapping, sources = {}, {}
+    for _code, name, name_udp in chosen:
         target = name + SUFFIX
-        add_glyph(ud, udp, name, target)
+        add_glyph(ud, udp, name_udp, target)
         mapping[name] = target
+        sources[target] = name_udp
 
     # 置き換えの lookup (1 対 1) と、それだけを持つ locl の機能
     subtable = otTables.SingleSubst()
@@ -130,4 +132,5 @@ def add(ud: TTFont, udp: TTFont) -> dict[str, int]:
     latn.DefaultLangSys.FeatureIndex = latn.DefaultLangSys.FeatureIndex + [new]
     latn.DefaultLangSys.FeatureCount = len(latn.DefaultLangSys.FeatureIndex)
     sort_features(gsub)
-    return {"symbols": len(chosen), "glyphs": mapping}
+    # glyphs は、足した字 → BIZ UDP の元の字 (hinting.py が、その字の命令を入れる)
+    return {"symbols": len(chosen), "glyphs": sources}

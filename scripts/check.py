@@ -110,9 +110,11 @@ def check_font(family: dict, weight: str) -> None:
     # BIZ UD のグリフの後に、欧文の中の記号 (BIZ UDP の字) だけが足してあること
     order, order_ud = font.getGlyphOrder(), ud.getGlyphOrder()
     check(order[: len(order_ud)] == order_ud, f"{label}: the glyph order of BIZ UD is not kept")
+    # と、hwid の置き換え先として残した BIZ UD の半角の字
     extra = set(order[len(order_ud):])
-    check(extra == set(latin_symbol_mapping(font, "latn", None).values()),
-          f"{label}: glyphs other than the symbols for Latin text were added")
+    half_widths = {v for v in gsub_mapping(font, "hwid").values() if v not in order_ud}
+    check(extra == set(latin_symbol_mapping(font, "latn", None).values()) | half_widths,
+          f"{label}: glyphs other than the symbols for Latin text and the half widths for hwid were added")
 
     check(latin_codes(cmap) == latin_codes(cmap_udp), f"{label}: BIZ UDP has other Latin letters than BIZ UD")
     for code in latin_codes(cmap):
@@ -162,6 +164,18 @@ def check_font(family: dict, weight: str) -> None:
         check(not stale, f"{label}: aalt offers {len(stale)} old {tag} glyphs of BIZ UD, such as {stale[:3]}")
         missing = sorted(k for k, v in now.items() if v in udp_aalt.get(k, []) and v not in ours_aalt.get(k, []))
         check(not missing, f"{label}: aalt lacks the {tag} glyphs of {len(missing)} Latin letters, such as {missing[:3]}")
+    # hwid (全角の英数字 Ａ ％ などを半角に) は、BIZ UD と同じ半角の字 (形・字幅・縦の字送り) になり、
+    # 縦組では BIZ UD と同じ横に倒した字になること (欧字を BIZ UDP の字にしても、半角のまま)
+    ours_hwid, ud_hwid = gsub_mapping(font, "hwid"), gsub_mapping(ud, "hwid")
+    ours_vrt2, ud_vrt2 = gsub_mapping(font, "vrt2"), gsub_mapping(ud, "vrt2")
+    check(ours_hwid.keys() == ud_hwid.keys(), f"{label}: hwid covers other characters than in BIZ UD")
+    for key in sorted(ours_hwid.keys() & ud_hwid.keys()):
+        pairs = [(ours_hwid[key], ud_hwid[key])]
+        if ud_hwid[key] in ud_vrt2:
+            pairs.append((ours_vrt2.get(ours_hwid[key]), ud_vrt2[ud_hwid[key]]))
+        for g, gu in pairs:
+            check(g is not None and font["hmtx"][g] == ud["hmtx"][gu] and font["vmtx"][g] == ud["vmtx"][gu]
+                  and outline(font, g) == outline(ud, gu), f"{label}: hwid of {key} gives {g}, not BIZ UD's {gu}")
     features = {r.FeatureTag for r in font["GSUB"].table.FeatureList.FeatureRecord}
     check({"vert", "vrt2", "fwid"} <= features, f"{label}: vertical or full-width features are missing")
     check("vhea" in font and "vmtx" in font, f"{label}: vertical metrics are missing")
@@ -190,7 +204,7 @@ def check_font(family: dict, weight: str) -> None:
     check(f"{font['head'].fontRevision:.3f}" == spec.VERSION, f"{label}: font revision")
     check(font["OS/2"].fsType == 0, f"{label}: embedding is restricted")
     check_latin_symbols(label, font, ud, udp)
-    check_hinting(label, font, family, weight, latin_targets(udp, latin_glyphs), udp)
+    check_hinting(label, font, family, weight, latin_targets(udp, latin_glyphs), udp, ud)
     check_spacing(label, font)
 
 
@@ -281,7 +295,7 @@ HINTING_PPEMS = range(8, 25)
 
 
 def check_hinting(label: str, font: TTFont, family: dict, weight: str, targets: dict[str, str],
-                  udp_font: TTFont) -> None:
+                  udp_font: TTFont, ud_font: TTFont) -> None:
     """BIZ UDP から持ってきた字のヒンティングが BIZ UDP と同じで、和文のヒンティングが BIZ UD と
     同じこと。FreeType でヒンティングを動かして描き、画素を比べる (hinting.py が cvt の番号を
     ずらし損ねていれば、字の形がずれる)"""
@@ -304,6 +318,9 @@ def check_hinting(label: str, font: TTFont, family: dict, weight: str, targets: 
         cases += [(f"{target} ({tag})", font.getGlyphID(target), udp, udp_font.getGlyphID(target))
                   for target, tag in sorted(targets.items())]
         cases += [(char, ours.char_index(ord(char)), ud, ud.char_index(ord(char))) for char in JAPANESE]
+        # hwid の置き換え先として残した、BIZ UD の半角の字
+        cases += [(f"{name} (hwid)", font.getGlyphID(name), ud, ud_font.getGlyphID(name.removesuffix(".hwid")))
+                  for name in sorted(set(gsub_mapping(font, "hwid").values())) if name.endswith(".hwid")]
         differ = []
         for what, ours_index, other, other_index in cases:
             for ppem in HINTING_PPEMS:

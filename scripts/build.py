@@ -6,7 +6,8 @@
 1. 欧字 (spec.LATIN) のグリフの形・字幅・縦の字送りを BIZ UDP のものにする
 2. 欧字からの GSUB の置き換え (spec.LATIN_FEATURES) と、欧字から始まる合字
    (spec.LATIN_LIGATURE_FEATURES) を BIZ UDP と同じにする。置き換え先のグリフの形か字送りが
-   違えば、それも BIZ UDP のものにする。字形の候補 (aalt) の欧字の候補も、それに合わせる
+   違えば、それも BIZ UDP のものにする。字形の候補 (aalt) の欧字の候補も、それに合わせる。
+   全角の英数字を半角にする hwid は、BIZ UD の半角の字を別のグリフとして残し、それにつなぐ
 3. 欧文の中の記号 (引用符・アポストロフィ・ダッシュなど) を、欧字の用字系の中でだけ BIZ UDP の
    字にする (latin_symbols.py。日本語の文書では置き換えない)
 4. BIZ UDP から持ってきた字に、BIZ UDP のヒンティングを付ける (hinting.py)
@@ -251,6 +252,55 @@ def merge_latin_alternates(gsub_ud, gsub_udp, latin: set[str], before: dict[str,
     return changed
 
 
+HALF_WIDTH_SUFFIX = ".hwid"
+
+
+def save_half_widths(ud: TTFont) -> dict:
+    """hwid (全角の英数字 Ａ ％ １ などを半角に) の置き換え先の、BIZ UD の字 (形・字幅・縦の字送り・
+    ヒンティング) と、その字の縦組の置き換え (vrt2)。欧字を BIZ UDP の字にする前に取っておく"""
+    gsub = ud["GSUB"].table
+    ensure_own_lookups(gsub, "hwid", "mapping")
+    targets = set(single_mapping(gsub, "hwid", set(ud.getGlyphOrder())).values())
+    saved = {}
+    for name in targets:
+        glyph = copy.deepcopy(ud["glyf"][name])
+        glyph.expand(ud["glyf"])
+        saved[name] = (glyph, ud["hmtx"][name], ud["vmtx"][name])
+    return {"glyphs": saved, "vrt2": single_mapping(gsub, "vrt2", targets)}
+
+
+def keep_half_widths(ud: TTFont, saved: dict, changed: set[str]) -> int:
+    """hwid の置き換え先のうち、BIZ UDP の字にしたもの (changed) は、BIZ UD の半角の字を
+    <名前>.hwid として足し、hwid をそれにつなぐ (BIZ UDP の欧字につなぐと、半角にならない。
+    ％ は全角より広くなる)。縦組の置き換え (vrt2) も、BIZ UD と同じ横に倒した字につなぐ。
+    BIZ UD のヒンティングは、BIZ UD の cvt のまま働く。足した字の数を返す"""
+    gsub = ud["GSUB"].table
+    hwid = feature_subtables(gsub, "hwid", "mapping")
+    vrt2 = feature_subtables(gsub, "vrt2", "mapping")
+    renamed: dict[str, str] = {}
+    for name in sorted(set(saved["glyphs"]) & changed):
+        new = name + HALF_WIDTH_SUFFIX
+        if new in ud["hmtx"].metrics:
+            raise SystemExit(f"{new} is already in BIZ UD")
+        glyph, horizontal, vertical = saved["glyphs"][name]
+        order = ud.getGlyphOrder() + [new]
+        ud.setGlyphOrder(order)
+        ud["glyf"].glyphOrder = order
+        ud["glyf"][new] = glyph
+        ud["hmtx"][new], ud["vmtx"][new] = horizontal, vertical
+        renamed[name] = new
+        sideways = saved["vrt2"].get(name)
+        if sideways is not None:
+            if sideways in changed:
+                raise SystemExit(f"vrt2 of {name} in BIZ UD leads to {sideways}, which was changed")
+            vrt2[0].mapping[new] = sideways
+    for subtable in hwid:
+        for key, value in subtable.mapping.items():
+            if value in renamed:
+                subtable.mapping[key] = renamed[value]
+    return len(renamed)
+
+
 def license_text() -> str:
     """OFL.txt の全文 (著作権表示と使用許諾)"""
     return (ROOT / "OFL.txt").read_text(encoding="utf-8").replace("\r\n", "\n").strip()
@@ -305,10 +355,12 @@ def build(family: dict, weight: str) -> Path:
     if ud["head"].unitsPerEm != udp["head"].unitsPerEm:
         raise SystemExit("BIZ UD and BIZ UDP have different units per em")
     versions = (source_version(ud), source_version(udp))
+    half_widths = save_half_widths(ud)
     stats = merge_latin(ud, udp)
+    kept = keep_half_widths(ud, half_widths, set(stats["glyphs"]))
     symbols = latin_symbols.add(ud, udp)
     # BIZ UDP から持ってきた字 (読書 UD のグリフ名 → BIZ UDP のグリフ名)
-    taken = {name: name for name in stats["glyphs"]} | {target: source for source, target in symbols["glyphs"].items()}
+    taken = {name: name for name in stats["glyphs"]} | symbols["glyphs"]
     cmap_udp = udp.getBestCmap()
     unhinted = {cmap_udp[code] for code in spec.UNHINTED if code in cmap_udp}
     hinted = hinting.add(ud, udp, taken, unhinted)
@@ -332,7 +384,8 @@ def build(family: dict, weight: str) -> Path:
     out = OUTPUT / spec.output_name(family, weight)
     ud.save(out)
     print(f"{out.relative_to(ROOT)}: Latin {stats['latin']} glyphs, {stats['mappings']} GSUB mappings, "
-          f"{stats['targets']} GSUB targets from BIZ UDP; {symbols['symbols']} symbols in Latin text; "
+          f"{stats['targets']} GSUB targets from BIZ UDP; {kept} half-width glyphs of BIZ UD kept for hwid; "
+          f"{symbols['symbols']} symbols in Latin text; "
           f"hinting of BIZ UDP on {hinted['hinted']} glyphs (cvt +{hinted['cvt']}); "
           f"halt {spaced['halt']}, vhal {spaced['vhal']} glyphs")
     return out

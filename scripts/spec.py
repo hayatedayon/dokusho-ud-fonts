@@ -49,7 +49,7 @@ UNHINTED = [0x002D, 0x005F, 0x00AD, 0x00AF, 0x2013, 0x2014, 0x203E, 0x2212]
 # 欧字から置き換える GSUB の機能。BIZ UDP は、ここで欧字を自分の幅のグリフにつなぐ
 # (vrt2 は縦組で横に倒した欧字、zero は斜線の 0、frac・numr は分数の斜線、sups は上付き)。
 # fwid (全角の欧字) は BIZ UD のままにする (BIZ UDP の fwid には欧字が無く、BIZ UDP の全角の欧字は
-# プロポーショナル)
+# プロポーショナル)。hwid (全角の英数字を半角に) も、BIZ UD の半角の字を別に残してつなぐ (build.py)
 LATIN_FEATURES = ["frac", "numr", "sups", "zero", "vrt2"]
 
 # 欧字から始まる合字 (GSUB の ligature) を置き換える機能。BIZ UDP は、ccmp と liga で、f i を ﬁ に、
