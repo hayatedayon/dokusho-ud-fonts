@@ -1,4 +1,4 @@
-"""約物の詰め (OpenType の halt と vhal) と、仮名・約物を詰めて組む palt を作る。build.py が使う。
+"""約物の詰め (OpenType の halt と vhal) と、仮名・約物を詰めて組む palt・vpal を作る。build.py が使う。
 
 全角の約物は、字の枠の半分ほどが空いている。halt (横組) と vhal (縦組) は、その空きを
 半分にする位置と字幅を持つ。ブラウザの text-spacing-trim (Chromium は既定で、続いた約物の
@@ -8,14 +8,17 @@
 - 終わり括弧類 (cl-02) と読点類・句点類 (cl-06・cl-07): 後ろ (右・下) の空きを除く
 - 中点類 (cl-05): 前後の空きを 4 分の 1 ずつ除く
 
-palt (プロポーショナルな字幅。見出しなどで使う) は、BIZ UDP の字幅にする。BIZ UDP の仮名・約物・
-全角の字は、BIZ UD と同じ形を、字幅を変えて置き直したもの。形が同じで (横にずらしただけ)、字幅の
-違う字に、BIZ UDP と同じ位置と字幅になる値を付ける。明朝 Bold の BIZ UDP は輪郭が少し作り直されて
-いる (点の数が違い、1 単位ずれる) ので、インクの外形が SAME_INK 単位まで同じなら同じ字とみなし、
-インクの中心と縦送りを BIZ UDP にそろえる vpal も作る。
-
 縦組の値は、vert で置き換えた縦組の字に付ける。インクが、詰めて残す半分に収まっている字だけを
 選ぶ (詰めると隣の字と重なる字には付けない。縦組の “ と ； がそうなる)。
+
+palt (横組) と vpal (縦組) は、プロポーショナルな字幅・縦の字送り (見出しなどで使う) で、BIZ UDP に
+合わせる。BIZ UDP の仮名・約物・全角の字は、BIZ UD と同じ形を、字幅や縦の字送りを変えて置き直したもの。
+palt は、形が同じで (横にずらしただけ) 字幅の違う字に、BIZ UDP と同じ位置と字幅になる値を付ける。明朝
+Bold の BIZ UDP は輪郭が少し作り直されている (点の数が違い、1 単位ずれる) ので、インクの外形が
+SAME_INK 単位まで同じなら同じ字とみなし、インクの中心を BIZ UDP にそろえる。vpal は、vert で置き換えた
+縦組の字 (BIZ UDP 側だけに vert がある仮名なども含む) のうち、インクの幅と高さが VERTICAL_SAME_INK
+単位まで同じもの (BIZ UDP の縦組の括弧は、縦の線が少し短いものがある) に、縦組の原点 (glyf の yMax +
+vmtx の上サイドベアリング) からのインクの中心と縦の字送りが BIZ UDP と同じになる値を付ける。
 """
 
 from fontTools.feaLib.builder import addOpenTypeFeaturesFromString
@@ -136,8 +139,14 @@ def proportional(font: TTFont, udp: TTFont) -> dict[str, tuple[int, int, int, in
     return values
 
 
+def vertical_origin(font: TTFont, glyph: str) -> int:
+    """TrueType (VORG の無い glyf フォント) の縦組の原点の y 座標"""
+    return font["glyf"][glyph].yMax + font["vmtx"][glyph][1]
+
+
 def proportional_vertical(font: TTFont, udp: TTFont) -> dict[str, tuple[int, int, int, int]]:
-    """vpal の値。vert 置換後の字形を BIZ UDP と同じ縦位置・縦送りにする。"""
+    """vpal の値。vert で置き換えた縦組の字を、BIZ UDP と同じ縦の位置 (縦組の原点からのインクの中心) と
+    縦の字送りにする"""
     cmap, cmap_udp = font.getBestCmap(), udp.getBestCmap()
     forms, forms_udp = vertical_forms(font), vertical_forms(udp)
     values: dict[str, tuple[int, int, int, int]] = {}
@@ -151,11 +160,13 @@ def proportional_vertical(font: TTFont, udp: TTFont) -> dict[str, tuple[int, int
         a, b = ink(font, upright), ink(udp, upright_udp)
         if a is None or b is None:
             continue
-        # 同じ縦組字形で、輪郭の縦寸法が近いものだけを位置補正する。
+        # 同じ縦組字形で、輪郭の寸法が近いものだけを位置補正する (括弧は縦の線の長さが少し違う)
         if (abs((a[3] - a[1]) - (b[3] - b[1])) > VERTICAL_SAME_INK
                 or abs((a[2] - a[0]) - (b[2] - b[0])) > VERTICAL_SAME_INK):
             continue
-        dy = round(((b[1] + b[3]) - (a[1] + a[3])) / 2)
+        # 明朝 Bold では、制御点の違いで縦組の原点 (yMax + 上サイドベアリング) が BIZ UDP とずれる字がある
+        origin_a, origin_b = vertical_origin(font, upright), vertical_origin(udp, upright_udp)
+        dy = round(((b[1] + b[3]) - 2 * origin_b - ((a[1] + a[3]) - 2 * origin_a)) / 2)
         advance = udp["vmtx"][upright_udp][0] - font["vmtx"][upright][0]
         if dy or advance:
             value = (0, dy, 0, advance)
@@ -165,7 +176,7 @@ def proportional_vertical(font: TTFont, udp: TTFont) -> dict[str, tuple[int, int
 
 
 def add(font: TTFont, udp: TTFont, extra: str = "") -> dict[str, int]:
-    """GPOS に halt・vhal・palt を作る (元の BIZ UD には GPOS が無い)。用字系は GSUB と同じにする。
+    """GPOS に halt・vhal・palt・vpal を作る (元の BIZ UD には GPOS が無い)。用字系は GSUB と同じにする。
     extra は、一緒に組み込む機能ファイルの文 (結合用の記号の mark・mkmk と GDEF。combining_marks.py)"""
     if "GPOS" in font:
         raise SystemExit("the font already has GPOS; merge the features instead of replacing it")

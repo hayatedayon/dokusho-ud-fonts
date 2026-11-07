@@ -19,7 +19,7 @@
 7. 等幅の数字 (tnum) と、数字の間で持ち上げるコロン (calt) を足す (tabular_digits.py)
 8. 結合用の記号 (アクセントと、仮名の濁点・半濁点) を、前の字に乗せる (combining_marks.py。字幅を
    0 にするのは、欧字を BIZ UDP の字にする前。hwid の置き換え先なら、BIZ UD の字を残す)
-9. 約物の詰め (halt・vhal) と、BIZ UDP の字幅で仮名・約物を詰める palt を足す (spacing.py。
+9. 約物の詰め (halt・vhal) と、BIZ UDP の字幅・字送りで仮名・約物を詰める palt・vpal を足す (spacing.py。
    結合用の記号の mark・mkmk と GDEF も、ここで一緒に組み込む)
 
 BIZ UD と BIZ UDP は、ヒンティングの cvt と prep が違う。BIZ UDP から持ってきた字の命令は、

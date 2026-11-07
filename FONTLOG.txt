@@ -94,11 +94,13 @@ ChangeLog
   the bottom of ₍ meets the bottom of p, so that they stay within the line
   (usWinDescent). subs and sinf, which the fonts lacked, turn digits and
   + - − = ( ) into them.
-- New in Dokusho UD: palt, the proportional widths of kana and punctuation
-  for headings and the like, taken from BIZ UDP, whose kana and
-  punctuation are BIZ UD's glyphs set with other widths: the glyphs are
-  placed and spaced as in BIZ UDP (their ink centered as BIZ UDP's where
-  BIZ UDP Mincho Bold redrew the outlines slightly). Body text stays solid.
+- New in Dokusho UD: palt and vpal, the proportional widths and vertical
+  advances of kana and punctuation for headings and the like, taken from
+  BIZ UDP, whose kana and punctuation are BIZ UD's glyphs set with other
+  widths and vertical advances: the glyphs are placed and spaced as in BIZ
+  UDP (their ink centered as BIZ UDP's where BIZ UDP redrew the outlines
+  slightly, or shortened the stems of vertical brackets, and from each
+  glyph's vertical origin in vpal). Body text stays solid.
 - New characters: the two- and three-em dashes ⸺ ⸻ (U+2E3A, U+2E3B, two
   and three ― joined, with vertical forms in vert and vrt2), the
   non-breaking hyphen ‑ (U+2011, the glyph of -), the spaces U+2000-200A,

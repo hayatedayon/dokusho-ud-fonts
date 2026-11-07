@@ -4,7 +4,7 @@
 冒頭。どちらも著作権の切れた文章)、和欧混植・約物・縦中横・ルビ・数字・結合用の記号の見本を、読書 UD と、
 比べるための BIZ UD・BIZ UDP で並べる。両端揃え (text-align: justify) も切り替えられる。節ごとに 1 行にして書体を横に並べるので、どの列でも同じ節が
 同じ位置から始まる。横組と縦組、大きさと行送り、約物の詰め (text-spacing-trim)、和欧間のアキ
-(text-autospace)、palt を切り替えられ、tnum は、なし・あり・並べる (書体ごとに、なしとありの列) を選べる。
+(text-autospace)、palt (縦組は vpal) を切り替えられ、tnum は、なし・あり・並べる (書体ごとに、なしとありの列) を選べる。
 
 フォントを読むには、リポジトリの一番上で python3 -m http.server を動かし、
 http://localhost:8000/dist/specimen.html を開く (ファイルを直接開くと、ブラウザによっては fonts/ と
@@ -101,18 +101,18 @@ CONTENT = """
 </section>
 
 <section class="block">
-<h2 class="label">見出し（palt）</h2>
+<h2 class="label">見出し（palt・vpal）</h2>
 <h3 class="heading palt">プロポーショナルに詰めた見出し「ラ・カンパネラ」</h3>
 <h3 class="heading">ベタ組の見出し「ラ・カンパネラ」</h3>
-<p class="aside">縦書きでは vpal が働きます。vpal は BIZ UDP の縦組用字形を参照し、字形の位置と縦送りを合わせます。横組用 palt を縦書きに適用した場合との比較には、上の「縦書きでも palt を適用」を使えます。</p>
+<p class="aside">横書きでは palt、縦書きでは vpal をかけます（palt は字を左右にずらすので、縦書きでかけると字が揺れます。上の「縦書きでも palt を適用」で比べられます）。</p>
 </section>
 
-<section class="block vpal-specimen">
-<h2 class="label">縦組の詰め（vpal）</h2>
-<p>「春、（花）・風。」『夏、［山］・川。』</p>
-<p>あいうえお、かきくけこ。さしすせそ・たちつてと。</p>
-<p>（縦組の括弧）「かぎ括弧」『二重括弧』、句読点。・中点：；</p>
-<p class="aside">縦書きで「全体に palt」をオンにすると、読書 UD では vpal が働きます。括弧・句読点・中点・仮名の送りと位置を、BIZ UDP・BIZ UD と比べてください。</p>
+<section class="block">
+<h2 class="label">詰め組（palt・vpal）</h2>
+<p class="palt">「春、（花）・風。」『夏、［山］・川。』</p>
+<p class="palt">あいうえお、かきくけこ。さしすせそ・たちつてと。</p>
+<p class="palt">（括弧）「かぎ括弧」『二重括弧』、句読点。・中点：；</p>
+<p class="aside">括弧・句読点・中点・仮名の字送りと位置が BIZ UDP とそろいます（「並べる」で BIZ UDP・BIZ UD を出して比べられます。本文の節にもかけるには、上の「全体に palt（縦は vpal）」を使います）。</p>
 </section>
 """
 
@@ -194,7 +194,7 @@ header legend { float: left; color: #666; margin-right: 0.3rem; }
 <label><input type="checkbox" id="trim" checked> 約物の詰め</label>
 <label><input type="checkbox" id="autospace"> 和欧間のアキ</label>
 <label>tnum <select id="tnum"><option value="off">なし</option><option value="on">あり</option><option value="both">並べる</option></select></label>
-<label><input type="checkbox" id="palt"> 全体に palt</label>
+<label><input type="checkbox" id="palt"> 全体に palt（縦は vpal）</label>
 <label><input type="checkbox" id="raw-palt"> 縦書きでも palt を適用（比較用）</label>
 <span id="status" class="status"></span>
 </header>

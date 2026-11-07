@@ -802,7 +802,7 @@ def fraction_targets(udp: TTFont) -> tuple[float, float]:
     return median(befores), median(afters)
 
 
-# --- 足した文字と palt ----------------------------------------------------------------------
+# --- 足した文字と palt・vpal ----------------------------------------------------------------
 
 INVISIBLE_CODES = [0x200B, 0x200C, 0x200D, 0x2060, 0xFEFF]
 SPACE_WIDTHS = {0x2000: 1 / 2, 0x2001: 1, 0x2002: 1 / 2, 0x2003: 1, 0x2004: 1 / 3, 0x2005: 1 / 4, 0x2006: 1 / 6,
@@ -875,34 +875,43 @@ def check_proportional(label: str, font: TTFont, udp: TTFont) -> None:
         check(cmap[ord(char)] not in palt, f"{label}: {char} has palt")
 
 
+VERTICAL_PROPORTIONAL_CODES = [*range(0x3000, 0x3100), *range(0x31F0, 0x3200), 0xFE45, 0xFE46, *range(0xFF01, 0xFF61)]
+
+
 def check_proportional_vertical(label: str, font: TTFont, udp: TTFont) -> None:
-    """vpal の縦送りと縦位置が BIZ UDP と一致すること"""
+    """vpal で、仮名・約物・全角の字の縦組の字が BIZ UDP と同じ縦の位置 (縦組の原点からのインクの中心が
+    1 単位まで) と縦の字送りになり、付けるべき字に漏れが無いこと。漢字や結合用の記号には付かないこと"""
     vpal = gpos_values(font, "vpal")
     cmap, cmap_udp = font.getBestCmap(), udp.getBestCmap()
     forms, forms_udp = gsub_mapping(font, "vert"), gsub_mapping(udp, "vert")
     wrong, missing = [], []
-    for code in [*range(0x3000, 0x3100), *range(0xFF01, 0xFF61)]:
+    for code in VERTICAL_PROPORTIONAL_CODES:
         name, other = cmap.get(code), cmap_udp.get(code)
-        if name is None or other is None:
-            continue
-        if unicodedata.category(chr(code)) in ("Mn", "Me"):
+        if name is None or other is None or unicodedata.category(chr(code)) in ("Mn", "Me"):
             continue  # 結合用の濁点・半濁点は、vpal で送りを詰める字ではない
         upright, upright_udp = forms.get(name, name), forms_udp.get(other, other)
         a, b = glyph_bounds(font, upright), glyph_bounds(udp, upright_udp)
         if a is None or b is None:
             continue
+        origin_a = font["glyf"][upright].yMax + font["vmtx"][upright][1]
+        origin_b = udp["glyf"][upright_udp].yMax + udp["vmtx"][upright_udp][1]
+        center_a, center_b = (a[1] + a[3]) / 2 - origin_a, (b[1] + b[3]) / 2 - origin_b
         alike = abs((a[3] - a[1]) - (b[3] - b[1])) <= 100 and abs((a[2] - a[0]) - (b[2] - b[0])) <= 100
         if upright not in vpal:
-            if alike and (font["vmtx"][upright] != udp["vmtx"][upright_udp] or abs((a[1] + a[3]) - (b[1] + b[3])) > 2):
+            if alike and (font["vmtx"][upright][0] != udp["vmtx"][upright_udp][0] or abs(center_a - center_b) > 1):
                 missing.append(chr(code))
             continue
         x, y, xa, ya = vpal[upright]
-        centered = abs((a[1] + a[3]) / 2 + y - (b[1] + b[3]) / 2) <= 1
+        centered = abs(center_a + y - center_b) <= 1
         if x or xa or not centered or font["vmtx"][upright][0] + ya != udp["vmtx"][upright_udp][0]:
             wrong.append(chr(code))
-    check(len(vpal) > 100, f"{label}: vpal has only {len(vpal)} glyphs")
-    check(not wrong, f"{label}: vpal differs from BIZ UDP for {wrong[:5]}")
-    check(not missing, f"{label}: vpal is missing for {missing[:5]}")
+    check(len(vpal) > 200, f"{label}: vpal has only {len(vpal)} glyphs")
+    check(not wrong, f"{label}: vpal does not set {len(wrong)} characters as BIZ UDP, such as {wrong[:5]}")
+    check(not missing, f"{label}: {len(missing)} characters lack vpal, such as {missing[:5]}")
+    for char in "漢字読書":
+        check(cmap[ord(char)] not in vpal, f"{label}: {char} has vpal")
+    for code in combining_codes(cmap):
+        check(cmap[code] not in vpal, f"{label}: combining mark U+{code:04X} has vpal")
 
 
 # --- 等幅の数字・結合用の記号・行からのはみ出し ------------------------------------------------
@@ -1202,11 +1211,11 @@ class Shaped:
         return [(self.outline_of(g), xa, ya, xo, yo)
                 for g, _c, xa, ya, xo, yo in self.shaper.shape(text, language, vertical, (), script)]
 
-    def ink(self, text: str, language: str, vertical: bool = False) -> list:
+    def ink(self, text: str, language: str, vertical: bool = False, features=()) -> list:
         """組んだ字のインクの外形 (最初の字の原点から)。インクの無い字は None"""
         x = y = 0
         boxes = []
-        for g, _c, xa, ya, xo, yo in self.shaper.shape(text, language, vertical):
+        for g, _c, xa, ya, xo, yo in self.shaper.shape(text, language, vertical, features):
             bounds = glyph_bounds(self.font, self.order[g])
             boxes.append(None if bounds is None else
                          (bounds[0] + x + xo, bounds[1] + y + yo, bounds[2] + x + xo, bounds[3] + y + yo))
@@ -1240,8 +1249,10 @@ def check_shaping(label: str, family: dict, weight: str) -> None:
       が行末に足すハイフンなど) 同じ。縦組で正立する記号
       (Unicode の縦書きの向きが U・Tu・Tr) は、縦組でもインクの位置が BIZ UDP と同じ (1 単位まで)
     - 見えない文字 (Default_Ignorable_Code_Point) は、どの文脈でも幅 0
+    - 縦組の vpal で、仮名・約物・全角の字のインクの中心と縦の字送りが BIZ UDP と同じ (1 単位まで)
     - 結合用の記号は、前の字のインクの上か下の真ん中に、触れずに付く (欧字・ギリシャ文字・キリル文字。
-      合成済みの字が無い組み合わせ)。濁点・半濁点は、横組でも縦組でも、前の仮名の枠の中に付く"""
+      合成済みの字が無い組み合わせ)。濁点・半濁点は、横組でも縦組でも、前の仮名の枠の中に付き、vpal を
+      かけても仮名との位置が変わらない"""
     paths = {"ours": FONTS / spec.output_name(family, weight), "ud": SOURCES / f"{family['ud']}-{weight}.ttf",
              "udp": SOURCES / f"{family['udp']}-{weight}.ttf"}
     shaped = {key: Shaped(path) for key, path in paths.items()}
@@ -1374,6 +1385,31 @@ def check_shaping(label: str, family: dict, weight: str) -> None:
                     report("invisible characters are not of zero width", f"U+{code:04X}"
                            f"{' (vertical)' if vertical else ''} after {context[0]}")
 
+    # 縦組の vpal: 仮名・約物・全角の字 (BIZ UDP と縦組の字の外形が近いもの) のインクの中心と縦の字送り
+    forms, forms_udp = gsub_mapping(font, "vert"), gsub_mapping(font_udp, "vert")
+    prefix = len("あ".encode())
+    for code in VERTICAL_PROPORTIONAL_CODES:
+        if code not in cmap or code not in cmap_udp or code in marks or code in ignorable:
+            continue
+        a_box = glyph_bounds(font, forms.get(cmap[code], cmap[code]))
+        b_box = glyph_bounds(font_udp, forms_udp.get(cmap_udp[code], cmap_udp[code]))
+        if a_box is None or b_box is None:
+            continue
+        if abs((a_box[3] - a_box[1]) - (b_box[3] - b_box[1])) > 100 \
+                or abs((a_box[2] - a_box[0]) - (b_box[2] - b_box[0])) > 100:
+            continue
+        text = f"あ{chr(code)}あ"
+        shaped_a = [x for x in ours.shaper.shape(text, "ja", True, ("vpal",)) if x[1] == prefix]
+        shaped_b = [x for x in udp.shaper.shape(text, "ja", True) if x[1] == prefix]
+        if len(shaped_a) != 1 or len(shaped_b) != 1:
+            report("with vpal is not a single glyph in vertical text", f"U+{code:04X}")
+            continue
+        (ga, _ca, xa_a, ya_a, xo_a, yo_a), (gb, _cb, xa_b, ya_b, xo_b, yo_b) = shaped_a[0], shaped_b[0]
+        ba, bb = glyph_bounds(font, ours.order[ga]), glyph_bounds(font_udp, udp.order[gb])
+        cy = abs((ba[1] + ba[3]) / 2 + yo_a - ((bb[1] + bb[3]) / 2 + yo_b))
+        if (xa_a, ya_a, xo_a) != (xa_b, ya_b, xo_b) or cy > 1:
+            report("with vpal in vertical text is not placed as in BIZ UDP", f"U+{code:04X}")
+
     # 結合用の記号
     bases = [code for code in sorted(cmap) if (code in spec.LATIN or 0x0370 <= code <= 0x052F)
              and unicodedata.category(chr(code))[0] in "LN" and glyph_bounds(font, cmap[code]) is not None]
@@ -1401,7 +1437,7 @@ def check_shaping(label: str, family: dict, weight: str) -> None:
                 boxes = ours.ink(text, "ja", vertical)
                 if len(boxes) != 2 or boxes[1] is None:
                     continue  # 合字になった (か゚ など)
-                _base_box, (mx0, my0, mx1, my1) = boxes
+                (bx0, by0, _bx1, _by1), (mx0, my0, mx1, my1) = boxes
                 # 仮名の枠: 横組は (0, -usWinDescent)〜(em, usWinAscent)、縦組は x が -em/2〜em/2、y が -em〜0
                 # (HarfBuzz は、縦組の字の位置を、縦組の原点 (枠の上の真ん中) からのずれで返す)
                 inside = (-em / 2 <= mx0 and mx1 <= em / 2 and -em <= my0 and my1 <= 0) if vertical else \
@@ -1409,6 +1445,11 @@ def check_shaping(label: str, family: dict, weight: str) -> None:
                 if not inside:
                     report("kana marks are not in the box of the kana", f"U+{base:04X} U+{mark:04X}"
                            f"{' (vertical)' if vertical else ''}")
+                if vertical:
+                    vpal_boxes = ours.ink(text, "ja", True, ("vpal",))
+                    if len(vpal_boxes) != 2 or vpal_boxes[1] is None \
+                            or (vpal_boxes[1][0] - vpal_boxes[0][0], vpal_boxes[1][1] - vpal_boxes[0][1]) != (mx0 - bx0, my0 - by0):
+                        report("kana marks do not follow the kana with vpal", f"U+{base:04X} U+{mark:04X}")
     for item in shaped.values():
         item.close()
     label = spec.output_name(family, weight)
