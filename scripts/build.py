@@ -464,7 +464,7 @@ def build(family: dict, weight: str) -> Path:
           f"hinting of BIZ UDP on {hinted['hinted']} glyphs (cvt +{hinted['cvt']}); "
           f"{extra['invisible']} invisible, {extra['spaces']} spaces and {extra['dashes']} dashes added; "
           f"tnum {tabular['tabular']} glyph; colon between digits raised by {colon['raise']}; {marks['marks']} combining marks on {marks['bases']} bases; "
-          f"halt {spaced['halt']}, vhal {spaced['vhal']}, palt {spaced['palt']} glyphs")
+          f"halt {spaced['halt']}, vhal {spaced['vhal']}, palt {spaced['palt']}, vpal {spaced['vpal']} glyphs")
     return out
 
 

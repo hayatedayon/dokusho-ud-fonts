@@ -247,6 +247,7 @@ def check_font(family: dict, weight: str) -> None:
     check_fractions(label, font, udp)
     check_extra(label, font)
     check_proportional(label, font, udp)
+    check_proportional_vertical(label, font, udp)
     check_tabular(label, font)
     check_marks(label, font, ud)
     check_overflow(label, font, ud, udp)
@@ -872,6 +873,36 @@ def check_proportional(label: str, font: TTFont, udp: TTFont) -> None:
     check(not missing, f"{label}: {len(missing)} characters lack palt, such as {missing[:5]}")
     for char in "漢字読書":
         check(cmap[ord(char)] not in palt, f"{label}: {char} has palt")
+
+
+def check_proportional_vertical(label: str, font: TTFont, udp: TTFont) -> None:
+    """vpal の縦送りと縦位置が BIZ UDP と一致すること"""
+    vpal = gpos_values(font, "vpal")
+    cmap, cmap_udp = font.getBestCmap(), udp.getBestCmap()
+    forms, forms_udp = gsub_mapping(font, "vert"), gsub_mapping(udp, "vert")
+    wrong, missing = [], []
+    for code in [*range(0x3000, 0x3100), *range(0xFF01, 0xFF61)]:
+        name, other = cmap.get(code), cmap_udp.get(code)
+        if name is None or other is None:
+            continue
+        if unicodedata.category(chr(code)) in ("Mn", "Me"):
+            continue  # 結合用の濁点・半濁点は、vpal で送りを詰める字ではない
+        upright, upright_udp = forms.get(name, name), forms_udp.get(other, other)
+        a, b = glyph_bounds(font, upright), glyph_bounds(udp, upright_udp)
+        if a is None or b is None:
+            continue
+        alike = abs((a[3] - a[1]) - (b[3] - b[1])) <= 100 and abs((a[2] - a[0]) - (b[2] - b[0])) <= 100
+        if upright not in vpal:
+            if alike and (font["vmtx"][upright] != udp["vmtx"][upright_udp] or abs((a[1] + a[3]) - (b[1] + b[3])) > 2):
+                missing.append(chr(code))
+            continue
+        x, y, xa, ya = vpal[upright]
+        centered = abs((a[1] + a[3]) / 2 + y - (b[1] + b[3]) / 2) <= 1
+        if x or xa or not centered or font["vmtx"][upright][0] + ya != udp["vmtx"][upright_udp][0]:
+            wrong.append(chr(code))
+    check(len(vpal) > 100, f"{label}: vpal has only {len(vpal)} glyphs")
+    check(not wrong, f"{label}: vpal differs from BIZ UDP for {wrong[:5]}")
+    check(not missing, f"{label}: vpal is missing for {missing[:5]}")
 
 
 # --- 等幅の数字・結合用の記号・行からのはみ出し ------------------------------------------------

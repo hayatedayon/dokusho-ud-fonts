@@ -104,7 +104,15 @@ CONTENT = """
 <h2 class="label">見出し（palt）</h2>
 <h3 class="heading palt">プロポーショナルに詰めた見出し「ラ・カンパネラ」</h3>
 <h3 class="heading">ベタ組の見出し「ラ・カンパネラ」</h3>
-<p class="aside">縦書きでは palt ではなく vpal をかけます（palt は字を左右にずらすので、縦書きでかけると字が揺れます）。読書 UD には、まだ vpal がありません。</p>
+<p class="aside">縦書きでは vpal が働きます。vpal は BIZ UDP の縦組用字形を参照し、字形の位置と縦送りを合わせます。横組用 palt を縦書きに適用した場合との比較には、上の「縦書きでも palt を適用」を使えます。</p>
+</section>
+
+<section class="block vpal-specimen">
+<h2 class="label">縦組の詰め（vpal）</h2>
+<p>「春、（花）・風。」『夏、［山］・川。』</p>
+<p>あいうえお、かきくけこ。さしすせそ・たちつてと。</p>
+<p>（縦組の括弧）「かぎ括弧」『二重括弧』、句読点。・中点：；</p>
+<p class="aside">縦書きで「全体に palt」をオンにすると、読書 UD では vpal が働きます。括弧・句読点・中点・仮名の送りと位置を、BIZ UDP・BIZ UD と比べてください。</p>
 </section>
 """
 
@@ -162,6 +170,8 @@ header legend { float: left; color: #666; margin-right: 0.3rem; }
 .vertical #grid > .cell { writing-mode: vertical-rl; height: 26em; overflow-x: auto; }
 /* palt は横組で字を左右にずらす機能で、縦書きでかけると字が左右に揺れる。縦書きでは vpal にする */
 .vertical .text .palt, .vertical .text.palt-all { font-feature-settings: "vpal"; }
+/* 比較用: 横組用の palt を縦書きにも適用し、縦組の UDP と見比べられるようにする */
+.vertical.raw-palt .text .palt, .vertical.raw-palt .text.palt-all { font-feature-settings: "palt"; }
 .no-trim .text { text-spacing-trim: space-all; }
 .trim .text { text-spacing-trim: normal; }
 .autospace .text { text-autospace: normal; }
@@ -185,6 +195,7 @@ header legend { float: left; color: #666; margin-right: 0.3rem; }
 <label><input type="checkbox" id="autospace"> 和欧間のアキ</label>
 <label>tnum <select id="tnum"><option value="off">なし</option><option value="on">あり</option><option value="both">並べる</option></select></label>
 <label><input type="checkbox" id="palt"> 全体に palt</label>
+<label><input type="checkbox" id="raw-palt"> 縦書きでも palt を適用（比較用）</label>
 <span id="status" class="status"></span>
 </header>
 <p class="note">両端揃えは、行の長さをそろえるために字の間を広げます。列が狭く、行の中に欧文が多いと、広げる所が少なくて空きが目立ちます。約物の詰めは CSS の <code>text-spacing-trim</code>（Chromium は既定で詰めます。切ると <code>space-all</code>）、和欧間のアキは <code>text-autospace</code>（Chromium 140 から）です。ブラウザが対応していなければ、切り替えても変わりません。BIZ UD・BIZ UDP は、比べるための元のフォントです。</p>
@@ -233,6 +244,7 @@ function render() {
     }
   }
   document.body.classList.toggle("vertical", $("vertical").checked);
+  document.body.classList.toggle("raw-palt", $("raw-palt").checked);
   document.body.classList.toggle("justify", $("justify").checked);
   document.body.classList.toggle("trim", $("trim").checked);
   document.body.classList.toggle("no-trim", !$("trim").checked);
@@ -242,7 +254,7 @@ function render() {
   document.documentElement.style.setProperty("--header", document.querySelector("header").offsetHeight + "px");
 }
 
-for (const id of ["family", "weight", "show-ud", "show-udp", "vertical", "justify", "trim", "autospace", "tnum", "palt"]) {
+for (const id of ["family", "weight", "show-ud", "show-udp", "vertical", "justify", "trim", "autospace", "tnum", "palt", "raw-palt"]) {
   $(id).addEventListener("change", render);
 }
 for (const [id, unit, variable] of [["size", "px", "--size"], ["leading", "", "--leading"]]) {

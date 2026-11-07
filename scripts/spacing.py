@@ -12,8 +12,7 @@ palt (プロポーショナルな字幅。見出しなどで使う) は、BIZ UD
 全角の字は、BIZ UD と同じ形を、字幅を変えて置き直したもの。形が同じで (横にずらしただけ)、字幅の
 違う字に、BIZ UDP と同じ位置と字幅になる値を付ける。明朝 Bold の BIZ UDP は輪郭が少し作り直されて
 いる (点の数が違い、1 単位ずれる) ので、インクの外形が SAME_INK 単位まで同じなら同じ字とみなし、
-インクの中心を BIZ UDP にそろえる。縦組の vpal は作らない (BIZ UDP も、縦の
-字送りは BIZ UD と同じ)。
+インクの中心と縦送りを BIZ UDP にそろえる vpal も作る。
 
 縦組の値は、vert で置き換えた縦組の字に付ける。インクが、詰めて残す半分に収まっている字だけを
 選ぶ (詰めると隣の字と重なる字には付けない。縦組の “ と ； がそうなる)。
@@ -99,6 +98,7 @@ def plan(font: TTFont) -> dict[str, dict[str, tuple[int, int, int, int]]]:
 
 
 SAME_INK = 20
+VERTICAL_SAME_INK = 100
 
 
 def shift(font: TTFont, name: str, other: TTFont, other_name: str) -> int | None:
@@ -136,6 +136,34 @@ def proportional(font: TTFont, udp: TTFont) -> dict[str, tuple[int, int, int, in
     return values
 
 
+def proportional_vertical(font: TTFont, udp: TTFont) -> dict[str, tuple[int, int, int, int]]:
+    """vpal の値。vert 置換後の字形を BIZ UDP と同じ縦位置・縦送りにする。"""
+    cmap, cmap_udp = font.getBestCmap(), udp.getBestCmap()
+    forms, forms_udp = vertical_forms(font), vertical_forms(udp)
+    values: dict[str, tuple[int, int, int, int]] = {}
+    for code, name in sorted(cmap.items()):
+        other = cmap_udp.get(code)
+        if other is None:
+            continue
+        upright, upright_udp = forms.get(name, name), forms_udp.get(other, other)
+        if upright == name and upright_udp == other:
+            continue
+        a, b = ink(font, upright), ink(udp, upright_udp)
+        if a is None or b is None:
+            continue
+        # 同じ縦組字形で、輪郭の縦寸法が近いものだけを位置補正する。
+        if (abs((a[3] - a[1]) - (b[3] - b[1])) > VERTICAL_SAME_INK
+                or abs((a[2] - a[0]) - (b[2] - b[0])) > VERTICAL_SAME_INK):
+            continue
+        dy = round(((b[1] + b[3]) - (a[1] + a[3])) / 2)
+        advance = udp["vmtx"][upright_udp][0] - font["vmtx"][upright][0]
+        if dy or advance:
+            value = (0, dy, 0, advance)
+            if values.setdefault(upright, value) != value:
+                raise SystemExit(f"{upright} would need two vpal values")
+    return values
+
+
 def add(font: TTFont, udp: TTFont, extra: str = "") -> dict[str, int]:
     """GPOS に halt・vhal・palt を作る (元の BIZ UD には GPOS が無い)。用字系は GSUB と同じにする。
     extra は、一緒に組み込む機能ファイルの文 (結合用の記号の mark・mkmk と GDEF。combining_marks.py)"""
@@ -143,6 +171,7 @@ def add(font: TTFont, udp: TTFont, extra: str = "") -> dict[str, int]:
         raise SystemExit("the font already has GPOS; merge the features instead of replacing it")
     values = plan(font)
     values["palt"] = proportional(font, udp)
+    values["vpal"] = proportional_vertical(font, udp)
     scripts = [record.ScriptTag for record in font["GSUB"].table.ScriptList.ScriptRecord]
     lines = [f"languagesystem {script} dflt;" for script in ["DFLT"] + [s for s in scripts if s != "DFLT"]]
     for tag, glyphs in values.items():
