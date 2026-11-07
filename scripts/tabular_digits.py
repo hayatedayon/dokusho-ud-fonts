@@ -76,11 +76,12 @@ def raise_colon(font: TTFont) -> dict[str, int]:
     if any(r.FeatureTag == "calt" for r in gsub.FeatureList.FeatureRecord):
         raise SystemExit("the font already has calt")
     colon = cmap[0x3A]
-    digits = [cmap[0x30 + d] for d in range(10)]
-    # tnum の 1 と、斜線の 0 (zero) の後でも
+    ascii_digits = [cmap[0x30 + d] for d in range(10)]
+    digits = ascii_digits + [cmap[0xFF10 + d] for d in range(10)]
+    # 全角の数字・tnum の 1・斜線の 0 (zero) の前後でも
     digits += [build.single_mapping(gsub, tag, set(digits)).get(d) for tag in ("tnum", "zero") for d in digits]
     digits = sorted({d for d in digits if d}, key=font.getGlyphID)
-    middle = median((ink(font, d)[1] + ink(font, d)[3]) / 2 for d in digits)
+    middle = median((ink(font, d)[1] + ink(font, d)[3]) / 2 for d in ascii_digits)
     _x0, y0, _x1, y1 = ink(font, colon)
     dy = round(middle - (y0 + y1) / 2)
 

@@ -367,6 +367,12 @@ def add(font: TTFont, udp: TTFont) -> dict:
     cmap = font.getBestCmap()
     digits = [cmap[0x30 + d] for d in range(10)]
     fullwidth = [cmap[FULLWIDTH_DIGIT + d] for d in range(10)]
+    # 斜線の 0 (zero。半角と全角の 0 から置き換わる字) も、分数・上付き・下付きの 0 にする
+    slashed_zeros = sorted(set(build.single_mapping(gsub, "zero", {digits[0], fullwidth[0]}).values()),
+                           key=font.getGlyphID)
+
+    def sources_of(d: int) -> list[str]:
+        return [digits[d], fullwidth[d], *(slashed_zeros if d == 0 else ())]
     reference = cmap[SUPERSCRIPTS[1]]
     # 作る字の幅は ¹ と同じにする (BIZ UDP の ⁴ は、太字では ¹ ² ³ と幅が少し違う。⁴ はそのまま)
     advance = font["hmtx"][reference][0]
@@ -497,7 +503,7 @@ def add(font: TTFont, udp: TTFont) -> dict:
     numr_mapping = _single(build.feature_subtables(gsub, "numr", "mapping"))
     sups_mapping = _single(build.feature_subtables(gsub, "sups", "mapping"))
     for d in range(10):
-        for source in (digits[d], fullwidth[d]):
+        for source in sources_of(d):
             numr_mapping[source] = numerators[d]
             sups_mapping[source] = superscripts[d]
     for code, (_source, inputs) in SUPERSCRIPT_SYMBOLS.items():
@@ -509,13 +515,13 @@ def add(font: TTFont, udp: TTFont) -> dict:
 
     # dnom (新しい機能): 数字を分母に、/ を分数の斜線に (BIZ UDP の dnom は / だけ)
     dnom = otTables.SingleSubst()
-    dnom.mapping = {source: denominators[d] for d in range(10) for source in (digits[d], fullwidth[d])}
+    dnom.mapping = {source: denominators[d] for d in range(10) for source in sources_of(d)}
     dnom.mapping[cmap[0x2F]] = wide_slash  # BIZ UDP の dnom と同じ
     _new_feature(gsub, "dnom", _lookup(gsub, 1, dnom))
 
     # subs・sinf (新しい機能): 数字と記号を下付きに (同じ lookup)
     subs = otTables.SingleSubst()
-    subs.mapping = {source: subscripts[d] for d in range(10) for source in (digits[d], fullwidth[d])}
+    subs.mapping = {source: subscripts[d] for d in range(10) for source in sources_of(d)}
     for code, (_source, inputs) in SUPERSCRIPT_SYMBOLS.items():
         for character in inputs:
             subs.mapping[cmap[character]] = subscripts[code]
@@ -530,11 +536,8 @@ def add(font: TTFont, udp: TTFont) -> dict:
     #    分母の後の数字を分母に (1/25 は、1 が最後の分子、/ が分数の斜線、2 が最初の分母、5 が分母)
     # ⁄ (U+2044) では、文字を並べる仕組みが分子に numr、分母に dnom も掛けるので、すでに分子・
     # 分母になった字も、同じように置き換える
-    def numbers(d: int) -> list[str]:
-        return [digits[d], fullwidth[d]]
-
     def reverse(lookahead: list[str], targets: dict[int, str], also: dict[int, str]) -> otTables.ReverseChainSingleSubst:
-        mapping = {source: targets[d] for d in range(10) for source in numbers(d)}
+        mapping = {source: targets[d] for d in range(10) for source in sources_of(d)}
         mapping.update({also[d]: targets[d] for d in range(10)})
         subtable = otTables.ReverseChainSingleSubst()
         subtable.Format = 1
@@ -559,7 +562,7 @@ def add(font: TTFont, udp: TTFont) -> dict:
         return _lookup(gsub, 1, subtable)
 
     def to(targets: dict[int, str]) -> dict[str, str]:
-        mapping = {source: targets[d] for d in range(10) for source in numbers(d)}
+        mapping = {source: targets[d] for d in range(10) for source in sources_of(d)}
         mapping.update({denominators[d]: targets[d] for d in range(10)})  # dnom で分母になった字
         return mapping
 

@@ -12,7 +12,8 @@
 選ぶ (詰めると隣の字と重なる字には付けない。縦組の “ と ； がそうなる)。
 
 palt (横組) と vpal (縦組) は、プロポーショナルな字幅・縦の字送り (見出しなどで使う) で、BIZ UDP に
-合わせる。BIZ UDP の仮名・約物・全角の字は、BIZ UD と同じ形を、字幅や縦の字送りを変えて置き直したもの。
+合わせる。BIZ UDP の仮名・約物・全角の字 (か゚・ㇷ゚ など ccmp の半濁点の合字も) は、BIZ UD と同じ形を、
+字幅や縦の字送りを変えて置き直したもの。
 palt は、形が同じで (横にずらしただけ) 字幅の違う字に、BIZ UDP と同じ位置と字幅になる値を付ける。明朝
 Bold の BIZ UDP は輪郭が少し作り直されている (点の数が違い、1 単位ずれる) ので、インクの外形が
 SAME_INK 単位まで同じなら同じ字とみなし、インクの中心を BIZ UDP にそろえる。vpal は、vert で置き換えた
@@ -24,6 +25,8 @@ vmtx の上サイドベアリング) からのインクの中心と縦の字送�
 from fontTools.feaLib.builder import addOpenTypeFeaturesFromString
 from fontTools.pens.boundsPen import BoundsPen
 from fontTools.ttLib import TTFont
+
+import spec
 
 OPENING = "「『（［｛〔〈《【〖〘〝‘“｟"
 CLOSING = "」』）］｝〕〉》】〗〙〟’”｠、。，．"
@@ -122,18 +125,51 @@ def shift(font: TTFont, name: str, other: TTFont, other_name: str) -> int | None
     return round(((box_b[0] + box_b[2]) - (box_a[0] + box_a[2])) / 2)
 
 
-def proportional(font: TTFont, udp: TTFont) -> dict[str, tuple[int, int, int, int]]:
-    """palt の値。読書 UD の字が、BIZ UDP の同じ文字の字を横にずらしたもので、字幅が違うもの"""
+def ccmp_ligatures(font: TTFont) -> dict[tuple[str, ...], str]:
+    """ccmp の合字 {(最初の字, つなぐ字, ...): 置き換え先}"""
+    result: dict[tuple[str, ...], str] = {}
+    gsub = font["GSUB"].table
+    for record in gsub.FeatureList.FeatureRecord:
+        if record.FeatureTag != "ccmp":
+            continue
+        for index in record.Feature.LookupListIndex:
+            for subtable in gsub.LookupList.Lookup[index].SubTable:
+                subtable = getattr(subtable, "ExtSubTable", subtable)
+                for first, items in getattr(subtable, "ligatures", {}).items():
+                    for item in items:
+                        result.setdefault((first, *item.Component), item.LigGlyph)
+    return result
+
+
+def glyph_pairs(font: TTFont, udp: TTFont) -> list[tuple[str, str]]:
+    """文字に割り当てた字と、ccmp の和文の合字 (か゚・ㇷ゚ など) の、(読書 UD の字, BIZ UDP の字)"""
     cmap, cmap_udp = font.getBestCmap(), udp.getBestCmap()
+    pairs = [(name, cmap_udp[code]) for code, name in sorted(cmap.items()) if code in cmap_udp]
+    by_name = {name: code for code, name in sorted(cmap.items(), reverse=True)}
+    ligs_udp = ccmp_ligatures(udp)
+    for sequence, target in sorted(ccmp_ligatures(font).items()):
+        if not all(g in by_name for g in sequence) or by_name[sequence[0]] in spec.LATIN:
+            continue
+        codes = [by_name[g] for g in sequence]
+        if all(c in cmap_udp for c in codes):
+            other = ligs_udp.get(tuple(cmap_udp[c] for c in codes))
+            if other is not None:
+                pairs.append((target, other))
+    return pairs
+
+
+def proportional(font: TTFont, udp: TTFont) -> dict[str, tuple[int, int, int, int]]:
+    """palt の値。読書 UD の字が、BIZ UDP の同じ文字 (または ccmp の合字) の字を横にずらしたもので、
+    字幅か横の位置が違うもの (明朝 Bold の ヅ・プ・け゚・ツ゚ などは、字幅は全角のまま横にずれている)"""
     values: dict[str, tuple[int, int, int, int]] = {}
-    for code, name in sorted(cmap.items()):
-        other = cmap_udp.get(code)
-        if other is None or font["hmtx"][name][0] == udp["hmtx"][other][0]:
+    for name, other in glyph_pairs(font, udp):
+        if font["hmtx"][name] == udp["hmtx"][other]:
             continue
         dx = shift(font, name, udp, other)
-        if dx is None:
+        advance = udp["hmtx"][other][0] - font["hmtx"][name][0]
+        if dx is None or (not dx and not advance):
             continue
-        value = (dx, 0, udp["hmtx"][other][0] - font["hmtx"][name][0], 0)
+        value = (dx, 0, advance, 0)
         if values.setdefault(name, value) != value:
             raise SystemExit(f"{name} would need two palt values")
     return values
@@ -147,13 +183,9 @@ def vertical_origin(font: TTFont, glyph: str) -> int:
 def proportional_vertical(font: TTFont, udp: TTFont) -> dict[str, tuple[int, int, int, int]]:
     """vpal の値。vert で置き換えた縦組の字を、BIZ UDP と同じ縦の位置 (縦組の原点からのインクの中心) と
     縦の字送りにする"""
-    cmap, cmap_udp = font.getBestCmap(), udp.getBestCmap()
     forms, forms_udp = vertical_forms(font), vertical_forms(udp)
     values: dict[str, tuple[int, int, int, int]] = {}
-    for code, name in sorted(cmap.items()):
-        other = cmap_udp.get(code)
-        if other is None:
-            continue
+    for name, other in glyph_pairs(font, udp):
         upright, upright_udp = forms.get(name, name), forms_udp.get(other, other)
         if upright == name and upright_udp == other:
             continue

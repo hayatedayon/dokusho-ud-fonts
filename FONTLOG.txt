@@ -36,9 +36,12 @@ ChangeLog
 - So does the minus sign − (U+2212). BIZ UD's is half width, with a bar
   shorter than those of + and =, which already followed BIZ UDP; BIZ UDP's
   matches +. Japanese text keeps BIZ UD's, since the macOS Japanese input
-  method enters this character as the full-width minus. Like the other thin
-  horizontal bars, it keeps no hinting: BIZ UDP's hinting erases its stroke
-  at some sizes from 8 to 13 ppem.
+  method enters this character as the full-width minus. All ten thin
+  horizontal bars (hyphen-minus, low line, soft hyphen, macron, combining
+  macron, en dash, em dash, horizontal bar and ⸺/⸻, overline and minus
+  sign) now have no hinting in BIZ UD's glyphs and hwid forms either, as
+  BIZ UD's hinting likewise erases their stroke at some sizes from 8 to 20
+  ppem.
 - The ligatures that start from Latin letters in ccmp and liga follow BIZ
   UDP: fi and fl become ﬁ and ﬂ, and æ, ə, ʌ, ɔ, ɑ and ɚ with a combining
   grave or acute accent, and the tone letters ˥˩, join into BIZ UDP's glyphs
@@ -75,9 +78,11 @@ ChangeLog
   reduced alike, and the digit right before and right after the slash gets
   its own spacing, so that the ink of every digit keeps the distance to the
   slash that BIZ UDP's precomposed fractions (¼ ½ ¾ ⅓ ⅔ ⅕) have in the
-  median. The slash is BIZ UDP's fraction slash with no advance width. BIZ
-  UD and BIZ UDP had no dnom, and their frac only raised 1, 2 and 3, so that
-  1/2 had a raised denominator and 4/5 did not change.
+  median. The slash is BIZ UDP's fraction slash with no advance width, and
+  the slashed zero (zero) also turns into the fraction, superscript and
+  subscript zeros. BIZ UD and BIZ UDP had no dnom, and their frac only
+  raised 1, 2 and 3, so that 1/2 had a raised denominator and 4/5 did not
+  change.
 - New in Dokusho UD: superscript digits from 0 to 9, also as the
   characters ⁰ ⁵ ⁶ ⁷ ⁸ ⁹ (U+2070, U+2075-2079), and in sups. The original
   fonts have only ¹ ² ³ ⁴ (BIZ UDP's, kept as they are). The new ones are the
@@ -95,7 +100,8 @@ ChangeLog
   (usWinDescent). subs and sinf, which the fonts lacked, turn digits and
   + - − = ( ) into them.
 - New in Dokusho UD: palt and vpal, the proportional widths and vertical
-  advances of kana and punctuation for headings and the like, taken from
+  advances of kana and punctuation (including the ccmp semi-voiced kana
+  ligatures か゚-ト゚ and ㇷ゚) for headings and the like, taken from
   BIZ UDP, whose kana and punctuation are BIZ UD's glyphs set with other
   widths and vertical advances: the glyphs are placed and spaced as in BIZ
   UDP (their ink centered as BIZ UDP's where BIZ UDP redrew the outlines
@@ -111,8 +117,9 @@ ChangeLog
   the other digits (1065 against 1393 in Mincho Regular), so that columns of
   figures did not line up; with tnum it is as wide as the others, with the
   same shape and the extra space split between both sides.
-- New in Dokusho UD: a colon between two digits is raised to the middle of
-  the digits (calt), as in 11:11 and 0213:2004. BIZ UDP's colon sits
+- New in Dokusho UD: a colon between two digits (ASCII or full-width) is
+  raised to the middle of the digits (calt), as in 11:11, １１:１１ and
+  0213:2004. BIZ UDP's colon sits
   between the baseline and the x-height, which suits text but looked low
   between digits; BIZ UD's half-width colon is centered on them. The raised
   colon has no hinting, which would pull it back to the baseline. So is a
@@ -127,13 +134,18 @@ ChangeLog
   so in fonts with GPOS, which Dokusho UD has had since 1.002 for halt. So
   q̃ had its tilde right of the q, and あ゙ its mark after あ. They now have
   no width, are moved left over the letter before them, and attach with
-  mark (centered above or below the Latin, Greek and Cyrillic letters, as
-  in моло́ко, and lowered under descenders) and mkmk (stacked); GDEF marks
-  them. The kana marks attach where the precomposed kana (が, ぱ) have
-  theirs, in vertical text too. i before a mark above becomes the dotless
-  ı (ccmp). Letters with precomposed forms (é, が) are not affected. The
+  mark (centered above or below the Latin, full-width alphanumeric, Greek
+  and Cyrillic letters and their tnum/zero/hwid/fwid forms, as in моло́ко,
+  and lowered under descenders) and mkmk (stacked); GDEF marks them. The
+  kana marks attach where the precomposed kana (が, ぱ) have theirs, in
+  vertical text too, where small kana (っ, ゃ, ㇰ and so on) move back before
+  a mark so that they do not collide with it. i before a mark above (or the
+  double-above ͡, even across marks below as in i̥̋) becomes the dotless ı
+  (ccmp). Letters with precomposed forms (é, が) are not affected. The
   half-width ´ ｀ ¨ of hwid, for which BIZ UD uses the glyphs of the
   combining accents, keep BIZ UD's spacing glyphs.
+- OS/2.ulUnicodeRange is recalculated for the added characters (setting
+  bit 32, Superscripts And Subscripts).
 - Symbols set on their own, in the DFLT script, follow the symbols in Latin
   text (in documents that are not in Japanese). Browsers set the hyphen ‐
   they add at the end of a line on its own, and it was BIZ UD's full-width

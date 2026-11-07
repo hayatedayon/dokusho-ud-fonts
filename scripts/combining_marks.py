@@ -12,7 +12,7 @@ build.py が使う。
    は、半角の ´ ｀ ¨ (hwid の置き換え先) にも結合用のアクセントの字を使うので、その字は build.py が
    BIZ UD の字のまま <名前>.hwid として残す。˜ (U+02DC) と同じ字の U+0303 には、別の字
    (<名前>.mark) を足す。合字 (ccmp の ə と結合用のアクセントなど) は、そのままつながる
-2. GDEF で、新しい字を記号、前に来る字 (欧字・ギリシャ文字・キリル文字と仮名) を基底の字とし、
+2. GDEF で、新しい字を記号、前に来る字 (欧字・全角の英数字・ギリシャ文字・キリル文字と仮名) を基底の字とし、
    GPOS の mark と mkmk を作る (spacing.py が halt などと一緒に組み込む)。アンカーの位置は:
    - 上の記号 (結合クラス 230): 字のインクの左右の真ん中の、インクの上。x の高さより低い字は x の
      高さ。記号のアンカーは x の高さなので、x の高さの字では、記号は元の字の高さのまま
@@ -21,9 +21,11 @@ build.py が使う。
      インクの下
    - 重ねる記号 (1): x の高さか字の高さの半分
    - 濁点・半濁点: 合成済みの濁音・半濁音の字 (が・ぱ など) の、濁点・半濁点の右の端の中央値に、
-     記号の右の端がそろう所。高さは元の字のまま
+     記号の右の端がそろう所。高さは元の字のまま。縦組の小書きの仮名 (っ・ゃ・ㇰ など、右上に寄った字) は、
+     濁点・半濁点が続くときだけ横組と同じ位置へ戻し、記号と重ならないようにする
    - 上の記号の上と、下の記号の下に、もう一つ重ねられる (mkmk)
-3. i の後に上の記号が続くときは、点の無い ı にする (ccmp)
+3. i の後に上の記号 (2 つの字の上にかかる ͡ も) が続くときは、下に付く記号などを挟んでも、点の無い ı に
+   する (ccmp。GDEF の MarkGlyphSetsDef を作ってから足す)
 """
 
 import copy
@@ -41,8 +43,8 @@ SUFFIX = ".mark"
 KANA_MARKS = {0x3099: "voiced", 0x309A: "semivoiced"}
 # 結合クラス → 記号の置き方
 KINDS = {230: "above", 232: "aboveright", 220: "below", 1: "overlay", 233: "double", 234: "double"}
-# アクセントを乗せる字 (欧字と、全角のギリシャ文字・キリル文字。キリル文字の強勢記号 моло́ко など)
-BASE_RANGES = [(0x0370, 0x03FF), (0x0400, 0x052F)]
+# アクセントを乗せる字 (欧字と、全角のギリシャ文字・キリル文字・英数字。キリル文字の強勢記号 моло́ко など)
+BASE_RANGES = [(0x0370, 0x03FF), (0x0400, 0x052F), (0xFF10, 0xFF19), (0xFF21, 0xFF3A), (0xFF41, 0xFF5A)]
 KANA_RANGES = [(0x3041, 0x30FF), (0x31F0, 0x31FF)]
 
 
@@ -133,7 +135,9 @@ def prepare(font: TTFont) -> dict:
 
 
 def add(font: TTFont, prepared: dict) -> dict:
-    """GPOS と GDEF の機能ファイルの文を返し (spacing.add に渡す)、ccmp に ı を足す"""
+    """GPOS と GDEF の機能ファイルの文と、i を ı にする上の記号の並びを返す (spacing.add の後に dotless_i を呼ぶ)"""
+    import build
+
     kinds, targets = prepared["kinds"], prepared["targets"]
     gsub = font["GSUB"].table
     cmap = font.getBestCmap()
@@ -150,6 +154,13 @@ def add(font: TTFont, prepared: dict) -> dict:
             bounds = ink(font, name)
             if bounds:
                 latin_bases[name] = bounds
+    # tnum の 1・斜線の 0 (zero)・半角 (hwid)・全角 (fwid) に置き換えた字にもアクセントを乗せる
+    for tag in ("tnum", "zero", "hwid", "fwid"):
+        for target in build.single_mapping(gsub, tag, set(latin_bases)).values():
+            if target not in mark_names and target not in latin_bases:
+                bounds = ink(font, target)
+                if bounds:
+                    latin_bases[target] = bounds
     vertical = {}
     for tag in ("vert", "vrt2"):
         for record in gsub.FeatureList.FeatureRecord:
@@ -159,11 +170,25 @@ def add(font: TTFont, prepared: dict) -> dict:
                         subtable = getattr(subtable, "ExtSubTable", subtable)
                         for key, value in getattr(subtable, "mapping", {}).items():
                             vertical.setdefault(key, set()).add(value)
+    small_vert: dict[str, tuple[int, int]] = {}
     for code in [c for start, end in KANA_RANGES for c in range(start, end + 1)]:
         name = cmap.get(code)
         if name and name not in mark_names and unicodedata.category(chr(code))[0] == "L":
             kana_bases.add(name)
-            kana_bases.update(vertical.get(name, ()))
+            verts = vertical.get(name, ())
+            kana_bases.update(verts)
+            # 小書きの仮名 (っ・ゃ・ㇰ など、Lo で縦組の字があるもの) は、縦組では右上に寄っており、
+            # そのままでは濁点・半濁点と重なる。記号が続くときだけ横組と同じ位置へ戻し、記号も同じだけずらす
+            if unicodedata.category(chr(code)) == "Lo":
+                bh = ink(font, name)
+                for vert_name in sorted(verts):
+                    if vert_name != name:
+                        bv = ink(font, vert_name)
+                        dx = round(((bv[0] + bv[2]) - (bh[0] + bh[2])) / 2)
+                        dy = round(((bv[1] + bv[3]) - (bh[1] + bh[3])) / 2)
+                        if dx <= 0 or dy <= 0:
+                            raise SystemExit(f"{vert_name}: unexpected vertical small kana shift ({dx}, {dy})")
+                        small_vert[vert_name] = (dx, dy)
     if set(latin_bases) & kana_bases:
         raise SystemExit("a glyph is both a Latin and a kana base")
 
@@ -171,21 +196,25 @@ def add(font: TTFont, prepared: dict) -> dict:
         return f"<anchor {round(x)} {round(y)}>"
 
     lines = []
-    above, below = [], []
+    above, below, dotless_above = [], [], []
     for name, k in sorted(kinds.items()):
         x0, y0, x1, y1 = ink(font, name)
         center = (x0 + x1) / 2
         if k == "above":
             lines.append(f"markClass {name} {anchor(center, x_height)} @above;")
             above.append(name)
+            dotless_above.append(name)
         elif k == "aboveright":
             lines.append(f"markClass {name} {anchor(x0, x_height)} @aboveright;")
             above.append(name)
+            dotless_above.append(name)
         elif k == "below":
             lines.append(f"markClass {name} {anchor(center, 0)} @below;")
             below.append(name)
         elif k == "overlay":
             lines.append(f"markClass {name} {anchor(center, x_height / 2)} @overlay;")
+        elif k == "double" and unicodedata.combining(chr(cmap_code(cmap, name))) == 234:
+            dotless_above.append(name)
         elif k == "kana":
             lines.append(f"markClass {name} {anchor(x1 - targets[cmap_code(cmap, name)], 0)} @kana;")
     used = set(kinds.values())
@@ -201,13 +230,29 @@ def add(font: TTFont, prepared: dict) -> dict:
             parts.append(f"{anchor(center, top / 2)} mark @overlay")
         lines.append(f"  pos base {name} {' '.join(parts)};")
     lines.append("} MarkLatin;")
+    kana_marks = sorted(n for n, k in kinds.items() if k == "kana")
     if "kana" in used:
+        if small_vert:
+            lines.append("lookup KanaSmallShift {")
+            for vert_name, (dx, dy) in sorted(small_vert.items()):
+                lines.append(f"  pos {vert_name} <{-dx} {-dy} 0 0>;")
+            lines.append("} KanaSmallShift;")
+            lines.append("lookup KanaSmallVert {")
+            lines.append(f"  pos [{' '.join(sorted(small_vert))}]' lookup KanaSmallShift "
+                         f"[{' '.join(kana_marks)}];")
+            lines.append("} KanaSmallVert;")
         lines.append("lookup MarkKana {")
-        lines.append(f"  pos base [{' '.join(sorted(kana_bases))}] <anchor 0 0> mark @kana;")
+        plain_kana = sorted(kana_bases - set(small_vert))
+        if plain_kana:
+            lines.append(f"  pos base [{' '.join(plain_kana)}] <anchor 0 0> mark @kana;")
+        for vert_name, (dx, dy) in sorted(small_vert.items()):
+            lines.append(f"  pos base {vert_name} {anchor(dx, dy)} mark @kana;")
         lines.append("} MarkKana;")
     lines.append("feature mark {")
     lines.append("  lookup MarkLatin;")
     if "kana" in used:
+        if small_vert:
+            lines.append("  lookup KanaSmallVert;")
         lines.append("  lookup MarkKana;")
     lines.append("} mark;")
 
@@ -230,19 +275,26 @@ def add(font: TTFont, prepared: dict) -> dict:
                  f"[{' '.join(sorted(mark_names))}], ;")
     lines.append("} GDEF;")
 
-    # i と上の記号 → ı と上の記号
-    dotless_i(font, gsub, cmap, above)
-    return {"marks": len(kinds), "bases": len(latin_bases) + len(kana_bases), "fea": "\n".join(lines) + "\n"}
+    return {"marks": len(kinds), "bases": len(latin_bases) + len(kana_bases), "fea": "\n".join(lines) + "\n",
+            "dotless_above": dotless_above}
 
 
 def cmap_code(cmap: dict, name: str) -> int:
     return next(code for code, glyph in cmap.items() if glyph == name)
 
 
-def dotless_i(font: TTFont, gsub, cmap: dict, above: list[str]) -> int:
+def dotless_i(font: TTFont, above: list[str]) -> int:
+    """i の後に上の記号が続くときは、下の記号などを挟んでも点の無い ı にする (ccmp)。GDEF を作った後に呼ぶ"""
+    gsub = font["GSUB"].table
+    cmap = font.getBestCmap()
     i, dotless = cmap[0x69], cmap.get(0x131)
     if dotless is None or not above:
         return 0
+    mark_sets = font["GDEF"].table.MarkGlyphSetsDef
+    mark_set_index = len(mark_sets.Coverage)
+    mark_sets.Coverage.append(fraction_digits._coverage(font, above))
+    mark_sets.MarkSetCount = len(mark_sets.Coverage)
+
     single = otTables.SingleSubst()
     single.mapping = {i: dotless}
     nested = fraction_digits._lookup(gsub, 1, single)
@@ -254,7 +306,14 @@ def dotless_i(font: TTFont, gsub, cmap: dict, above: list[str]) -> int:
     record = otTables.SubstLookupRecord()
     record.SequenceIndex, record.LookupListIndex = 0, nested
     chain.SubstCount, chain.SubstLookupRecord = 1, [record]
-    index = fraction_digits._lookup(gsub, 6, chain)
+    lookup = otTables.Lookup()
+    lookup.LookupType = 6
+    lookup.LookupFlag = 0x0010  # USE_MARK_FILTERING_SET: 下に付く記号などを飛ばして上の記号を見る
+    lookup.MarkFilteringSet = mark_set_index
+    lookup.SubTable, lookup.SubTableCount = [chain], 1
+    gsub.LookupList.Lookup.append(lookup)
+    gsub.LookupList.LookupCount = len(gsub.LookupList.Lookup)
+    index = len(gsub.LookupList.Lookup) - 1
     records = [r for r in gsub.FeatureList.FeatureRecord if r.FeatureTag == "ccmp"]
     if not records:
         raise SystemExit("the font has no ccmp")

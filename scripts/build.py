@@ -13,14 +13,15 @@
    数字、分数の斜線を足す (fraction_digits.py)
 3. 欧文の中の記号 (引用符・アポストロフィ・ダッシュなど) を、欧字の用字系の中でだけ BIZ UDP の
    字にする (latin_symbols.py。日本語の文書では置き換えない)
-4. BIZ UDP から持ってきた字に、BIZ UDP のヒンティングを付ける (hinting.py)
+4. BIZ UDP から持ってきた字に、BIZ UDP のヒンティングを付ける (hinting.py。細い横線だけの字
+   spec.UNHINTED は、元のフォントのヒンティングも外す)
 5. 名前を読書 UD に変え (BIZ UD はモリサワの商標)、等幅の印 (post.isFixedPitch) を外す
 6. 見えない文字・空白・2 倍と 3 倍のダッシュを足す (extra_glyphs.py)
 7. 等幅の数字 (tnum) と、数字の間で持ち上げるコロン (calt) を足す (tabular_digits.py)
 8. 結合用の記号 (アクセントと、仮名の濁点・半濁点) を、前の字に乗せる (combining_marks.py。字幅を
    0 にするのは、欧字を BIZ UDP の字にする前。hwid の置き換え先なら、BIZ UD の字を残す)
 9. 約物の詰め (halt・vhal) と、BIZ UDP の字幅・字送りで仮名・約物を詰める palt・vpal を足す (spacing.py。
-   結合用の記号の mark・mkmk と GDEF も、ここで一緒に組み込む)
+   結合用の記号の mark・mkmk と GDEF も、ここで一緒に組み込み、その後に i の ccmp を足す)
 
 BIZ UD と BIZ UDP は、ヒンティングの cvt と prep が違う。BIZ UDP から持ってきた字の命令は、
 いったん外し (BIZ UD の cvt では正しく働かない)、hinting.py が cvt と prep を付け足してから、
@@ -421,6 +422,13 @@ def build(family: dict, weight: str) -> Path:
     if ud["head"].unitsPerEm != udp["head"].unitsPerEm:
         raise SystemExit("BIZ UD and BIZ UDP have different units per em")
     versions = (source_version(ud), source_version(udp))
+    # 細い横線だけの字 (spec.UNHINTED) は、hwid の控えや結合用の記号を作る前に BIZ UD のヒンティングも外す
+    cmap_ud = ud.getBestCmap()
+    for code in spec.UNHINTED:
+        if code in cmap_ud:
+            glyph = ud["glyf"][cmap_ud[code]]
+            glyph.expand(ud["glyf"])
+            glyph.removeHinting()
     half_widths = save_half_widths(ud)
     prepared = combining_marks.prepare(ud)
     stats = merge_latin(ud, udp)
@@ -437,11 +445,13 @@ def build(family: dict, weight: str) -> Path:
     colon = tabular_digits.raise_colon(ud)
     marks = combining_marks.add(ud, prepared)
     spaced = spacing.add(ud, udp, marks["fea"])
+    combining_marks.dotless_i(ud, marks["dotless_above"])
 
     rename(ud, family, weight, versions)
     ud["post"].isFixedPitch = 0
     ud["OS/2"].achVendID = "NONE"
     ud["OS/2"].recalcAvgCharWidth(ud)
+    ud["OS/2"].recalcUnicodeRanges(ud)
     ud["head"].fontRevision = float(spec.VERSION)
     # 元の署名は、変えたフォントでは合わない
     if "DSIG" in ud:
