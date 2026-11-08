@@ -16,7 +16,7 @@
 | --- | --- | --- |
 | 英語名 | Dokusho UD Mincho | Dokusho UD Gothic |
 | ウェイト | Regular・Bold | Regular・Bold |
-| ファイル | `DokushoUDMincho-Regular.ttf` など | `DokushoUDGothic-Regular.ttf` など |
+| ファイル | `DokushoUDMincho-Regular.ttf`・`.woff2` など | `DokushoUDGothic-Regular.ttf`・`.woff2` など |
 
 ## なぜ合成したか
 
@@ -57,7 +57,8 @@
 ```css
 @font-face {
   font-family: "Dokusho UD Mincho";
-  src: url("DokushoUDMincho-Regular.ttf") format("truetype");
+  src: url("DokushoUDMincho-Regular.woff2") format("woff2"),
+       url("DokushoUDMincho-Regular.ttf") format("truetype");
 }
 
 body {

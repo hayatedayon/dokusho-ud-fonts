@@ -55,7 +55,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           TAG: ${{ github.ref_name }}
         run: |
-          gh release create "$TAG" fonts/*.ttf \
+          gh release create "$TAG" fonts/*.ttf fonts/*.woff2 \
             --repo "$GITHUB_REPOSITORY" --verify-tag --draft \
             --title "読書 UD明朝・読書 UDゴシック $TAG" --generate-notes
           gh release edit "$TAG" --repo "$GITHUB_REPOSITORY" --draft=false

@@ -16,7 +16,7 @@ Fonts for reading books. They are Morisawa's [BIZ UDMincho](https://github.com/g
 | --- | --- | --- |
 | Japanese name | 読書 UD明朝 | 読書 UDゴシック |
 | Weights | Regular, Bold | Regular, Bold |
-| Files | `DokushoUDMincho-Regular.ttf` and so on | `DokushoUDGothic-Regular.ttf` and so on |
+| Files | `DokushoUDMincho-Regular.ttf`, `.woff2` and so on | `DokushoUDGothic-Regular.ttf`, `.woff2` and so on |
 
 ## Why
 
@@ -57,7 +57,8 @@ These CSS examples show how to enable OpenType features. Install the font and se
 ```css
 @font-face {
   font-family: "Dokusho UD Mincho";
-  src: url("DokushoUDMincho-Regular.ttf") format("truetype");
+  src: url("DokushoUDMincho-Regular.woff2") format("woff2"),
+       url("DokushoUDMincho-Regular.ttf") format("truetype");
 }
 
 body {

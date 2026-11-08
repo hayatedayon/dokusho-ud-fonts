@@ -467,6 +467,11 @@ def build(family: dict, weight: str) -> Path:
     OUTPUT.mkdir(exist_ok=True)
     out = OUTPUT / spec.output_name(family, weight)
     ud.save(out)
+    # Web やアプリに同梱する用の WOFF2。保存した TTF をそのまま圧縮する (check.py が中身を突き合わせる)
+    web = TTFont(out, recalcTimestamp=False)
+    web.flavor = "woff2"
+    web.save(out.with_suffix(".woff2"))
+    web.close()
     print(f"{out.relative_to(ROOT)}: Latin {stats['latin']} glyphs, {stats['mappings']} GSUB mappings, "
           f"{stats['targets']} GSUB targets from BIZ UDP; {kept} half-width glyphs of BIZ UD kept for hwid; "
           f"{fractions['superscripts']} superscripts, {fractions['subscripts']} subscripts and "
