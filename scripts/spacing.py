@@ -17,7 +17,7 @@ palt (横組) と vpal (縦組) は、プロポーショナルな字幅・縦の
 palt は、形が同じで (横にずらしただけ) 字幅の違う字に、BIZ UDP と同じ位置と字幅になる値を付ける。明朝
 Bold の BIZ UDP は輪郭が少し作り直されている (点の数が違い、1 単位ずれる) ので、インクの外形が
 SAME_INK 単位まで同じなら同じ字とみなし、インクの中心を BIZ UDP にそろえる。vpal は、vert で置き換えた
-縦組の字 (BIZ UDP 側だけに vert がある仮名なども含む) のうち、インクの幅と高さが VERTICAL_SAME_INK
+縦組の字 (BIZ UDP 側だけに vert がある仮名なども含む) のうち、インクの幅と高さが spec.VERTICAL_SAME_INK
 単位まで同じもの (BIZ UDP の縦組の括弧は、縦の線が少し短いものがある) に、縦組の原点 (glyf の yMax +
 vmtx の上サイドベアリング) からのインクの中心と縦の字送りが BIZ UDP と同じになる値を付ける。
 """
@@ -29,7 +29,7 @@ from fontTools.ttLib import TTFont
 import spec
 
 OPENING = "「『（［｛〔〈《【〖〘〝‘“｟"
-CLOSING = "」』）］｝〕〉》】〗〙〟’”｠、。，．"
+CLOSING = "」』）］｝〕〉》】〗〙〞〟’”｠、。，．"
 MIDDLE = "・：；"
 KINDS = [("opening", OPENING), ("closing", CLOSING), ("middle", MIDDLE)]
 
@@ -104,7 +104,6 @@ def plan(font: TTFont) -> dict[str, dict[str, tuple[int, int, int, int]]]:
 
 
 SAME_INK = 20
-VERTICAL_SAME_INK = 100
 
 
 def shift(font: TTFont, name: str, other: TTFont, other_name: str) -> int | None:
@@ -127,17 +126,13 @@ def shift(font: TTFont, name: str, other: TTFont, other_name: str) -> int | None
 
 def ccmp_ligatures(font: TTFont) -> dict[tuple[str, ...], str]:
     """ccmp の合字 {(最初の字, つなぐ字, ...): 置き換え先}"""
+    import build  # build.py がこのモジュールを読み込むので、ここで読み込む
+
     result: dict[tuple[str, ...], str] = {}
-    gsub = font["GSUB"].table
-    for record in gsub.FeatureList.FeatureRecord:
-        if record.FeatureTag != "ccmp":
-            continue
-        for index in record.Feature.LookupListIndex:
-            for subtable in gsub.LookupList.Lookup[index].SubTable:
-                subtable = getattr(subtable, "ExtSubTable", subtable)
-                for first, items in getattr(subtable, "ligatures", {}).items():
-                    for item in items:
-                        result.setdefault((first, *item.Component), item.LigGlyph)
+    for subtable in build.feature_subtables(font["GSUB"].table, "ccmp", "ligatures"):
+        for first, items in subtable.ligatures.items():
+            for item in items:
+                result.setdefault((first, *item.Component), item.LigGlyph)
     return result
 
 
@@ -176,8 +171,10 @@ def proportional(font: TTFont, udp: TTFont) -> dict[str, tuple[int, int, int, in
 
 
 def vertical_origin(font: TTFont, glyph: str) -> int:
-    """TrueType (VORG の無い glyf フォント) の縦組の原点の y 座標"""
-    return font["glyf"][glyph].yMax + font["vmtx"][glyph][1]
+    """TrueType (VORG の無い glyf フォント) の縦組の原点の y 座標。yMax は制御点も含む外形で、保存するときに
+    計算し直される値なので、ビルドの途中で字を動かしても合うように、輪郭から求める"""
+    glyf = font["glyf"]
+    return glyf[glyph].getCoordinates(glyf)[0].calcIntBounds()[3] + font["vmtx"][glyph][1]
 
 
 def proportional_vertical(font: TTFont, udp: TTFont) -> dict[str, tuple[int, int, int, int]]:
@@ -193,8 +190,8 @@ def proportional_vertical(font: TTFont, udp: TTFont) -> dict[str, tuple[int, int
         if a is None or b is None:
             continue
         # 同じ縦組字形で、輪郭の寸法が近いものだけを位置補正する (括弧は縦の線の長さが少し違う)
-        if (abs((a[3] - a[1]) - (b[3] - b[1])) > VERTICAL_SAME_INK
-                or abs((a[2] - a[0]) - (b[2] - b[0])) > VERTICAL_SAME_INK):
+        if (abs((a[3] - a[1]) - (b[3] - b[1])) > spec.VERTICAL_SAME_INK
+                or abs((a[2] - a[0]) - (b[2] - b[0])) > spec.VERTICAL_SAME_INK):
             continue
         # 明朝 Bold では、制御点の違いで縦組の原点 (yMax + 上サイドベアリング) が BIZ UDP とずれる字がある
         origin_a, origin_b = vertical_origin(font, upright), vertical_origin(udp, upright_udp)

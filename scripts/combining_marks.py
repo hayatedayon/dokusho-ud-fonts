@@ -25,7 +25,7 @@ build.py が使う。
      濁点・半濁点が続くときだけ横組と同じ位置へ戻し、記号と重ならないようにする
    - 上の記号の上と、下の記号の下に、もう一つ重ねられる (mkmk)
 3. i の後に上の記号 (2 つの字の上にかかる ͡ も) が続くときは、下に付く記号などを挟んでも、点の無い ı に
-   する (ccmp。GDEF の MarkGlyphSetsDef を作ってから足す)
+   する (ccmp。GDEF の MarkGlyphSetsDef を作ってから足す)。全角の ｉ も、点を除いた字 (uniFF49.dotless) にする
 """
 
 import copy
@@ -35,6 +35,7 @@ from statistics import median
 from fontTools.pens.boundsPen import BoundsPen
 from fontTools.ttLib import TTFont
 from fontTools.ttLib.tables import otTables
+from fontTools.ttLib.tables._g_l_y_f import GlyphCoordinates
 
 import fraction_digits
 import spec
@@ -46,6 +47,7 @@ KINDS = {230: "above", 232: "aboveright", 220: "below", 1: "overlay", 233: "doub
 # アクセントを乗せる字 (欧字と、全角のギリシャ文字・キリル文字・英数字。キリル文字の強勢記号 моло́ко など)
 BASE_RANGES = [(0x0370, 0x03FF), (0x0400, 0x052F), (0xFF10, 0xFF19), (0xFF21, 0xFF3A), (0xFF41, 0xFF5A)]
 KANA_RANGES = [(0x3041, 0x30FF), (0x31F0, 0x31FF)]
+FULLWIDTH_I = 0xFF49
 
 
 def kind(code: int) -> str:
@@ -134,11 +136,36 @@ def prepare(font: TTFont) -> dict:
     return {"kinds": kinds, "changed": changed, "targets": targets}
 
 
+def add_fullwidth_dotless(font: TTFont) -> str:
+    """全角の ｉ から点 (いちばん上の輪郭) を除いた字を足し、その名前を返す。縦組の原点は元の字と同じにする"""
+    glyf, name = font["glyf"], font.getBestCmap()[FULLWIDTH_I]
+    glyph = copy.deepcopy(glyf[name])
+    glyph.expand(glyf)
+    glyph.removeHinting()
+    if glyph.isComposite() or glyph.numberOfContours != 2:
+        raise SystemExit("full-width i is expected to have a stem and a dot")
+    ends = list(glyph.endPtsOfContours)
+    ranges = [(0, ends[0] + 1), (ends[0] + 1, ends[1] + 1)]
+    bottoms = [min(glyph.coordinates[i][1] for i in range(*r)) for r in ranges]
+    start, stop = ranges[bottoms.index(min(bottoms))]
+    glyph.coordinates = GlyphCoordinates(glyph.coordinates[start:stop])
+    glyph.flags = glyph.flags[start:stop]
+    glyph.endPtsOfContours = [stop - start - 1]
+    glyph.numberOfContours = 1
+    glyph.recalcBounds(glyf)
+    advance, top_side = font["vmtx"][name]
+    dotless = name + ".dotless"
+    fraction_digits._add_glyph(font, dotless, glyph, font["hmtx"][name][0],
+                               (advance, top_side + glyf[name].yMax - glyph.yMax))
+    return dotless
+
+
 def add(font: TTFont, prepared: dict) -> dict:
     """GPOS と GDEF の機能ファイルの文と、i を ı にする上の記号の並びを返す (spacing.add の後に dotless_i を呼ぶ)"""
     import build
 
     kinds, targets = prepared["kinds"], prepared["targets"]
+    fullwidth_dotless = add_fullwidth_dotless(font)
     gsub = font["GSUB"].table
     cmap = font.getBestCmap()
     x_height = ink(font, cmap[0x78])[3]
@@ -161,15 +188,12 @@ def add(font: TTFont, prepared: dict) -> dict:
                 bounds = ink(font, target)
                 if bounds:
                     latin_bases[target] = bounds
+    latin_bases[fullwidth_dotless] = ink(font, fullwidth_dotless)
     vertical = {}
     for tag in ("vert", "vrt2"):
-        for record in gsub.FeatureList.FeatureRecord:
-            if record.FeatureTag == tag:
-                for index in record.Feature.LookupListIndex:
-                    for subtable in gsub.LookupList.Lookup[index].SubTable:
-                        subtable = getattr(subtable, "ExtSubTable", subtable)
-                        for key, value in getattr(subtable, "mapping", {}).items():
-                            vertical.setdefault(key, set()).add(value)
+        for subtable in build.feature_subtables(gsub, tag, "mapping"):
+            for key, value in subtable.mapping.items():
+                vertical.setdefault(key, set()).add(value)
     small_vert: dict[str, tuple[int, int]] = {}
     for code in [c for start, end in KANA_RANGES for c in range(start, end + 1)]:
         name = cmap.get(code)
@@ -238,6 +262,8 @@ def add(font: TTFont, prepared: dict) -> dict:
                 lines.append(f"  pos {vert_name} <{-dx} {-dy} 0 0>;")
             lines.append("} KanaSmallShift;")
             lines.append("lookup KanaSmallVert {")
+            # 間にほかの記号 (U+0334 など) があっても、濁点・半濁点を見る (MarkKana のアンカーは、ずらす前提)
+            lines.append(f"  lookupflag UseMarkFilteringSet [{' '.join(kana_marks)}];")
             lines.append(f"  pos [{' '.join(sorted(small_vert))}]' lookup KanaSmallShift "
                          f"[{' '.join(kana_marks)}];")
             lines.append("} KanaSmallVert;")
@@ -276,15 +302,15 @@ def add(font: TTFont, prepared: dict) -> dict:
     lines.append("} GDEF;")
 
     return {"marks": len(kinds), "bases": len(latin_bases) + len(kana_bases), "fea": "\n".join(lines) + "\n",
-            "dotless_above": dotless_above}
+            "dotless_above": dotless_above, "fullwidth_dotless": fullwidth_dotless}
 
 
 def cmap_code(cmap: dict, name: str) -> int:
     return next(code for code, glyph in cmap.items() if glyph == name)
 
 
-def dotless_i(font: TTFont, above: list[str]) -> int:
-    """i の後に上の記号が続くときは、下の記号などを挟んでも点の無い ı にする (ccmp)。GDEF を作った後に呼ぶ"""
+def dotless_i(font: TTFont, above: list[str], fullwidth_dotless: str) -> int:
+    """i (全角の ｉ も) の後に上の記号が続くときは、下の記号などを挟んでも点の無い字にする (ccmp)。GDEF を作った後に呼ぶ"""
     gsub = font["GSUB"].table
     cmap = font.getBestCmap()
     i, dotless = cmap[0x69], cmap.get(0x131)
@@ -296,24 +322,19 @@ def dotless_i(font: TTFont, above: list[str]) -> int:
     mark_sets.MarkSetCount = len(mark_sets.Coverage)
 
     single = otTables.SingleSubst()
-    single.mapping = {i: dotless}
+    fullwidth_i = cmap[FULLWIDTH_I]
+    single.mapping = {i: dotless, fullwidth_i: fullwidth_dotless}
     nested = fraction_digits._lookup(gsub, 1, single)
     chain = otTables.ChainContextSubst()
     chain.Format = 3
     chain.BacktrackGlyphCount, chain.BacktrackCoverage = 0, []
-    chain.InputGlyphCount, chain.InputCoverage = 1, [fraction_digits._coverage(font, [i])]
+    chain.InputGlyphCount, chain.InputCoverage = 1, [fraction_digits._coverage(font, [i, fullwidth_i])]
     chain.LookAheadGlyphCount, chain.LookAheadCoverage = 1, [fraction_digits._coverage(font, above)]
     record = otTables.SubstLookupRecord()
     record.SequenceIndex, record.LookupListIndex = 0, nested
     chain.SubstCount, chain.SubstLookupRecord = 1, [record]
-    lookup = otTables.Lookup()
-    lookup.LookupType = 6
-    lookup.LookupFlag = 0x0010  # USE_MARK_FILTERING_SET: 下に付く記号などを飛ばして上の記号を見る
-    lookup.MarkFilteringSet = mark_set_index
-    lookup.SubTable, lookup.SubTableCount = [chain], 1
-    gsub.LookupList.Lookup.append(lookup)
-    gsub.LookupList.LookupCount = len(gsub.LookupList.Lookup)
-    index = len(gsub.LookupList.Lookup) - 1
+    # 0x0010 は USE_MARK_FILTERING_SET: 下に付く記号などを飛ばして上の記号を見る
+    index = fraction_digits._lookup(gsub, 6, chain, 0x0010, mark_set_index)
     records = [r for r in gsub.FeatureList.FeatureRecord if r.FeatureTag == "ccmp"]
     if not records:
         raise SystemExit("the font has no ccmp")

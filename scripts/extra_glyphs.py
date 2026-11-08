@@ -7,6 +7,7 @@
 - 改行しないハイフン (U+2011): - と同じ字
 - 2 倍・3 倍ダッシュ (⸺ U+2E3A・⸻ U+2E3B): ― (U+2015) を 2 つ・3 つつないだ字。縦組では、縦組の ―
   をつないだ字にする (vert・vrt2)。部品を並べた字 (複合グリフ) にする (横組の ― はヒンティングを外した字)
+- 〞 (U+301E): 〟 (U+301F) を、〝 (U+301D) と同じ高さへ持ち上げた字。縦組では 〟 の縦組の字にする
 """
 
 from fontTools.pens.ttGlyphPen import TTGlyphPen
@@ -35,6 +36,7 @@ SPACES = {
 NON_BREAKING_HYPHEN = 0x2011
 DASHES = {0x2E3A: 2, 0x2E3B: 3}  # ⸺ ⸻ → ― の数
 HORIZONTAL_BAR = 0x2015
+DOUBLE_PRIME_QUOTE, LOW_DOUBLE_PRIME_QUOTE, REVERSED_DOUBLE_PRIME_QUOTE = 0x301E, 0x301F, 0x301D
 
 
 def _add(font: TTFont, name: str, glyph: Glyph, advance: int, vertical: tuple[int, int], codes=()) -> None:
@@ -109,4 +111,19 @@ def add(font: TTFont) -> dict[str, int]:
              (em * count, font["vmtx"][upright][1]))
         for index in vertical_lookups:
             next(build.subtables(gsub, index, "mapping")).mapping[name] = vertical
+
+    # 〞。〟 を 〝 の高さへ持ち上げる
+    low, high = cmap[LOW_DOUBLE_PRIME_QUOTE], cmap[REVERSED_DOUBLE_PRIME_QUOTE]
+    low_form = build.single_mapping(gsub, "vert", {low}).get(low)
+    if low_form is None:
+        raise SystemExit("〟 has no vertical form")
+    glyf = font["glyf"]
+    lift = glyf[high].yMin - glyf[low].yMin
+    name = f"uni{DOUBLE_PRIME_QUOTE:04X}"
+    glyph = _joined(low, 1, 0, 0)
+    glyph.components[0].y = lift
+    advance, top_side = font["vmtx"][low]
+    _add(font, name, glyph, font["hmtx"][low][0], (advance, top_side - lift), [DOUBLE_PRIME_QUOTE])
+    for index in vertical_lookups:
+        next(build.subtables(gsub, index, "mapping")).mapping[name] = low_form
     return {"invisible": len(INVISIBLE), "spaces": len(SPACES), "dashes": len(DASHES)}

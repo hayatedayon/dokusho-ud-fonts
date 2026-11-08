@@ -7,16 +7,15 @@
 
 - 記号には用字系が無く、文字を並べる仕組み (HarfBuzz など) は前後の字の用字系に入れるので、
   英語の文の中の記号は latn、和文の中の記号は hani・kana として並べられる
-- 引用符とアポストロフィ (spec.LATIN_QUOTES) は、日本語の文書 (lang="ja") でも、和文の用字系
-  (kana・hani) などでも置き換える (横組では、いつも BIZ UDP の字)。和文の中に引いた英語 (画面に
+- 引用符とアポストロフィ、— − ¼ ½ ¾ ⅓ ⅔ ⅕ ° ‼ ⁇ ⁈ ⁉ (spec.ALWAYS_UDP) は、日本語の文書 (lang="ja") でも、
+  和文の用字系 (kana・hani) などでも置き換える (いつも BIZ UDP の字)。和文の中に引いた英語 (画面に
   “Hello”と) では、開きの “ は前の和文と同じ組に入り、閉じの ” は英語に入る (Chromium で確かめた)。
   フォントは組の外の字を見られないので、“ の後ろが英語か和文かは分からない。どちらも BIZ UDP の
   字にして、左右をそろえる
 - 記号だけの組 (用字系の決まらない DFLT。ブラウザは、行末に足すハイフン ‐ を 1 字で組む) も、
   欧字の用字系と同じにする。1.005 の前までは、英語の文の行末のハイフンが BIZ UD の全角の字だった
-- latn と DFLT に日本語の言語体系 (JAN) を足し、そこには引用符とアポストロフィの置き換えだけを入れる。
-  ダッシュ・三点リーダーなどは、日本語の本の使い方 (OK―― など) があるので、日本語の文書では
-  BIZ UD の記号のまま
+- latn と DFLT に日本語の言語体系 (JAN) を足し、そこには spec.ALWAYS_UDP の置き換えだけを入れる。
+  ほかの記号は、日本語の文書では BIZ UD の字のまま
 - 選ぶのは、BIZ UD と BIZ UDP で形か幅が違う記号だけ。同じものは置き換えない
 - 縦組でも、置き換える所では BIZ UDP の縦組の字にする (vertical_forms。Chromium は、縦組の引用符を
   正立させ、縦組の字で組む。BIZ UDP の縦組の引用符は、字送りが半角)
@@ -205,12 +204,12 @@ def add(ud: TTFont, udp: TTFont) -> dict[str, int]:
     gsub.FeatureList.FeatureCount = len(gsub.FeatureList.FeatureRecord)
     new = len(gsub.FeatureList.FeatureRecord) - 1
 
-    # 日本語 (JAN) と、欧字のほかの用字系は、引用符とアポストロフィだけを置き換える locl
+    # 日本語 (JAN) と、欧字のほかの用字系は、spec.ALWAYS_UDP だけを置き換える locl
     cmap = ud.getBestCmap()
-    quote_names = {cmap[code] for code in spec.LATIN_QUOTES}
-    quotes = {cmap[code]: mapping[cmap[code]] for code in spec.LATIN_QUOTES}
-    quotes.update({key: value for key, (name, value) in vertical.items() if name in quote_names})
-    japanese_feature = new_feature(gsub, [single(gsub, quotes)])
+    always_names = {cmap[code] for code in spec.ALWAYS_UDP}
+    always = {name: mapping[name] for name in always_names}
+    always.update({key: value for key, (name, value) in vertical.items() if name in always_names})
+    japanese_feature = new_feature(gsub, [single(gsub, always)])
     japanese = otTables.LangSys()
     japanese.LookupOrder, japanese.ReqFeatureIndex = None, latn.DefaultLangSys.ReqFeatureIndex
     japanese.FeatureIndex = list(latn.DefaultLangSys.FeatureIndex) + [japanese_feature]
@@ -233,7 +232,7 @@ def add(ud: TTFont, udp: TTFont) -> dict[str, int]:
                 record.Feature.LookupListIndex = record.Feature.LookupListIndex + [index]
                 record.Feature.LookupCount = len(record.Feature.LookupListIndex)
 
-    # 引用符とアポストロフィは、ほかの用字系 (和文・ギリシャ文字・キリル文字と、記号だけの DFLT) でも
+    # spec.ALWAYS_UDP は、ほかの用字系 (和文・ギリシャ文字・キリル文字と、記号だけの DFLT) でも
     # 置き換える。和文の後の “Hello の “ は、前の和文と同じ組に入る
     for script in gsub.ScriptList.ScriptRecord:
         if script.ScriptTag == "latn":
@@ -243,7 +242,7 @@ def add(ud: TTFont, udp: TTFont) -> dict[str, int]:
         system = script.Script.DefaultLangSys
         if script.ScriptTag == "DFLT":
             # 記号だけの組 (ブラウザが行末に足すハイフン ‐ など、記号を 1 字で組むとき) は、欧字の
-            # 用字系と同じにする。日本語の文書 (JAN) では、引用符とアポストロフィだけ
+            # 用字系と同じにする。日本語の文書 (JAN) では、spec.ALWAYS_UDP だけ
             dflt_japanese = otTables.LangSys()
             dflt_japanese.LookupOrder, dflt_japanese.ReqFeatureIndex = None, system.ReqFeatureIndex
             dflt_japanese.FeatureIndex = list(system.FeatureIndex) + [japanese_feature]

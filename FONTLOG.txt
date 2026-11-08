@@ -23,6 +23,16 @@ ChangeLog
 ---------
 
 2026-11-05 (hayatedayon) Dokusho UD 1.005
+- The em dash — (U+2014), the minus sign −, the fractions ¼ ½ ¾ ⅓ ⅔ ⅕, the
+  degree sign ° and ‼ ⁇ ⁈ ⁉ now always take BIZ UDP's glyphs, in Japanese
+  text and documents and in vertical text too, as the quotation marks and
+  apostrophe already did. In BIZ UD, — is half width, so —— was only 1 em
+  long; − had a shorter bar than + and =; the fractions and ‼ were squeezed
+  into half width; and ° was full width, leaving a gap in 35°C. The horizontal
+  bar ― (U+2015) was full width already and stays as it was.
+- Added the double prime quotation mark 〞 (U+301E): 〟 raised to the height
+  of 〝, with the vertical form of 〟 in vertical text, and halt and vhal as
+  a closing bracket.
 - More Latin letters take their glyphs from BIZ UDP: Latin Extended-B, the
   IPA symbols and the spacing modifier letters (U+0180-02FF), Latin Extended
   Additional (U+1E00-1EFF), the Latin ligatures ﬁ and ﬂ (U+FB00-FB06), and
@@ -35,9 +45,7 @@ ChangeLog
   glyphs in Latin text, as ¼ ½ ¾ already did.
 - So does the minus sign − (U+2212). BIZ UD's is half width, with a bar
   shorter than those of + and =, which already followed BIZ UDP; BIZ UDP's
-  matches +. Japanese text keeps BIZ UD's, since the macOS Japanese input
-  method enters this character as the full-width minus. All ten thin
-  horizontal bars (hyphen-minus, low line, soft hyphen, macron, combining
+  matches +. All ten thin horizontal bars (hyphen-minus, low line, soft hyphen, macron, combining
   macron, en dash, em dash, horizontal bar and ⸺/⸻, overline and minus
   sign) now have no hinting in BIZ UD's glyphs and hwid forms either, as
   BIZ UD's hinting likewise erases their stroke at some sizes from 8 to 20
@@ -141,11 +149,10 @@ ChangeLog
   vertical text too, where small kana (っ, ゃ, ㇰ and so on) move back before
   a mark so that they do not collide with it. i before a mark above (or the
   double-above ͡, even across marks below as in i̥̋) becomes the dotless ı
-  (ccmp). Letters with precomposed forms (é, が) are not affected. The
+  (ccmp), and full-width ｉ becomes a full-width form without its dot. Letters with precomposed forms (é, が) are not affected. The
   half-width ´ ｀ ¨ of hwid, for which BIZ UD uses the glyphs of the
   combining accents, keep BIZ UD's spacing glyphs.
-- OS/2.ulUnicodeRange is recalculated for the added characters (setting
-  bit 32, Superscripts And Subscripts).
+- OS/2 bit 32 (Superscripts And Subscripts) is set for the added characters.
 - Symbols set on their own, in the DFLT script, follow the symbols in Latin
   text (in documents that are not in Japanese). Browsers set the hyphen ‐
   they add at the end of a line on its own, and it was BIZ UD's full-width
@@ -162,8 +169,8 @@ ChangeLog
   UD's vertical forms into BIZ UDP's, and vert and vrt2 turn the substituted
   glyphs that BIZ UD has no vertical form of). The vertical forms that BIZ
   UD shares between vert and vrt2 (‐ ‘ ’) take BIZ UDP's vert form in both.
-  The other symbols, such as the dashes, still keep BIZ UD's glyphs in
-  documents in Japanese, as in OK――.
+  Apart from the symbols listed above, the others keep BIZ UD's glyphs in
+  documents in Japanese.
 - The soft hyphen (U+00AD) is hidden again in Latin text. Since 1.003 locl
   gave it BIZ UDP's glyph there, and HarfBuzz, which hides the soft hyphen
   and other invisible format characters, does not hide glyphs a font

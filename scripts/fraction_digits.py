@@ -328,9 +328,11 @@ def _single(subtables) -> dict:
     return subtables[0].mapping
 
 
-def _lookup(gsub, kind: int, subtable) -> int:
+def _lookup(gsub, kind: int, subtable, flag: int = 0, mark_set: int | None = None) -> int:
     lookup = otTables.Lookup()
-    lookup.LookupType, lookup.LookupFlag, lookup.SubTable, lookup.SubTableCount = kind, 0, [subtable], 1
+    lookup.LookupType, lookup.LookupFlag, lookup.SubTable, lookup.SubTableCount = kind, flag, [subtable], 1
+    if mark_set is not None:
+        lookup.MarkFilteringSet = mark_set
     gsub.LookupList.Lookup.append(lookup)
     gsub.LookupList.LookupCount = len(gsub.LookupList.Lookup)
     return len(gsub.LookupList.Lookup) - 1

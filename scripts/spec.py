@@ -33,17 +33,21 @@ LATIN_SYMBOL_RANGES = [
     (0x20A0, 0x20C0),  # 通貨記号 (€ など)
     (0x2100, 0x214F),  # 文字様記号 (™ など)
     (0x2150, 0x215F),  # 分数 (⅓ ⅔ ⅕。¼ ½ ¾ はラテン 1 補助にあり、そろえる)
-    # − (BIZ UD は半角で、+ = より横線が短い。macOS の日本語入力は全角のマイナスにこの字を使うので、
-    # 和文の中では BIZ UD のままにする)
-    (0x2212, 0x2212),
+    (0x2212, 0x2212),  # − (BIZ UD は半角で、+ = より横線が短い)
 ]
 LATIN_SYMBOLS = [code for start, end in LATIN_SYMBOL_RANGES for code in range(start, end + 1)]
 
-# 横組では、どの用字系・言語でも BIZ UDP の字にする記号 (引用符とアポストロフィ)。日本語の文書 (lang="ja")
-# の中の “Hello” や It’s の前後が全角ぶん空かないように。和文の中の “本当” も BIZ UDP の字になる (和文の
-# 後の “Hello の “ は和文と同じ組に入り、フォントからは “本当” の “ と区別できない)。ほかの記号
-# (ダッシュ・三点リーダーなど) は、日本語の本の使い方 (OK―― など) があるので、日本語の文書では BIZ UD のまま
+# 引用符とアポストロフィ。日本語の文書 (lang="ja") の中の “Hello” や It’s の前後が全角ぶん空かないように、
+# いつも BIZ UDP の字にする。和文の中の “本当” も BIZ UDP の字になる (和文の後の “Hello の “ は和文と同じ組に
+# 入り、フォントからは “本当” の “ と区別できない)
 LATIN_QUOTES = [0x2018, 0x2019, 0x201C, 0x201D]
+
+# どの用字系・言語でも BIZ UDP の字にする記号。引用符とアポストロフィのほかに、
+# — (BIZ UD は半角で、—— が 1 em にしかならない)・− (+ = と字幅と線の長さをそろえる)・分数 ¼ ½ ¾ ⅓ ⅔ ⅕・
+# ° (BIZ UD は全角で、35°C の後ろが空く)・‼ ⁇ ⁈ ⁉ (BIZ UD は 2 つの記号を半角に詰めた形)。
+# ほかの記号 (– ‐ …  など) は、日本語の文書では BIZ UD のまま
+ALWAYS_UDP = [*LATIN_QUOTES, 0x2014, 0x2212, 0x00BC, 0x00BD, 0x00BE, 0x2153, 0x2154, 0x2155,
+              0x00B0, 0x203C, 0x2047, 0x2048, 0x2049]
 
 # ヒンティングを付けない字 (build.py・hinting.py)。細い横線だけの字で、BIZ UD・BIZ UDP の
 # ヒンティングは、ある大きさで線の高さを 0 に丸めて消してしまう (FreeType では何も描かれず、
@@ -68,6 +72,9 @@ FRACTION_FEATURES = ["frac", "numr", "dnom", "sups", "subs", "sinf"]
 # 字は BIZ UD の幅の字につなぐ)。dlig (!? など) は、欧文の中では locl で BIZ UDP の字になるので
 # 触らない
 LATIN_LIGATURE_FEATURES = ["ccmp", "liga"]
+
+# vpal を付ける縦組の字の、BIZ UDP とのインクの幅と高さの差の上限 (spacing.py・check.py)
+VERTICAL_SAME_INK = 100
 
 WEIGHTS = ["Regular", "Bold"]
 

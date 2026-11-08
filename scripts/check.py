@@ -116,7 +116,7 @@ def check_font(family: dict, weight: str) -> None:
     remapped = {code for code in cmap_ud if cmap.get(code) != cmap_ud[code]}
     shared_marks = {code for code in combining_codes(cmap_ud)
                     if any(c != code and g == cmap_ud[code] for c, g in cmap_ud.items())}
-    check(remapped <= shared_marks and set(added) == set(NEW_SUPERSCRIPTS) | set(EXTRA_CODES),
+    check(remapped <= shared_marks and set(added) == set(NEW_SUPERSCRIPTS) | set(EXTRA_CODES) | {0x301E},
           f"{label}: the character map differs from BIZ UD by more than the superscripts and subscripts")
     # BIZ UD のグリフの後に、欧文の中の記号 (BIZ UDP の字) だけが足してあること
     order, order_ud = font.getGlyphOrder(), ud.getGlyphOrder()
@@ -129,6 +129,11 @@ def check_font(family: dict, weight: str) -> None:
     fraction_glyphs |= {gsub_mapping(font, "vert").get(cmap.get(code)) for code in (0x2E3A, 0x2E3B)} - {None}
     # 等幅の数字 (tnum) と、字を分け合っていた結合用の記号
     fraction_glyphs |= outputs(font, ["tnum", "calt"]) | {cmap[code] for code in remapped}
+    # 上の記号の前の、点の無い全角の ｉ
+    # (post は形式 3 で、足した字の名前はファイルに残らないので、ｉ からの置き換え先から引く)
+    gsub_table = font["GSUB"].table
+    fraction_glyphs |= {getattr(s, "mapping", {}).get(cmap[0xFF49])
+                        for i in range(len(gsub_table.LookupList.Lookup)) for s in lookup_subtables(gsub_table, i)} - {None}
     # 欧文の中の記号の、BIZ UDP の縦組の字
     fraction_glyphs |= (set(latin_symbol_mapping(font, "latn", None, vertical=True).values())
                         | outputs(font, ["vert", "vrt2"])) - set(order_ud)
@@ -242,11 +247,11 @@ def check_font(family: dict, weight: str) -> None:
     check("DSIG" not in font, f"{label}: the signature of BIZ UD is still there")
     check(f"{font['head'].fontRevision:.3f}" == spec.VERSION, f"{label}: font revision")
     check(font["OS/2"].fsType == 0, f"{label}: embedding is restricted")
-    os2 = copy.deepcopy(font["OS/2"])
-    os2.recalcUnicodeRanges(font)
+    # BIZ UD の範囲ビットに、足した上付きと下付きの bit 32 だけを加える (BOM を足しただけで bit 67 などを名乗らない)
     ranges = ("ulUnicodeRange1", "ulUnicodeRange2", "ulUnicodeRange3", "ulUnicodeRange4")
-    check([getattr(font["OS/2"], a) for a in ranges] == [getattr(os2, a) for a in ranges],
-          f"{label}: OS/2 Unicode ranges do not match the character map")
+    check([getattr(font["OS/2"], a) for a in ranges]
+          == [ud["OS/2"].ulUnicodeRange1, ud["OS/2"].ulUnicodeRange2 | 1, ud["OS/2"].ulUnicodeRange3, ud["OS/2"].ulUnicodeRange4],
+          f"{label}: OS/2 Unicode ranges are not those of BIZ UD plus bit 32")
     check(bool(font["OS/2"].ulUnicodeRange2 & 1), f"{label}: OS/2 bit 32 (Superscripts And Subscripts) is not set")
     check_latin_symbols(label, font, ud, udp)
     check_hinting(label, font, family, weight, latin_targets(udp, latin_glyphs), udp, ud)
@@ -321,7 +326,7 @@ def drawing(font: TTFont, name: str) -> list:
 
 def check_latin_symbols(label: str, font: TTFont, ud: TTFont, udp: TTFont) -> None:
     """欧文の中の記号。できたフォントと BIZ UDP で違う記号は、欧字の用字系 (latn) の既定でだけ BIZ UDP の
-    字 (形と字幅) に置き換わり、日本語 (latn の JAN) と和文などの用字系では、引用符とアポストロフィだけが
+    字 (形と字幅) に置き換わり、日本語 (latn の JAN) と和文などの用字系では、spec.ALWAYS_UDP だけが
     置き換わること。書式の文字
     (ソフトハイフンなど) は、どこでも置き換わらないこと"""
     cmap, cmap_ud, cmap_udp = font.getBestCmap(), ud.getBestCmap(), udp.getBestCmap()
@@ -349,14 +354,14 @@ def check_latin_symbols(label: str, font: TTFont, ud: TTFont, udp: TTFont) -> No
     for char in "‘’“”":
         check(cmap[ord(char)] in latin, f"{label}: {char} is not substituted in Latin text")
     check(lang_system(font, "latn", "JAN ") is not None, f"{label}: latn has no JAN language system")
-    # 日本語 (latn の JAN) と、和文などほかの用字系では、引用符とアポストロフィだけを置き換える
-    quotes = {cmap[code]: latin[cmap[code]] for code in spec.LATIN_QUOTES}
+    # 日本語 (latn の JAN) と、和文などほかの用字系では、spec.ALWAYS_UDP だけを置き換える
+    always = {cmap[code]: latin[cmap[code]] for code in spec.ALWAYS_UDP}
     # 記号だけの組 (DFLT) は欧字の用字系と同じ (ブラウザが行末に足すハイフンは、1 字で組まれる)
     check(latin_symbol_mapping(font, "DFLT", None) == latin, f"{label}: DFLT does not substitute as latn does")
     for script, language in [("latn", "JAN "), ("DFLT", "JAN "), ("hani", None), ("kana", None), ("grek", None),
                              ("cyrl", None)]:
-        check(latin_symbol_mapping(font, script, language) == quotes,
-              f"{label}: other symbols than the quotation marks are substituted in {script} {language or 'dflt'}")
+        check(latin_symbol_mapping(font, script, language) == always,
+              f"{label}: the symbols substituted in {script} {language or 'dflt'} are not spec.ALWAYS_UDP")
 
 
 # 描いて比べる大きさ (1 em の画素の数)。ヒンティングが効くのは小さな大きさ
@@ -380,7 +385,11 @@ def check_hinting(label: str, font: TTFont, family: dict, weight: str, targets: 
                    if half not in order_ud}
     check(half_widths, f"{label}: no half widths for hwid to draw")
     plain_gray = freetype_render.Renderer(paths["ours"], freetype_render.MODES[0][1], freetype_render.NO_HINTING)
-    has_ink_gray = [(name, index, ppem) for index, name in enumerate(font.getGlyphOrder()) for ppem in HINTING_PPEMS
+    # 字全体が消えうるのは、インクの幅か高さが細い字だけ (漢字などは、線が 1 本消えても字は残る)
+    glyf = font["glyf"]
+    thin = [(name, index) for index, name in enumerate(font.getGlyphOrder()) if glyf[name].numberOfContours
+            and min(glyf[name].xMax - glyf[name].xMin, glyf[name].yMax - glyf[name].yMin) <= font["head"].unitsPerEm // 8]
+    has_ink_gray = [(name, index, ppem) for name, index in thin for ppem in HINTING_PPEMS
                     if any(plain_gray.render(index, ppem)[5])]
     plain_gray.close()
     for mode, interpreter, flags in freetype_render.MODES:
@@ -861,6 +870,18 @@ def check_extra(label: str, font: TTFont) -> None:
         check(font["hmtx"][name][0] == want, f"{label}: U+{code:04X} is {font['hmtx'][name][0]} wide, not {want}")
         check(font["glyf"][name].numberOfContours == 0, f"{label}: U+{code:04X} has ink")
     check(cmap.get(0x2011) == cmap[0x2D], f"{label}: ‑ is not the glyph of -")
+    # 〞 は 〟 を 〝 の高さへ持ち上げた字で、縦組は 〟 の縦組の字
+    name, low, high = cmap.get(0x301E), cmap[0x301F], cmap[0x301D]
+    if name is None:
+        problems.append(f"{label}: U+301E is missing")
+    else:
+        lift = glyph_bounds(font, high)[1] - glyph_bounds(font, low)[1]
+        check(list(map(tuple, outline(font, name)[0])) == [(x, y + lift) for x, y in outline(font, low)[0]],
+              f"{label}: 〞 is not 〟 at the height of 〝")
+        for tag in ("vert", "vrt2"):
+            check(gsub_mapping(font, tag).get(name) == gsub_mapping(font, tag).get(low),
+                  f"{label}: {tag} of 〞 is not that of 〟")
+        check(name in gpos_values(font, "halt"), f"{label}: 〞 has no halt")
     bar = cmap[0x2015]
     upright = gsub_mapping(font, "vert")[bar]
     for code, count in ((0x2E3A, 2), (0x2E3B, 3)):
@@ -957,7 +978,8 @@ def check_proportional_vertical(label: str, font: TTFont, udp: TTFont) -> None:
         origin_a = font["glyf"][upright].yMax + font["vmtx"][upright][1]
         origin_b = udp["glyf"][upright_udp].yMax + udp["vmtx"][upright_udp][1]
         center_a, center_b = (a[1] + a[3]) / 2 - origin_a, (b[1] + b[3]) / 2 - origin_b
-        alike = abs((a[3] - a[1]) - (b[3] - b[1])) <= 100 and abs((a[2] - a[0]) - (b[2] - b[0])) <= 100
+        alike = (abs((a[3] - a[1]) - (b[3] - b[1])) <= spec.VERTICAL_SAME_INK
+                 and abs((a[2] - a[0]) - (b[2] - b[0])) <= spec.VERTICAL_SAME_INK)
         if upright not in vpal:
             if alike and (font["vmtx"][upright][0] != udp["vmtx"][upright_udp][0] or abs(center_a - center_b) > 1):
                 missing.append(item)
@@ -1346,7 +1368,7 @@ def check_shaping(label: str, family: dict, weight: str) -> None:
 
     # 和文の文脈で、字を変えていない文字
     kept = [code for code in sorted(cmap_ud) if code >= 0x20 and code not in spec.LATIN and code not in marks
-            and code not in spec.LATIN_QUOTES and code in cmap and same_glyph(font, cmap[code], font_ud, cmap_ud[code])]
+            and code not in spec.ALWAYS_UDP and code in cmap and same_glyph(font, cmap[code], font_ud, cmap_ud[code])]
     tags = sorted({r.FeatureTag for r in font_ud["GSUB"].table.FeatureList.FeatureRecord}
                   - {"aalt", *spec.FRACTION_FEATURES})
     for code in kept:
@@ -1362,26 +1384,27 @@ def check_shaping(label: str, family: dict, weight: str) -> None:
                 if ours.run(text, "ja", vertical, [tag], 1) != ud.run(text, "ja", vertical, [tag], 1):
                     report(f"with {tag} differs from BIZ UD", f"U+{code:04X}{' (vertical)' if vertical else ''}")
 
-    # 引用符とアポストロフィは、和文の中でも日本語の文書でも BIZ UDP の字 (Chromium は、和文の後の “Hello の “
+    # spec.ALWAYS_UDP は、和文の中でも日本語の文書でも BIZ UDP の字 (Chromium は、和文の後の “Hello の “
     # を和文の組に入れる)。縦組も BIZ UDP の縦組の字 (Chromium は、縦組の引用符を正立させる)
-    for code in spec.LATIN_QUOTES:
+    for code in spec.ALWAYS_UDP:
         expected = udp.run(LATIN_CONTEXT[0].format(chr(code)), "en", cluster=1)
         for context, language in [*JAPANESE_CONTEXTS, (LATIN_CONTEXT[0], "ja"), ("{}", "ja"), ("あ{}", "ja")]:
             text = context.format(chr(code))
             index = context.index("{}")
             cluster = len(context[:index].encode())
             if ours.run(text, language, cluster=cluster) != expected:
-                report("quotation marks are not BIZ UDP's in horizontal text", f"U+{code:04X} in {context}")
+                report("always-UDP symbols are not BIZ UDP's in horizontal text", f"U+{code:04X} in {context}")
             if ours.run(text, language, True, cluster=cluster) != udp.run(text, language, True, cluster=cluster):
-                report("quotation marks are not BIZ UDP's in vertical text", f"U+{code:04X} in {context}")
+                report("always-UDP symbols are not BIZ UDP's in vertical text", f"U+{code:04X} in {context}")
 
     # BIZ UD の合字と異体字
     first_codes = {name: code for code, name in sorted(cmap_ud.items(), reverse=True)}
+    always_names = {cmap_ud[code] for code in spec.ALWAYS_UDP}  # dlig の ！！ → ‼ は、locl で BIZ UDP の字になる
     for tag, ligatures in sorted({tag: gsub_ligatures(font_ud, tag) for tag in ("ccmp", "liga", "dlig")}.items()):
         for first, entries in ligatures.items():
-            for components, _target in entries:
+            for components, target in entries:
                 sequence = [first, *components]
-                if not all(g in first_codes for g in sequence) or first_codes[first] in spec.LATIN:
+                if not all(g in first_codes for g in sequence) or first_codes[first] in spec.LATIN or target in always_names:
                     continue
                 text = "あ" + "".join(chr(first_codes[g]) for g in sequence)
                 for vertical in (False, True):
@@ -1475,8 +1498,8 @@ def check_shaping(label: str, family: dict, weight: str) -> None:
         a_box, b_box = glyph_bounds(font, up_a), glyph_bounds(font_udp, up_b)
         if a_box is None or b_box is None:
             continue
-        if abs((a_box[3] - a_box[1]) - (b_box[3] - b_box[1])) > 100 \
-                or abs((a_box[2] - a_box[0]) - (b_box[2] - b_box[0])) > 100:
+        if abs((a_box[3] - a_box[1]) - (b_box[3] - b_box[1])) > spec.VERTICAL_SAME_INK \
+                or abs((a_box[2] - a_box[0]) - (b_box[2] - b_box[0])) > spec.VERTICAL_SAME_INK:
             continue
         text = f"あ{seq}あ"
         end = prefix + len(seq.encode())
@@ -1544,6 +1567,17 @@ def check_shaping(label: str, family: dict, weight: str) -> None:
         boxes = ours.ink(text, "en")
         if shaped_i[0][0] != dotless_id or boxes[above_index][1] <= boxes[0][3]:
             report("i before a mark above does not become dotless cleanly", repr(text))
+    # 全角の ｉ も、上の記号の前では点の無い字
+    fullwidth_id = font.getGlyphID(cmap[0xFF49])
+    if ours.shaper.shape("\uff49\u0301", "en")[0][0] == fullwidth_id:
+        report("full-width i before a mark above keeps its dot", "U+FF49 U+0301")
+    if ours.shaper.shape("\uff49", "en")[0][0] != fullwidth_id:
+        report("full-width i without a mark loses its dot", "U+FF49")
+    # 縦組の小書きの仮名は、間にほかの記号があっても濁点と同じ位置に戻る (GPOS の文脈が記号を飛ばす)
+    for mark in (0x3099, 0x309A):
+        plain, between = ours.shaper.shape(f"っ{chr(mark)}", "ja", True), ours.shaper.shape(f"っ\u0334{chr(mark)}", "ja", True)
+        if (plain[0][4:], plain[1][4:]) != (between[0][4:], between[-1][4:]):
+            report("small kana do not move for a kana mark after another mark", f"U+{mark:04X}")
     for text in ("i\u0325", "ia\u030b"):
         if ours.shaper.shape(text, "en")[0][0] != dotted_id:
             report("i without a mark above loses its dot", repr(text))

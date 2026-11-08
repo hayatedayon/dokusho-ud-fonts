@@ -12,7 +12,7 @@
    分数と上付きの数字 (frac・numr・dnom・sups) は作り直す。0〜9 の上付きの数字と、分子・分母の
    数字、分数の斜線を足す (fraction_digits.py)
 3. 欧文の中の記号 (引用符・アポストロフィ・ダッシュなど) を、欧字の用字系の中でだけ BIZ UDP の
-   字にする (latin_symbols.py。日本語の文書では置き換えない)
+   字にする (latin_symbols.py。日本語の文書では spec.ALWAYS_UDP だけ置き換える)
 4. BIZ UDP から持ってきた字に、BIZ UDP のヒンティングを付ける (hinting.py。細い横線だけの字
    spec.UNHINTED は、元のフォントのヒンティングも外す)
 5. 名前を読書 UD に変え (BIZ UD はモリサワの商標)、等幅の印 (post.isFixedPitch) を外す
@@ -445,13 +445,15 @@ def build(family: dict, weight: str) -> Path:
     colon = tabular_digits.raise_colon(ud)
     marks = combining_marks.add(ud, prepared)
     spaced = spacing.add(ud, udp, marks["fea"])
-    combining_marks.dotless_i(ud, marks["dotless_above"])
+    combining_marks.dotless_i(ud, marks["dotless_above"], marks["fullwidth_dotless"])
 
     rename(ud, family, weight, versions)
     ud["post"].isFixedPitch = 0
     ud["OS/2"].achVendID = "NONE"
     ud["OS/2"].recalcAvgCharWidth(ud)
-    ud["OS/2"].recalcUnicodeRanges(ud)
+    # 上付きと下付きを足したので、bit 32 (Superscripts And Subscripts) だけを立てる。全部を計算し直すと、
+    # BOM (U+FEFF) を足しただけで bit 67 (アラビア文字表示形 B) まで立ち、対応していない範囲を名乗ってしまう
+    ud["OS/2"].ulUnicodeRange2 |= 1
     ud["head"].fontRevision = float(spec.VERSION)
     # 元の署名は、変えたフォントでは合わない
     if "DSIG" in ud:
