@@ -3,7 +3,7 @@
 日本語の本文 (夏目漱石『吾輩は猫である』の冒頭)、英語の本文 (Lewis Carroll『不思議の国のアリス』の
 冒頭。どちらも著作権の切れた文章)、和欧混植・約物・縦中横・ルビ・数字・結合用の記号の見本を、読書 UD と、
 比べるための BIZ UD・BIZ UDP で並べる。両端揃え (text-align: justify) も切り替えられる。節ごとに 1 行にして書体を横に並べるので、どの列でも同じ節が
-同じ位置から始まる。横組と縦組、大きさと行送り、約物の詰め (text-spacing-trim)、和欧間のアキ
+同じ位置から始まる。横組と縦組、背景の色、大きさと行送り、約物の詰め (text-spacing-trim)、和欧間のアキ
 (text-autospace)、palt (縦組は vpal) を切り替えられ、tnum は、なし・あり・並べる (書体ごとに、なしとありの列) を選べる。
 
 フォントを読むには、リポジトリの一番上で python3 -m http.server を動かし、
@@ -145,7 +145,9 @@ header legend { float: left; color: #666; margin-right: 0.3rem; }
 #grid > .name { position: sticky; top: var(--header, 0); z-index: 1; font-size: 0.8rem; color: #fff; background: #555;
                 padding: 0.25rem 0.6rem; margin-top: 1rem; }
 #grid > .name.ours { background: #1d6fd8; }
-#grid > .cell { min-width: 0; background: #fff; border: 1px solid #ddd; border-top: 0; padding: 1.2rem 1.5rem; }
+#grid > .cell { min-width: 0; background: var(--paper, #fff); color: var(--ink, #222); border: 1px solid #ddd; border-top: 0; padding: 1.2rem 1.5rem; }
+body.paper-cream { --paper: #f5efdf; --ink: #2b2620; }
+body.paper-dark { --paper: #1c1c1e; --ink: #d8d6d0; }
 .text { font-size: var(--size); line-height: var(--leading); hanging-punctuation: allow-end; }
 .justify .text { text-align: justify; }
 .text p { margin: 0 0 0.5em; }
@@ -195,6 +197,7 @@ header legend { float: left; color: #666; margin-right: 0.3rem; }
 <label><input type="checkbox" id="show-ud"> BIZ UD</label>
 <label><input type="checkbox" id="show-udp"> BIZ UDP</label></fieldset>
 <label><input type="checkbox" id="vertical"> 縦書き</label>
+<label>背景 <select id="paper"><option value="white">白</option><option value="cream">紙色</option><option value="dark">暗い色</option></select></label>
 <label>大きさ <input type="range" id="size" min="10" max="32" value="18"> <span id="size-value">18px</span></label>
 <label>行送り <input type="range" id="leading" min="1.2" max="2.4" step="0.05" value="1.8"> <span id="leading-value">1.8</span></label>
 <label><input type="checkbox" id="justify" checked> 両端揃え</label>
@@ -251,6 +254,8 @@ function render() {
     }
   }
   document.body.classList.toggle("vertical", $("vertical").checked);
+  document.body.classList.toggle("paper-cream", $("paper").value === "cream");
+  document.body.classList.toggle("paper-dark", $("paper").value === "dark");
   document.body.classList.toggle("raw-palt", $("raw-palt").checked);
   document.body.classList.toggle("justify", $("justify").checked);
   document.body.classList.toggle("trim", $("trim").checked);
@@ -261,7 +266,7 @@ function render() {
   document.documentElement.style.setProperty("--header", document.querySelector("header").offsetHeight + "px");
 }
 
-for (const id of ["family", "weight", "show-ud", "show-udp", "vertical", "justify", "trim", "autospace", "tnum", "palt", "raw-palt"]) {
+for (const id of ["paper", "family", "weight", "show-ud", "show-udp", "vertical", "justify", "trim", "autospace", "tnum", "palt", "raw-palt"]) {
   $(id).addEventListener("change", render);
 }
 for (const [id, unit, variable] of [["size", "px", "--size"], ["leading", "", "--leading"]]) {

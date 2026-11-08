@@ -1615,6 +1615,18 @@ def check_shaping(label: str, family: dict, weight: str) -> None:
                     if len(vpal_boxes) != 2 or vpal_boxes[1] is None \
                             or (vpal_boxes[1][0] - vpal_boxes[0][0], vpal_boxes[1][1] - vpal_boxes[0][1]) != (mx0 - bx0, my0 - by0):
                         report("kana marks do not follow the kana with vpal", f"U+{base:04X} U+{mark:04X}")
+    # chws・vchw: 続いた約物だけが詰まり (既定ではかからない)、続いていない括弧は詰まらない
+    em_half = font["head"].unitsPerEm // 2
+    for tag, vertical in (("chws", False), ("vchw", True)):
+        for text, index in (("「『あ", 1), ("あ。」い", 1), ("あ」「い", 1), ("あ、　い", 1), ("・「あ", 1)):
+            on = ours.shaper.shape(text, "ja", vertical, (tag,))
+            off = ours.shaper.shape(text, "ja", vertical)
+            saved = abs(off[index][3 if vertical else 2]) - abs(on[index][3 if vertical else 2])
+            if saved != em_half:
+                report(f"{tag} does not trim adjacent punctuation by half an em", text)
+        for text in ("「あ」", "あ。い"):
+            if ours.shaper.shape(text, "ja", vertical, (tag,)) != ours.shaper.shape(text, "ja", vertical):
+                report(f"{tag} trims punctuation that is not adjacent", text)
     for item in shaped.values():
         item.close()
     label = spec.output_name(family, weight)

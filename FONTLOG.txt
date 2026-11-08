@@ -33,6 +33,10 @@ ChangeLog
 - Added the double prime quotation mark 〞 (U+301E): 〟 raised to the height
   of 〝, with the vertical form of 〟 in vertical text, and halt and vhal as
   a closing bracket.
+- Added chws and vchw, which trim only adjacent brackets and punctuation, so
+  that the trimming of text-spacing-trim is available where that property
+  is not. Chromium, which uses them in place of its own trimming when a font
+  has them, sets the same widths as before.
 - More Latin letters take their glyphs from BIZ UDP: Latin Extended-B, the
   IPA symbols and the spacing modifier letters (U+0180-02FF), Latin Extended
   Additional (U+1E00-1EFF), the Latin ligatures ﬁ and ﬂ (U+FB00-FB06), and

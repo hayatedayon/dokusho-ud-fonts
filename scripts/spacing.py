@@ -204,6 +204,43 @@ def proportional_vertical(font: TTFont, udp: TTFont) -> dict[str, tuple[int, int
     return values
 
 
+def contextual_spacing(font: TTFont, values: dict) -> list[str]:
+    """chws (横組) と vchw (縦組)。halt・vhal の字が続く所だけを詰める。Chromium は、chws を持つフォントでは自前の
+    詰めの代わりにこれを使うので、text-spacing-trim: normal の結果 (GPOS の halt だけのときと同じ) にそろえる。
+    終わりの字 (括弧・句読点) は、後ろに括弧・中点類・全角の空白・終わりの引用符が続くと半角に、始め括弧は、前に始め括弧・
+    中点類・全角の空白・始めの引用符があると半角にする"""
+    em, cmap, forms = font["head"].unitsPerEm, font.getBestCmap(), vertical_forms(font)
+    lines = []
+    for tag, source, vertical in (("chws", "halt", False), ("vchw", "vhal", True)):
+        opening_value, closing_value = value("opening", em, vertical), value("closing", em, vertical)
+        opening = sorted(g for g, v in values[source].items() if v == opening_value)
+        closing = sorted(g for g, v in values[source].items() if v == closing_value)
+        # 詰められない字 (縦組の ； は halt・vhal を持たない) は、隣の字の詰めにも数えない
+        middle = sorted({forms.get(cmap[ord(c)], cmap[ord(c)]) if vertical else cmap[ord(c)] for c in MIDDLE}
+                        & set(values[source]))
+        space = [cmap[0x3000]]
+
+        def quote_forms(codes) -> list[str]:
+            """locl で BIZ UDP の字にした引用符 (縦組は、その縦組の字もあれば含める)"""
+            names = [f"{cmap[code]}.latn" for code in codes]
+            if vertical:
+                names += [f"{name}.vert" for name in names if f"{name}.vert" in font["hmtx"].metrics]
+            return names
+
+        opening_quotes, closing_quotes = quote_forms((0x2018, 0x201C)), quote_forms((0x2019, 0x201D))
+        after_closing = " ".join(sorted({*opening, *closing, *middle, *space, *closing_quotes}))
+        before_opening = " ".join(sorted({*opening, *middle, *space, *opening_quotes}))
+
+        def record(v: tuple[int, int, int, int]) -> str:
+            return f"<{v[0]} {v[1]} {v[2]} {v[3]}>"
+
+        lines += [f"feature {tag} {{",
+                  f"  pos [{' '.join(closing)}]' {record(closing_value)} [{after_closing}];",
+                  f"  pos [{before_opening}] [{' '.join(opening)}]' {record(opening_value)};",
+                  f"}} {tag};"]
+    return lines
+
+
 def add(font: TTFont, udp: TTFont, extra: str = "") -> dict[str, int]:
     """GPOS に halt・vhal・palt・vpal を作る (元の BIZ UD には GPOS が無い)。用字系は GSUB と同じにする。
     extra は、一緒に組み込む機能ファイルの文 (結合用の記号の mark・mkmk と GDEF。combining_marks.py)"""
@@ -219,6 +256,7 @@ def add(font: TTFont, udp: TTFont, extra: str = "") -> dict[str, int]:
         for glyph, (x, y, x_advance, y_advance) in sorted(glyphs.items()):
             lines.append(f"  pos {glyph} <{x} {y} {x_advance} {y_advance}>;")
         lines.append(f"}} {tag};")
+    lines.extend(contextual_spacing(font, values))
     lines.append(extra)
     tables = ["GPOS", "GDEF"] if "table GDEF" in extra else ["GPOS"]
     addOpenTypeFeaturesFromString(font, "\n".join(lines) + "\n", tables=tables)

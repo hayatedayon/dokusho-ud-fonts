@@ -44,7 +44,7 @@ The vertical forms (`vert`, `vrt2`) and vertical metrics of kana, kanji and punc
 - Combining marks (the accents of U+0300–036F and the kana voiced and semi-voiced marks U+3099 and U+309A) sit on the letter before them. They have widths of their own in the original fonts. Without GPOS, HarfBuzz (Chromium, Firefox, Android and so on) zeroed the widths and placed them over the letter, but since `halt` and the other GPOS features came in 1.002 it no longer did, so the tilde of `q̃` came right of the `q` and the mark of `あ゙` after `あ`. They now have no width and attach with `mark` and `mkmk`, centered above or below Latin, full-width alphanumeric, Greek and Cyrillic letters (`моло́ко` and the like). The kana marks attach where `が` and `ぱ` have theirs, in vertical text too (where small kana move back so the mark does not collide with them). `i` before an accent above (even across a mark below) becomes the dotless `ı` (full-width `ｉ` likewise loses its dot). Combinations with precomposed letters, such as `é` and `が`, do not change.
 - Added in Dokusho UD: the two- and three-em dashes `⸺` and `⸻` used in novels (two and three `―` joined, also in vertical text), the closing double prime quotation mark `〞` (U+301E, `〟` raised to the height of `〝`), the non-breaking hyphen `‑`, the spaces U+2000–200A, U+202F and U+205F (such as the thin space U+2009), and the invisible characters (zero width space U+200B, word joiner U+2060, ZWJ, ZWNJ and BOM, which some environments otherwise draw as a box).
 - The glyphs taken from BIZ UDP (the Latin letters, the symbols in Latin text and the like) carry BIZ UDP's hinting. BIZ UD and BIZ UDP have different control value tables and prep programs, so BIZ UDP's are appended to BIZ UD's, and the cvt numbers in the instructions are shifted to match. Small Latin text is drawn with the same instructions and values as in BIZ UDP (up to 1.003 the instructions were removed, so on Windows the Latin letters alone looked slightly faint and soft in small text). Ten thin horizontal bars have their hinting removed, in BIZ UD's glyphs and `hwid` forms as well: the hyphen-minus, the low line, the soft hyphen, the macron, the combining macron, the en dash, the em dash, the horizontal bar (and `⸺` and `⸻` made from it), the overline and the minus sign. The hinting of the original fonts erases their stroke at some sizes (in BIZ UD and BIZ UDP themselves too).
-- `halt` and `vhal` are added (BIZ UD has neither), so that `text-spacing-trim` in browsers (on by default in Chromium) removes the extra space between consecutive brackets and punctuation, as printed books do.
+- `halt` and `vhal` are added (BIZ UD has neither), so that `text-spacing-trim` in browsers (on by default in Chromium) removes the extra space between consecutive brackets and punctuation, as printed books do. `chws` and `vchw`, which trim only where punctuation is adjacent, are included too: where `text-spacing-trim` is unavailable, `font-feature-settings: "chws"` (`"vchw"` in vertical text) gives the same result (applying `halt` directly would also halve brackets that are not adjacent). Chromium's default setting does not change.
 - Symbols in Latin text (the quotation marks and apostrophe `‘ ’ “ ”`, the dash `—`, `†`, `©`, `€`, fractions such as `½` and `⅓`, the minus sign `−`, and others whose outline or width differs between BIZ UD and BIZ UDP) take BIZ UDP's glyphs, but only within Latin script (`locl`). BIZ UD's `’` is full width, so Alice’s would otherwise have a full-width gap. The same holds for symbols set on their own (such as the hyphen `‐` that browsers add at the end of a line in English text, which up to 1.004 was BIZ UD's full-width glyph and left a gap after the word). Format characters such as the soft hyphen (U+00AD) are not substituted (in 1.003 and 1.004 a soft hyphen in English text was not hidden and left a gap in the word). In documents in Japanese (`lang="ja"`) symbols keep BIZ UD's glyphs, English passages included, except for those named next. The quotation marks and apostrophe `‘ ’ “ ”` always take BIZ UDP's glyphs, in Japanese documents and in Japanese text too, so that `“Hello”` quoted in Japanese (`画面に“Hello”と`) and `It’s` have no full-width gaps and both quotation marks match (browsers put the `“` after Japanese into the Japanese run, where a font cannot tell it from the `“` of `“本当”`, which therefore takes BIZ UDP's glyphs as well). Vertical text takes BIZ UDP's vertical forms of them too (half an em high; Chromium sets quotation marks upright in vertical text), and so do the other symbols wherever they take BIZ UDP's glyphs. `— − ¼ ½ ¾ ⅓ ⅔ ⅕ ° ‼ ⁇ ⁈ ⁉` also always take BIZ UDP's glyphs, in Japanese text and in vertical text as well. In BIZ UD, `—` (U+2014) is half width, so `——` is only 1 em long; `−` has a shorter bar than `+` and `=`; the fractions and `‼` are squeezed into half width; and `°` is full width, leaving a gap in `35°C`. `―` (U+2015) was full width already and does not change.
 - The fonts are renamed Dokusho UD, as BIZ UDMincho and BIZ UDGothic are trademarks of Morisawa Inc., and the fixed pitch flag (`post.isFixedPitch`) is cleared.
 
@@ -62,7 +62,13 @@ These CSS examples show how to enable OpenType features. Install the font and se
 
 body {
   font-family: "Dokusho UD Mincho", serif;
-  /* Body text uses solid setting by default. */
+  /* Solid setting by default. Trims the space between adjacent brackets and punctuation (on by default in Chromium). */
+  text-spacing-trim: normal;
+}
+
+/* Characters BIZ UD lacks (Greek text, some IPA) come from the next family. */
+.mixed {
+  font-family: "Dokusho UD Mincho", "Noto Serif", serif;
 }
 
 h1, h2 {
@@ -79,11 +85,20 @@ table, .toc-pages {
 }
 
 .tate-chu-yoko {
+  text-combine-upright: all;
   font-feature-settings: "hwid" 1; /* e.g. 12 in vertical text */
+}
+
+.fraction {
+  font-feature-settings: "frac" 1; /* 1/2 as a fraction */
+}
+
+sup {
+  font-variant-position: super; /* superscript glyphs (sub for subscripts) */
 }
 ```
 
-Use `palt` and `vpal` for headings and similar text, rather than body copy, because they make kana and punctuation proportional. `tnum` aligns figures. `hwid` changes Latin letters, digits and symbols to half-width forms, which can fit text such as `12` into a tate-chu-yoko cell. In InDesign, use the corresponding settings, such as Proportional Metrics for `palt` and `vpal`, and Tabular Figures for `tnum`.
+Use `palt` and `vpal` for headings and similar text, rather than body copy, because they make kana and punctuation proportional. `tnum` aligns figures. `hwid` changes Latin letters, digits and symbols to half-width forms, which can fit text such as `12` into a tate-chu-yoko cell. `font-feature-settings` on a child element replaces its parent's, so list the features you combine together (`tnum` and the like are not replaced when written as `font-variant-numeric`). In InDesign, use the corresponding settings, such as Proportional Metrics for `palt` and `vpal`, and Tabular Figures for `tnum`.
 
 ## Inherited from the original fonts
 
