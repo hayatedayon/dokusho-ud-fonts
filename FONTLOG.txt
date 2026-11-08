@@ -22,7 +22,7 @@ with their substitutions, from BIZ UDP of the same design.
 ChangeLog
 ---------
 
-2026-11-05 (hayatedayon) Dokusho UD 1.005
+2026-11-08 (hayatedayon) Dokusho UD 1.005
 - The em dash — (U+2014), the minus sign −, the fractions ¼ ½ ¾ ⅓ ⅔ ⅕, the
   degree sign ° and ‼ ⁇ ⁈ ⁉ now always take BIZ UDP's glyphs, in Japanese
   text and documents and in vertical text too, as the quotation marks and
