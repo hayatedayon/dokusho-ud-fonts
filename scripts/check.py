@@ -4,6 +4,7 @@ build.py とは別の書き方で、できたものだけを見る。1 つでも
 """
 
 import copy
+import math
 import sys
 import unicodedata
 from pathlib import Path
@@ -15,7 +16,10 @@ from fontTools.ttLib import TTFont
 
 import freetype_render
 import harfbuzz_shape
+import kerning
+import small_type
 import spec
+import width_reference
 
 ROOT = Path(__file__).resolve().parent.parent
 SOURCES = ROOT / "sources"
@@ -68,6 +72,17 @@ def gsub_alternates(font: TTFont, tag: str) -> dict:
                 for key, values in getattr(subtable, "alternates", {}).items():
                     result.setdefault(key, []).extend(v for v in values if v not in result[key])
     return result
+
+
+def vertical_closure(font: TTFont, glyphs: set[str]) -> set[str]:
+    """横・縦組の候補を集める。post が形式3でもグリフ名の接尾辞には依存しない。"""
+    result = set(glyphs)
+    forms = [gsub_mapping(font, tag) for tag in ("vert", "vrt2")]
+    while True:
+        expanded = result | {target for mapping in forms for source, target in mapping.items() if source in result}
+        if expanded == result:
+            return result
+        result = expanded
 
 
 def latin_codes(cmap: dict) -> list[int]:
@@ -128,7 +143,7 @@ def check_font(family: dict, weight: str) -> None:
     # 縦組の ⸺ ⸻
     fraction_glyphs |= {gsub_mapping(font, "vert").get(cmap.get(code)) for code in (0x2E3A, 0x2E3B)} - {None}
     # 等幅の数字 (tnum) と、字を分け合っていた結合用の記号
-    fraction_glyphs |= outputs(font, ["tnum", "calt"]) | {cmap[code] for code in remapped}
+    fraction_glyphs |= outputs(font, ["tnum", "calt", "ss02", "ss03"]) | {cmap[code] for code in remapped}
     # 上の記号の前の、点の無い全角の ｉ
     # (post は形式 3 で、足した字の名前はファイルに残らないので、ｉ からの置き換え先から引く)
     gsub_table = font["GSUB"].table
@@ -139,7 +154,7 @@ def check_font(family: dict, weight: str) -> None:
                         | outputs(font, ["vert", "vrt2"])) - set(order_ud)
     check(extra == set(latin_symbol_mapping(font, "latn", None).values()) | half_widths | fraction_glyphs,
           f"{label}: glyphs other than the symbols for Latin text, the half widths for hwid and the fraction "
-          "digits were added")
+          "digits and stylistic sets were added")
 
     check(latin_codes(cmap) == latin_codes(cmap_udp), f"{label}: BIZ UDP has other Latin letters than BIZ UD")
     for code in latin_codes(cmap):
@@ -201,7 +216,15 @@ def check_font(family: dict, weight: str) -> None:
     for name in set(ud_hwid.values()) - mark_glyphs:  # 字幅 0 にした結合用の記号からは、hwid は無い
         if name in font["hmtx"].metrics and (font["hmtx"][name] != ud["hmtx"][name] or outline(font, name) != outline(ud, name)):
             expected[name] = name
-    check(ours_hwid.keys() == expected.keys(), f"{label}: hwid covers {len(ours_hwid)} glyphs, not {len(expected)}")
+    # 除外できるのは ss02 専用の複製だけ。通常の locl と共有していないことも必須。
+    style_inputs = vertical_closure(font, outputs(font, ("ss02",)))
+    ordinary = set(cmap.values()) | vertical_closure(font, outputs(font, ("locl",)))
+    check(not style_inputs & ordinary, f"{label}: ss02 shares width-guard inputs with ordinary glyphs")
+    check(ours_hwid.keys() - style_inputs == expected.keys(),
+          f"{label}: hwid changed its original coverage outside ss02-only copies")
+    ours_fwid, ud_fwid = gsub_mapping(font, "fwid"), gsub_mapping(ud, "fwid")
+    check({key: target for key, target in ours_fwid.items() if key not in style_inputs} == ud_fwid,
+          f"{label}: fwid changed original substitutions outside ss02-only copies")
     for key in sorted(ours_hwid.keys() & expected.keys()):
         pairs = [(ours_hwid[key], expected[key])]
         if expected[key] in ud_vrt2:
@@ -265,6 +288,7 @@ def check_font(family: dict, weight: str) -> None:
     check_overflow(label, font, ud, udp)
     check_shaping(label, family, weight)
     check_colon(label, family, weight)
+    check_reading_features(label, family, weight)
 
 
 def gpos_values(font: TTFont, tag: str) -> dict:
@@ -381,8 +405,9 @@ def check_hinting(label: str, font: TTFont, family: dict, weight: str, targets: 
     by_name = {name: code for code, name in cmap.items()}
     order_ud = set(ud_font.getGlyphOrder())
     ud_hwid = gsub_mapping(ud_font, "hwid")
+    # 後段の ss02 用入力は追加グリフなので、元フォントにある入力からだけ控えの由来を引く。
     half_widths = {half: ud_hwid.get(key, key) for key, half in gsub_mapping(font, "hwid").items()
-                   if half not in order_ud}
+                   if half not in order_ud and key in order_ud}
     check(half_widths, f"{label}: no half widths for hwid to draw")
     plain_gray = freetype_render.Renderer(paths["ours"], freetype_render.MODES[0][1], freetype_render.NO_HINTING)
     # 字全体が消えうるのは、インクの幅か高さが細い字だけ (漢字などは、線が 1 本消えても字は残る)
@@ -702,7 +727,7 @@ def check_fractions(label: str, font: TTFont, udp: TTFont) -> None:
         check(min(bottoms[k] for k in designed) - 30 <= bottoms[d] <= max(bottoms[k] for k in designed) + 30,
               f"{label}: superscript {d} does not sit as ¹ ² ³ ⁴ do")
         program = getattr(font["glyf"][sups[d]], "program", None)
-        check(program is None or not program.getBytecode(), f"{label}: superscript {d} has hinting")
+        check(program is not None and program.getBytecode(), f"{label}: superscript {d} lacks its small-digit hinting")
     for d in range(10):
         for source in (digits[d], cmap[0xFF10 + d]):
             check(shape(font, chr(cmap_code(cmap, source)), {"sups"}) == [sups[d]], f"{label}: sups of {source}")
@@ -1300,21 +1325,22 @@ class Shaped:
         return self.outlines[glyph]
 
     def run(self, text: str, language: str, vertical: bool = False, features=(), cluster: int | None = None):
-        """(輪郭, 送り x, 送り y, ずれ x, ずれ y) の並び。cluster を指定すれば、その字の所だけ"""
+        """元フォントとの比較用。kern を切って (輪郭, 送り x, 送り y, ずれ x, ずれ y) を比べる。
+        新しい kern の振る舞いは check_reading_features が、既定で有効なまま別に確かめる。"""
         return [(self.outline_of(g), xa, ya, xo, yo)
-                for g, c, xa, ya, xo, yo in self.shaper.shape(text, language, vertical, features)
+                for g, c, xa, ya, xo, yo in self.shaper.shape(text, language, vertical, ("kern=0", *features))
                 if cluster is None or c == cluster]
 
     def run_script(self, text: str, script: str, language: str, vertical: bool) -> list:
         """用字系を指定して組む (ブラウザは、記号を前の字の用字系の組に入れる)"""
         return [(self.outline_of(g), xa, ya, xo, yo)
-                for g, _c, xa, ya, xo, yo in self.shaper.shape(text, language, vertical, (), script)]
+                for g, _c, xa, ya, xo, yo in self.shaper.shape(text, language, vertical, ("kern=0",), script)]
 
     def ink(self, text: str, language: str, vertical: bool = False, features=()) -> list:
         """組んだ字のインクの外形 (最初の字の原点から)。インクの無い字は None"""
         x = y = 0
         boxes = []
-        for g, _c, xa, ya, xo, yo in self.shaper.shape(text, language, vertical, features):
+        for g, _c, xa, ya, xo, yo in self.shaper.shape(text, language, vertical, ("kern=0", *features)):
             bounds = glyph_bounds(self.font, self.order[g])
             boxes.append(None if bounds is None else
                          (bounds[0] + x + xo, bounds[1] + y + yo, bounds[2] + x + xo, bounds[3] + y + yo))
@@ -1634,6 +1660,453 @@ def check_shaping(label: str, family: dict, weight: str) -> None:
         problems.append(f"{label}: {len(items)} {what}, such as {', '.join(items[:5])}")
 
 
+def kerning_pairs(font: TTFont) -> dict[tuple[str, str], int]:
+    """できた GPOS の実効 kern ペアを展開する。生成用のクラス・文字範囲には依存しない。
+
+    同じ lookup の先に一致したゼロ値も後のサブテーブルを遮る。Format 2 は Coverage に
+    入った左の字について、クラス0を含むすべての右の字に一致する。返すのは実効値が非ゼロのペア。
+    """
+    table = font["GPOS"].table
+    indexes = sorted({i for r in table.FeatureList.FeatureRecord if r.FeatureTag == "kern"
+                      for i in r.Feature.LookupListIndex})
+    result = {}
+    for index in indexes:
+        pairs = {}
+        covered_left = set()
+        for raw in table.LookupList.Lookup[index].SubTable:
+            sub = getattr(raw, "ExtSubTable", raw)
+            check(sub.ValueFormat1 in (0, 4) and sub.ValueFormat2 == 0,
+                  "kern collision check requires XAdvance-only pair positioning")
+            if sub.Format == 1:
+                for first, pair_set in zip(sub.Coverage.glyphs, sub.PairSet):
+                    if first in covered_left:
+                        continue
+                    for record in pair_set.PairValueRecord:
+                        pairs.setdefault((first, record.SecondGlyph), getattr(record.Value1, "XAdvance", 0))
+            elif sub.Format == 2:
+                classes = {}
+                for glyph in font.getGlyphOrder():
+                    classes.setdefault(sub.ClassDef2.classDefs.get(glyph, 0), []).append(glyph)
+                for first in sub.Coverage.glyphs:
+                    if first in covered_left:
+                        continue
+                    row = sub.Class1Record[sub.ClassDef1.classDefs.get(first, 0)]
+                    for cls, record in enumerate(row.Class2Record):
+                        amount = getattr(record.Value1, "XAdvance", 0)
+                        # クラス0の巨大なゼロ行は展開せず covered_left で表現する。
+                        # 明示クラスのゼロ値と、先行する Format 1 のゼロ値は pairs に残す。
+                        if amount or cls != 0:
+                            for second in classes.get(cls, ()):
+                                pairs.setdefault((first, second), amount)
+                    covered_left.add(first)
+            else:
+                check(False, f"unsupported kern pair format: {sub.Format}")
+        for pair, amount in pairs.items():
+            if amount:
+                result[pair] = result.get(pair, 0) + amount
+    return {pair: amount for pair, amount in result.items() if amount}
+
+
+def check_kern_lookup_precedence() -> None:
+    """ゼロ値による遮断、Format 1/2 の混在、別 lookup の加算を小さな表で検査する。"""
+    from fontTools.feaLib.builder import addOpenTypeFeaturesFromString
+
+    cases = [
+        # Format 2 のクラス0のゼロで、後ろの V-a は遮断される。
+        ("pos [V] [A] -50; subtable; pos [V] [a] -40;", {("V", "A"): -50}),
+        # Format 1 が先に一致するのは、その具体的なペアだけ。
+        ("pos V A -50; subtable; pos [V] [a] -40;", {("V", "A"): -50, ("V", "a"): -40}),
+        # Format 1 の明示的なゼロ値も後続を遮る。
+        ("pos V a 0; subtable; pos [V] [a] -40;", {}),
+    ]
+    for body, expected in cases:
+        font = TTFont()
+        font.setGlyphOrder([".notdef", "V", "A", "a"])
+        addOpenTypeFeaturesFromString(font, "feature kern { lookup Test { " + body + " } Test; } kern;", tables=["GPOS"])
+        check(kerning_pairs(font) == expected, f"kern subtable precedence: {body}")
+    font = TTFont()
+    font.setGlyphOrder([".notdef", "V", "A", "a"])
+    addOpenTypeFeaturesFromString(font, """feature kern {
+        lookup First { pos [V] [A] -50; } First;
+        lookup Second { pos [V] [a] -40; } Second;
+    } kern;""", tables=["GPOS"])
+    check(kerning_pairs(font) == {("V", "A"): -50, ("V", "a"): -40}, "kern precedence leaked across lookups")
+
+
+def check_kern_shaping(label: str, font: TTFont, shaper, family: str, effective=None) -> int:
+    """宣言した全ペアを、アクセント付き・除外字を含めて実際に組み、設定値と照合する。
+
+    衝突検査とは別に行う。無効になったペアは衝突しなくても、この検査で不合格になる。
+    GPOS の展開結果も HarfBuzz と突き合わせ、サブテーブルの解釈違いを検出する。
+    """
+    cmap, order = font.getBestCmap(), font.getGlyphOrder()
+    variants = {}
+    for code in spec.LATIN:
+        if code in cmap and unicodedata.category(chr(code)).startswith("L"):
+            base = unicodedata.normalize("NFD", chr(code))[0]
+            variants.setdefault(base, set()).add(chr(code))
+    if effective is None:
+        effective = kerning_pairs(font)
+    declared = {}
+    em = font["head"].unitsPerEm
+    for left, right, mincho, gothic in kerning.PAIRS:
+        adjustment = kerning.adjustment(em, family, mincho, gothic)
+        for a in left:
+            for b in right:
+                for first in sorted(variants.get(a, ())):
+                    for second in sorted(variants.get(b, ())):
+                        amount = 0 if first in kerning.EXCLUDED_LEFT else adjustment
+                        text = first + second
+                        check(text not in declared or declared[text] == amount, f"{label}: conflicting kern declarations for {text}")
+                        declared[text] = amount
+    wrong = []
+    for text, expected in sorted(declared.items()):
+        plain = shaper.shape(text, "en", features=("kern=0",))
+        kerned = shaper.shape(text, "en")
+        actual = sum(r[2] for r in kerned) - sum(r[2] for r in plain)
+        if actual != expected:
+            wrong.append((text, expected, actual))
+        if len(kerned) == 2:
+            pair = (order[kerned[0][0]], order[kerned[1][0]])
+            check(effective.get(pair, 0) == actual, f"{label}: GPOS expansion disagrees with HarfBuzz on {text}")
+    check(bool(declared), f"{label}: no declared kern pairs were shaped")
+    check(not wrong, f"{label}: {len(wrong)} declared kern pairs have wrong advances (text, expected, actual): {wrong[:12]}")
+    return len(declared)
+
+
+def outline_distance(left, right, limit: float = math.inf) -> float:
+    """折れ線にした２字の輪郭間の最短距離。limit より広い場合は limit を返す。
+
+    同じ高さの水平断面だけでは、水平辺の端や斜めに近づいた角の間隔を見落とす。
+    セグメントの包囲矩形で候補を絞り、交差と点・線分間の距離を確かめる。
+    """
+    def edges(polygons):
+        return [(x, y, X, Y, min(x, X), min(y, Y), max(x, X), max(y, Y))
+                for polygon in polygons for (x, y), (X, Y) in zip(polygon, polygon[1:] + polygon[:1])]
+
+    def point_distance(x, y, line):
+        dx, dy = line[2] - line[0], line[3] - line[1]
+        length = dx * dx + dy * dy
+        t = max(0, min(1, ((x - line[0]) * dx + (y - line[1]) * dy) / length)) if length else 0
+        return (x - line[0] - t * dx) ** 2 + (y - line[1] - t * dy) ** 2
+
+    best = limit * limit
+    a, b = edges(left), edges(right)
+    for p in a:
+        for q in b:
+            dx, dy = max(p[4] - q[6], q[4] - p[6], 0), max(p[5] - q[7], q[5] - p[7], 0)
+            if dx * dx + dy * dy >= best:
+                continue
+            ax, ay, bx, by = p[2] - p[0], p[3] - p[1], q[2] - q[0], q[3] - q[1]
+            determinant = ax * by - ay * bx
+            if determinant:
+                ox, oy = q[0] - p[0], q[1] - p[1]
+                t, u = (ox * by - oy * bx) / determinant, (ox * ay - oy * ax) / determinant
+                if 0 <= t <= 1 and 0 <= u <= 1:
+                    return 0.0
+            best = min(best, point_distance(p[0], p[1], q), point_distance(p[2], p[3], q),
+                       point_distance(q[0], q[1], p), point_distance(q[2], q[3], p))
+    return math.sqrt(best)
+
+
+def check_outline_distance() -> None:
+    a = [[(0, 0), (10, 0), (10, 10), (0, 10)]]
+    diagonal = [[(20, 20), (30, 20), (30, 30), (20, 30)]]
+    crossing = [[(5, 5), (15, 5), (15, 15), (5, 15)]]
+    touching = [[(10, 0), (20, 0), (20, 10), (10, 10)]]
+    check(abs(outline_distance(a, diagonal) - math.sqrt(200)) < 1e-6, "diagonal ink distance was not checked")
+    check(outline_distance(a, diagonal, 5) == 5, "ink distance limit is not respected")
+    check(outline_distance(a, crossing) == 0 and outline_distance(a, touching) == 0,
+          "crossing or touching outlines were not detected")
+
+
+def check_kern_contacts(label: str, font: TTFont, pairs=None) -> int:
+    """全ペアの水平断面と輪郭間の最短距離を調べ、アクセントや角の近接も検査する。"""
+    if pairs is None:
+        pairs = kerning_pairs(font)
+    minimum = font["head"].unitsPerEm / 100  # 1% em。接触していなくても極端に狭いペアは不合格。
+    profiles, outlines = {}, {}
+    for glyph in sorted({g for pair in pairs for g in pair}):
+        polygons = flattened(font, glyph)
+        outlines[glyph] = polygons
+        ys = [y for polygon in polygons for _x, y in polygon]
+        profile = {}
+        for y in range(int(min(ys)) - 1, int(max(ys)) + 2):
+            xs = row(polygons, y + 0.5)
+            if xs:
+                profile[y] = (xs[0], xs[-1])
+        profiles[glyph] = profile
+    bad = []
+    for (first, second), amount in pairs.items():
+        left, right = profiles[first], profiles[second]
+        rows = left.keys() & right.keys()
+        advance = font["hmtx"][first][0] + amount
+        gap = min((advance + right[y][0] - left[y][1] for y in rows), default=math.inf)
+        shifted = [[(x + advance, y) for x, y in polygon] for polygon in outlines[second]]
+        gap = min(gap, outline_distance(outlines[first], shifted, minimum))
+        if gap < minimum:
+            bad.append((first, second, round(gap, 2)))
+    check(bool(pairs), f"{label}: no kern pairs were checked")
+    check(not bad, f"{label}: {len(bad)} of {len(pairs)} kern pairs have less than {minimum:.2f} units of ink space: {bad[:8]}")
+    return len(pairs)
+
+
+def check_small_digit_outlines(label: str, font: TTFont, glyphs: set[str], path: Path) -> None:
+    """複数輪郭の内側も外側と同じ縦方向の変形かを、FreeType の適用後の点で確かめる。
+
+    26.6 座標の丸め誤差は２単位 (1/32 px) まで許す。カウンターが動かない旧実装は、
+    分母の0などで12〜24単位以上ずれるため、この検査で検出できる。
+    """
+    cases = []
+    for name in sorted(glyphs):
+        glyph = font["glyf"][name]
+        if glyph.numberOfContours <= 1:
+            continue
+        coords = glyph.getCoordinates(font["glyf"])[0]
+        bottom = min(range(len(coords)), key=lambda i: coords[i][1])
+        top = max(range(len(coords)), key=lambda i: coords[i][1])
+        cases.append((name, font.getGlyphID(name), bottom, top))
+    check(bool(cases), f"{label}: no multi-contour small digits were checked")
+    for mode, interpreter, flags in freetype_render.MODES:
+        hinted = freetype_render.Renderer(path, interpreter, flags)
+        plain = freetype_render.Renderer(path, interpreter, flags | freetype_render.NO_HINTING)
+        bad = []
+        for ppem in range(8, 25):
+            for name, gid, bottom, top in cases:
+                original, fitted = plain.outline(gid, ppem), hinted.outline(gid, ppem)
+                y0, y1 = original[bottom][1], original[top][1]
+                low, high = fitted[bottom][1], fitted[top][1]
+                deviation = max(abs(y - (low + (original[i][1] - y0) * (high - low) / (y1 - y0)))
+                                for i, (_x, y) in enumerate(fitted))
+                if deviation > 2:
+                    bad.append((name, ppem, round(deviation, 2)))
+        check(not bad, f"{label}: {mode}: {len(bad)} small-digit outlines distort their counters: {bad[:5]}")
+        hinted.close()
+        plain.close()
+
+
+def check_small_digit_alignment(label: str, font: TTFont, shaper, path: Path, source: Path) -> None:
+    """各 ppem で同じ役割の数字の上下端が一致するか、輪郭とラスタの両方で確かめる。
+
+    上付き¹²³⁴は元のヒントを保つ対照群として元フォントと画素比較し、追加６字とは分ける。
+    """
+    groups = {}
+    for tag in ("dnom", "numr", "subs", "sups"):
+        shaped = shaper.shape("0123456789", "en", features=(tag,))
+        groups[tag] = {r[0] for d, r in enumerate(shaped) if tag != "sups" or d not in (1, 2, 3, 4)}
+    # 分数の斜線に接する専用字形も、普通の分子・分母と同じ上下位置であること。
+    for d in range(10):
+        fraction = shaper.shape(f"{d}/{d}{d}", "en", features=("frac",))
+        check(len(fraction) == 4, f"{label}: unexpected fraction glyphs for {d}/{d}{d}")
+        if len(fraction) == 4:
+            groups["numr"].add(fraction[0][0])
+            groups["dnom"].update(r[0] for r in fraction[2:])
+    for mode, interpreter, flags in freetype_render.MODES:
+        ours = freetype_render.Renderer(path, interpreter, flags)
+        original = freetype_render.Renderer(source, interpreter, flags)
+        bad = []
+        for ppem in range(8, 25):
+            for tag, glyphs in groups.items():
+                outlines, rasters = set(), set()
+                for gid in glyphs:
+                    ys = [y for _x, y in ours.outline(gid, ppem)]
+                    outlines.add((min(ys), max(ys)))
+                    bitmap = ours.render(gid, ppem)
+                    rasters.add((bitmap[1] - bitmap[4], bitmap[1]))
+                if len(outlines) != 1 or len(rasters) != 1 or (tag == "dnom" and next(iter(outlines))[0] != 0):
+                    bad.append((tag, ppem, sorted(outlines), sorted(rasters)))
+            for code in (0x00B9, 0x00B2, 0x00B3, 0x2074):
+                check(ours.render(ours.char_index(code), ppem) == original.render(original.char_index(code), ppem),
+                      f"{label}: original superscript U+{code:04X} changed at {ppem} ({mode})")
+        check(not bad, f"{label}: {mode}: inconsistent small-digit baselines/heights: {bad[:8]}")
+        ours.close()
+        original.close()
+
+
+def check_style_widths(label: str, font: TTFont, shaper) -> int:
+    """記号の全対象字を実際に組み、ss02 が明示した幅・字形・縦組位置を変えないこと。"""
+    cmap = font.getBestCmap()
+    codes = [code for code in spec.LATIN_SYMBOLS if code in cmap and code not in spec.LATIN_QUOTES
+             and unicodedata.category(chr(code)) != "Cf"]
+    bad, count = [], 0
+    for code in codes:
+        for language in ("ja", "en"):
+            for context in ("{}", "字{}字", "A{}A"):
+                text = context.format(chr(code))
+                for vertical in (False, True):
+                    for tag in ("hwid", "fwid"):
+                        plain = shaper.shape(text, language, vertical, (tag,))
+                        styled = shaper.shape(text, language, vertical, (tag, "ss02"))
+                        if plain != styled:
+                            bad.append((f"U+{code:04X}", language, context, vertical, tag))
+                        count += 1
+    check(bool(count), f"{label}: no style/width combinations were checked")
+    check(not bad, f"{label}: {len(bad)} ss02 combinations override explicit widths: {bad[:8]}")
+    return count
+
+
+def check_style_copies(label: str, font: TTFont) -> None:
+    """ss02 の複製が通常の locl と別で、輪郭・メトリクス・ヒントをそのまま持つこと。"""
+    clones = vertical_closure(font, outputs(font, ("ss02",)))
+    originals = vertical_closure(font, outputs(font, ("locl",)))
+    check(bool(clones) and not clones & originals, f"{label}: ss02 copies are not isolated from locl")
+
+    def signature(name):
+        coordinates, ends, flags = font["glyf"][name].getCoordinates(font["glyf"])
+        glyph = font["glyf"][name]
+        program = bytes(glyph.program.getBytecode()) if hasattr(glyph, "program") else b""
+        classes = tuple(getattr(font["GDEF"].table, field).classDefs.get(name, 0)
+                        if getattr(font["GDEF"].table, field, None) is not None else 0
+                        for field in ("GlyphClassDef", "MarkAttachClassDef"))
+        return (tuple(coordinates), tuple(ends), tuple(flag & 1 for flag in flags),
+                font["hmtx"][name], font["vmtx"][name], program, classes)
+
+    signatures = {signature(name) for name in originals}
+    different = [name for name in sorted(clones) if signature(name) not in signatures]
+    check(not different, f"{label}: ss02 changed copied outlines, metrics, hinting or GDEF classes: {different[:6]}")
+
+
+def check_kern_exclusions(label: str, font: TTFont, pairs: dict) -> None:
+    """kern の入力字が、固定幅・縦組への置換先と重ならないことを表全体で検査する。"""
+    inputs = {glyph for pair in pairs for glyph in pair}
+    for tag in ("hwid", "fwid", "tnum", "vert", "vrt2"):
+        overlap = inputs & outputs(font, (tag,))
+        check(not overlap, f"{label}: kern includes {tag} output glyphs: {sorted(overlap)[:8]}")
+
+
+def check_reading_features(label: str, family: dict, weight: str) -> None:
+    """新しい組版機能は元との一致とは別に、実際の組み方と衝突・小サイズの画素で検査する。"""
+    path = FONTS / label
+    font = TTFont(path)
+    shaper = harfbuzz_shape.Shaper(path)
+    em, cmap = font["head"].unitsPerEm, font.getBestCmap()
+    order = font.getGlyphOrder()
+
+    def run(text, features=(), vertical=False):
+        return shaper.shape(text, "ja", vertical, features)
+
+    def width(text, features=()):
+        return sum(r[2] for r in run(text, features))
+
+    effective_kern = kerning_pairs(font)
+    check_kern_shaping(label, font, shaper, family["key"], effective_kern)
+    check_kern_contacts(label, font, effective_kern)
+    check_kern_exclusions(label, font, effective_kern)
+    check_style_copies(label, font)
+    problems.extend(width_reference.check_recorded(label, font, shaper))
+    check_style_widths(label, font, shaper)
+    for text in ("Ťu", "Ťü", "T\u030cu", "T\u0330\u030cu", "ĽT"):
+        check(run(text) == run(text, ("kern=0",)), f"{label}: projecting caron is kerned in {text}")
+    for text in ("AV", "WA", "To", "Te", "YA", "LT", "Tó", "ÁV"):
+        plain, kerned = run(text, ("kern=0",)), run(text)
+        check(width(text) < width(text, ("kern=0",)), f"{label}: kern does not tighten {text}")
+        check(width(text, ("kern=0",)) - width(text) <= em / 8, f"{label}: excessive kern on {text}")
+        if len(kerned) == 2:
+            left, right = kerned
+            gap = ink_gap(flattened(font, order[left[0]], left[4], left[5]),
+                          flattened(font, order[right[0]], left[2] + right[4], right[5]))
+            check(gap is not None and gap > em / 50, f"{label}: kern makes {text} touch ({gap})")
+        check([r[0] for r in plain] == [r[0] for r in kerned], f"{label}: kern changes glyphs of {text}")
+    for text, features in [("漢字かな", ()), ("AV To", ("hwid",)), ("ＡＶ", ()),
+                            ("AV To", ("fwid",)), ("0123456789", ("tnum",))]:
+        check(run(text, features) == run(text, (*features, "kern=0")), f"{label}: kern changes fixed widths of {text}")
+    check(run("AV To", vertical=True) == run("AV To", ("kern=0",), True), f"{label}: kern affects vertical text")
+    # IgnoreMarks: 合成済みの字と、結合記号が残る字の両方で、基底字間に同じ詰めを適用する。
+    for text in ("To", "Tõ", "Tő", "T̃o"):
+        check(width(text, ("kern=0",)) - width(text) == width("To", ("kern=0",)) - width("To"),
+              f"{label}: accents change the kern amount in {text}")
+    for features in [("pnum",), ("tnum", "pnum"), ("zero", "tnum", "pnum")]:
+        plain = ("zero",) if "zero" in features else ()
+        check(run("0123456789", features) == run("0123456789", plain), f"{label}: pnum does not restore proportional digits")
+    for text in ("1/2", "10/25"):
+        check(run(text, ("frac", "tnum", "pnum")) == run(text, ("frac",)), f"{label}: numeric widths alter {text}")
+    ours = Shaped(path)
+    ud = Shaped(SOURCES / f"{family['ud']}-{weight}.ttf")
+    udp = Shaped(SOURCES / f"{family['udp']}-{weight}.ttf")
+    cmap_udp = udp.font.getBestCmap()
+    # chws/vchw と halt/vhal を明示的に有効にして二重詰めを再現し、安全な指定と区別する。
+    text = "「春、（花）・風。」"
+    for vertical, proportional, contextual, half in [(False, "palt", "chws", "halt"),
+                                                     (True, "vpal", "vchw", "vhal")]:
+        safe = (proportional, contextual + "=0", half + "=0")
+        positioned, reference = ours.run(text, "ja", vertical, safe), udp.run(text, "ja", vertical)
+        # BIZ UDP は輪郭そのものを移動した字を持つので、輪郭と placement の生値ではなく、
+        # 実際の送りとインクの中心を比べる。縦組の括弧などの輪郭寸法の違いは許す。
+        check([r[1:3] for r in positioned] == [r[1:3] for r in reference],
+              f"{label}: safe {proportional} advances differ from BIZ UDP")
+        ink, reference_ink = ours.ink(text, "ja", vertical, safe), udp.ink(text, "ja", vertical)
+        check(len(ink) == len(reference_ink) and all(
+            a is not None and b is not None and all(abs((a[k] + a[k+2] - b[k] - b[k+2]) / 2) <= 1 for k in (0, 1))
+            for a, b in zip(ink, reference_ink)), f"{label}: safe {proportional} positions differ from BIZ UDP")
+        a = run(text, safe, vertical)
+        safe_advance = sum(abs(r[3]) if vertical else r[2] for r in a)
+        check(all(abs(r[3]) > 0 if vertical else r[2] > 0 for r in a),
+              f"{label}: safe proportional spacing has non-positive advances")
+        for incompatible in (contextual, half):
+            b = run(text, (proportional, incompatible), vertical)
+            double_advance = sum(abs(r[3]) if vertical else r[2] for r in b)
+            check(double_advance < safe_advance and a != b,
+                  f"{label}: {proportional}+{incompatible} did not reproduce double trimming")
+    for language in ("ja", "en"):
+        for vertical in (False, True):
+            for char in "‘’“”":
+                check(ours.run(char, language, vertical, ("ss01",)) == ud.run(char, language, vertical),
+                      f"{label}: ss01 {char} is not BIZ UD ({language}, vertical={vertical})")
+                check(ours.run(char, language, vertical, ("ss01", "ss02")) == ours.run(char, language, vertical, ("ss01",)),
+                      f"{label}: ss02 overrides ss01 quotes")
+            for code in spec.LATIN_SYMBOLS:
+                if (code not in cmap or code not in cmap_udp or code in spec.LATIN_QUOTES
+                        or unicodedata.category(chr(code)) == "Cf"):
+                    continue
+                char = chr(code)
+                check(ours.run(char, language, vertical, ("ss02",)) == udp.run(char, language, vertical),
+                      f"{label}: ss02 U+{code:04X} is not BIZ UDP ({language}, vertical={vertical})")
+    for tag in ("ss01", "ss02", "ss03"):
+        for record in font["GSUB"].table.FeatureList.FeatureRecord:
+            if record.FeatureTag == tag:
+                params = record.Feature.FeatureParams
+                check(params is not None and font["name"].getDebugName(params.UINameID), f"{label}: {tag} has no label")
+    for char in small_type.RUBY_KANA:
+        for vertical in (False, True):
+            a, b = run(char, (), vertical), run(char, ("ss03",), vertical)
+            check(len(a) == len(b) == 1 and a[0][0] != b[0][0], f"{label}: ss03 lacks {char}")
+            check(a[0][2:] == b[0][2:], f"{label}: trial ruby changes the frame of {char}")
+            bounds = glyph_bounds(font, order[b[0][0]])
+            check(bounds is not None and not any(overflow(font, order[b[0][0]])), f"{label}: trial ruby {char} clips")
+    check(run("漢字さしすせそ", ("ss03",)) == run("漢字さしすせそ"), f"{label}: ss03 changes unselected characters")
+    trial = gsub_mapping(font, "ss03")
+    for tag, vertical in (("palt", False), ("vpal", True)):
+        values = gpos_values(font, tag)
+        for source, target in trial.items():
+            check(values.get(source) == values.get(target), f"{label}: trial ruby does not inherit {tag} of {source}")
+        for text in (small_type.RUBY_KANA, "漢あ字め"):
+            a, b = run(text, (tag,), vertical), run(text, (tag, "ss03"), vertical)
+            check([r[2:] for r in a] == [r[2:] for r in b], f"{label}: ss03 changes {tag} spacing of {text}")
+    for tag in ("vert", "vrt2"):
+        vertical = gsub_mapping(font, tag)
+        for source, upright in vertical.items():
+            if source in trial and upright in trial:
+                check(vertical.get(trial[source]) == trial[upright], f"{label}: trial ruby lacks {tag} of {source}")
+    # 元のフォントの数字は固有のヒントを持つので除き、生成した数字を分数の端用字形まで集める。
+    generated = (outputs(font, spec.FRACTION_FEATURES) | {cmap[c] for c in (0x2070, *range(0x2075, 0x207A))})
+    generated -= set(ud.font.getGlyphOrder())
+    generated_digits = {name for name in generated if font["glyf"][name].numberOfContours > 1}
+    check_small_digit_outlines(label, font, generated_digits, path)
+    check_small_digit_alignment(label, font, shaper, path, SOURCES / f"{family['udp']}-{weight}.ttf")
+    # 生成した数字のヒントは、8–24 ppem の全描画モードで、消失や上下の潰れを起こさない。
+    digit_glyphs = {r[0] for tag in ("sups", "subs", "numr", "dnom") for r in run("0123456789", (tag,))}
+    for mode, interpreter, flags in freetype_render.MODES:
+        renderer = freetype_render.Renderer(path, interpreter, flags)
+        for ppem in range(8, 25):
+            for gid in digit_glyphs:
+                bitmap = renderer.render(gid, ppem)
+                check(bitmap[4] >= 2 and any(bitmap[5]), f"{label}: small digit {gid} collapses at {ppem} ({mode})")
+        renderer.close()
+    for item in (ours, ud, udp):
+        item.close()
+    shaper.close()
+
+
 def check_woff2(family: dict, weight: str) -> None:
     """WOFF2 の中身が TTF と同じであること。glyf・loca は圧縮のときに形式が変わるので字ごとに比べ、
     head は圧縮の印 (flags の bit 11) とチェックサムのほかを比べる。ほかの表はバイト列で比べる"""
@@ -1682,6 +2155,8 @@ def check_license() -> None:
 
 
 def main() -> int:
+    check_kern_lookup_precedence()
+    check_outline_distance()
     check_license()
     for family in spec.FAMILIES:
         for weight in spec.WEIGHTS:

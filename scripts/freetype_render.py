@@ -31,11 +31,16 @@ class _Bitmap(Structure):
                 ("num_grays", c_ushort), ("pixel_mode", c_ubyte), ("palette_mode", c_ubyte), ("palette", c_void_p)]
 
 
+class _Outline(Structure):
+    _fields_ = [("n_contours", c_short), ("n_points", c_short), ("points", POINTER(_Vector)),
+                ("tags", POINTER(c_ubyte)), ("contours", POINTER(c_short)), ("flags", c_int)]
+
+
 class _GlyphSlot(Structure):
     _fields_ = [("library", c_void_p), ("face", c_void_p), ("next", c_void_p), ("glyph_index", c_uint),
                 ("generic", _Generic), ("metrics", _Metrics), ("linearHoriAdvance", c_long),
                 ("linearVertAdvance", c_long), ("advance", _Vector), ("format", c_uint), ("bitmap", _Bitmap),
-                ("bitmap_left", c_int), ("bitmap_top", c_int)]
+                ("bitmap_left", c_int), ("bitmap_top", c_int), ("outline", _Outline)]
 
 
 class _Face(Structure):
@@ -87,20 +92,29 @@ class Renderer:
     def char_index(self, code: int) -> int:
         return _ft.FT_Get_Char_Index(self.face, c_long(code))
 
-    def render(self, glyph_index: int, ppem: int):
-        """描いた字 (位置・送り・大きさ・画素)。描けなければ例外"""
+    def _load(self, glyph_index: int, ppem: int, render: bool):
         if ppem != self.ppem:
             if _ft.FT_Set_Pixel_Sizes(self.face, 0, ppem):
                 raise SystemExit(f"FT_Set_Pixel_Sizes {ppem} failed")
             self.ppem = ppem
-        error = _ft.FT_Load_Glyph(self.face, glyph_index, c_int(self.flags))
+        flags = self.flags if render else self.flags & ~_LOAD_RENDER
+        error = _ft.FT_Load_Glyph(self.face, glyph_index, c_int(flags))
         if error:
             raise SystemExit(f"FreeType could not load glyph {glyph_index} at {ppem} ppem (error {error})")
-        slot = self.face.contents.glyph.contents
+        return self.face.contents.glyph.contents
+
+    def render(self, glyph_index: int, ppem: int):
+        """描いた字 (位置・送り・大きさ・画素)。描けなければ例外"""
+        slot = self._load(glyph_index, ppem, True)
         bitmap = slot.bitmap
         size = bitmap.rows * abs(bitmap.pitch)
         pixels = ctypes.string_at(bitmap.buffer, size) if size else b""
         return (slot.bitmap_left, slot.bitmap_top, slot.advance.x, bitmap.width, bitmap.rows, pixels)
+
+    def outline(self, glyph_index: int, ppem: int) -> list[tuple[int, int]]:
+        """描画前の、ヒント適用後の全輪郭の点。単位は 1/64 px。"""
+        outline = self._load(glyph_index, ppem, False).outline
+        return [(outline.points[i].x, outline.points[i].y) for i in range(outline.n_points)]
 
     def close(self) -> None:
         _ft.FT_Done_Face(self.face)

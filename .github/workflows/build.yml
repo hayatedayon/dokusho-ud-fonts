@@ -51,7 +51,9 @@ jobs:
           .venv/bin/python scripts/build.py
 
       - name: Check
-        run: .venv/bin/python scripts/check.py
+        run: |
+          dpkg-query -W libfreetype6 libharfbuzz0b unicode-data
+          .venv/bin/python scripts/check.py
 
       # 配るのはフォントだけ。著作権表示と使用許諾の全文は、フォントの中 (name の 0 と 13) にある。
       # 残すのは 1 日だけ。プルリクエストで作ったフォントを手元で確かめるには足り、release.yml は
@@ -63,5 +65,32 @@ jobs:
           path: |
             fonts/*.ttf
             fonts/*.woff2
+          if-no-files-found: error
+          retention-days: 1
+
+      # 校正用の補助ページの失敗で、検証・保存済みフォントのリリースを止めない。
+      - name: Generate reading proofs
+        id: proofs
+        continue-on-error: true
+        timeout-minutes: 3
+        run: |
+          .venv/bin/python scripts/specimen_page.py
+          .venv/bin/python scripts/overflow_page.py
+          .venv/bin/python scripts/proof_page.py
+
+      # 展開後、ルートで http.server を起動して dist/proof.html を開く。
+      # 比較に使う元フォントも含むため、OFL の全文を同梱する。
+      - name: Upload reading proofs
+        if: ${{ steps.proofs.outcome == 'success' }}
+        continue-on-error: true
+        timeout-minutes: 2
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: DokushoUD-proof
+          path: |
+            dist/*.html
+            fonts/*.ttf
+            sources/*.ttf
+            OFL.txt
           if-no-files-found: error
           retention-days: 1

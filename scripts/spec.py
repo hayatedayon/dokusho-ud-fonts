@@ -2,6 +2,7 @@
 
 # フォントの版 (head.fontRevision と name の Version)。リリースのタグ vX.Y.Z は X.YYZ に対応する
 # (v1.0.0 は 1.000、v1.2.3 は 1.023)。.github/workflows/release.yml が突き合わせる
+# 次の版を公開するまでは、公開済みの版を保つ。未公開の変更は FONTLOG に記録する。
 VERSION = "1.006"
 REPOSITORY = "https://github.com/hayatedayon/dokusho-ud-fonts"
 COPYRIGHT = "Copyright 2026 The Dokusho UD Project Authors (https://github.com/hayatedayon/dokusho-ud-fonts)"

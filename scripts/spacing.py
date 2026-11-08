@@ -241,7 +241,7 @@ def contextual_spacing(font: TTFont, values: dict) -> list[str]:
     return lines
 
 
-def add(font: TTFont, udp: TTFont, extra: str = "") -> dict[str, int]:
+def add(font: TTFont, udp: TTFont, extra: str = "", ruby: dict[str, str] | None = None) -> dict[str, int]:
     """GPOS に halt・vhal・palt・vpal を作る (元の BIZ UD には GPOS が無い)。用字系は GSUB と同じにする。
     extra は、一緒に組み込む機能ファイルの文 (結合用の記号の mark・mkmk と GDEF。combining_marks.py)"""
     if "GPOS" in font:
@@ -249,6 +249,11 @@ def add(font: TTFont, udp: TTFont, extra: str = "") -> dict[str, int]:
     values = plan(font)
     values["palt"] = proportional(font, udp)
     values["vpal"] = proportional_vertical(font, udp)
+    # ss03 で字形を選んでも、詰める量は元の仮名とそろえる。縦組用の試作字形にも引き継ぐ。
+    for tag in ("palt", "vpal"):
+        for source, target in (ruby or {}).items():
+            if source in values[tag]:
+                values[tag][target] = values[tag][source]
     scripts = [record.ScriptTag for record in font["GSUB"].table.ScriptList.ScriptRecord]
     lines = [f"languagesystem {script} dflt;" for script in ["DFLT"] + [s for s in scripts if s != "DFLT"]]
     for tag, glyphs in values.items():

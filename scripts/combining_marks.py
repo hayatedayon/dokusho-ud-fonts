@@ -160,7 +160,7 @@ def add_fullwidth_dotless(font: TTFont) -> str:
     return dotless
 
 
-def add(font: TTFont, prepared: dict) -> dict:
+def add(font: TTFont, prepared: dict, ruby: dict[str, str] | None = None) -> dict:
     """GPOS と GDEF の機能ファイルの文と、i を ı にする上の記号の並びを返す (spacing.add の後に dotless_i を呼ぶ)"""
     import build
 
@@ -213,6 +213,11 @@ def add(font: TTFont, prepared: dict) -> dict:
                         if dx <= 0 or dy <= 0:
                             raise SystemExit(f"{vert_name}: unexpected vertical small kana shift ({dx}, {dy})")
                         small_vert[vert_name] = (dx, dy)
+    for source, target in (ruby or {}).items():
+        if source in kana_bases:
+            kana_bases.add(target)
+        if source in small_vert:
+            small_vert[target] = small_vert[source]
     if set(latin_bases) & kana_bases:
         raise SystemExit("a glyph is both a Latin and a kana base")
 

@@ -13,6 +13,7 @@ sources/ を読まない)。
     python3 scripts/specimen_page.py
 """
 
+import hashlib
 import json
 import sys
 from pathlib import Path
@@ -37,6 +38,25 @@ def fonts() -> list[dict]:
                                "url": f"../sources/{source}-{weight}.ttf", "family": family["key"],
                                "weight": weight, "kind": kind})
     return result
+
+
+def font_faces(available: list[dict]) -> str:
+    """Regular/Bold を同じファミリーにし、内容ハッシュで更新を判別する。見本ページで共有する。"""
+    faces = []
+    for font in available:
+        digest = hashlib.sha256((OUTPUT.parent / font["url"]).read_bytes()).hexdigest()[:12]
+        faces.append(f"@font-face {{ font-family: '{font['id']}'; "
+                     f"src: url('{font['url']}?v={digest}'); "
+                     f"font-weight: {700 if font['weight'] == 'Bold' else 400}; }}")
+    return "\n".join(faces)
+
+
+# 見本２ページで共通の機能一覧。子要素で再指定しても、併用中の機能を消さない。
+FEATURE_SETTINGS = """font-feature-settings: "kern" var(--kern, 1), "ss01" var(--ss01, 0), "ss02" var(--ss02, 0),
+    "ss03" var(--ss03, 0), "palt" var(--palt, 0), "vpal" var(--vpal, 0),
+    "chws" var(--chws, 0), "vchw" var(--vchw, 0), "halt" 0, "vhal" 0,
+    "hwid" var(--hwid, 0), "frac" var(--frac, 0), "sups" var(--sups, 0),
+    "subs" var(--subs, 0), "zero" var(--zero, 0), "pnum" var(--pnum, 0);"""
 
 
 CONTENT = """
@@ -81,12 +101,17 @@ CONTENT = """
 
 <section class="block">
 <h2 class="label">欧文の細部</h2>
+<p lang="en">Kerning: AVATAR, WA, To, Tu, Tũ, Tų, Te, LT, Tó, ÁV. 上の「欧字カーニング」で比較。</p>
 <p lang="en" class="latin">Ligatures: fine, flower, office, affluent. Quotes: “double” and ‘single’, Alice’s, ’90s. Dashes: 1990–2000, wait—what? Minus: 3 − 2 = 1, ±0.5, 2 × 3 ÷ 6.</p>
 <p lang="en" class="latin">Accents: café, naïve, façade, Ångström, Dvořák, Łódź, Øresund, smörgåsbord. Pinyin: nǐ hǎo, lǜ chá. IPA: [ˈfəʊnəˌtɪk].</p>
 <p lang="de" class="latin narrow">Soft hyphens: Donau&shy;dampf&shy;schiff&shy;fahrts&shy;gesell&shy;schafts&shy;kapitän, Rind&shy;fleisch&shy;etikettierungs&shy;überwachungs&shy;aufgaben&shy;übertragungs&shy;gesetz.</p>
 <p lang="en" class="latin">Combining marks: q̃ x̄ ŋ̊ p̰ i̋ ó́ — моло́ко, за́мок, замо́к. Kana: あ゙ え゙ ㇰ゚ か゚ — ゔ が ぱ.</p>
 </section>
 
+<section class="block">
+<h2 class="label">ルビ仮名の試作</h2>
+<p><ruby>雨<rt>あめ</rt></ruby>・<ruby>濡<rt>ぬれ</rt></ruby>・<ruby>客<rt>きゃく</rt></ruby>・<ruby>急<rt>きゅう</rt></ruby>・<ruby>曲<rt>きょく</rt></ruby>・<ruby>葉<rt>ぱっぱ</rt></ruby>。ss03 は「あめぬれゃゅょっがぱ」と対応する片仮名の20字だけを変えます。</p>
+</section>
 <section class="block">
 <h2 class="label">数字</h2>
 <table class="toc">
@@ -101,6 +126,7 @@ CONTENT = """
 <tr><td>2018</td><td>987,654</td><td>−3.5%</td></tr>
 <tr><td>2026</td><td>10,001</td><td>+0.1%</td></tr>
 </table>
+<p class="tnum">等幅数字: 1111　→ pnum: <span class="pnum">1111</span></p>
 <p>時刻: 11:11、21:07、10:01。日付: 2011年1月11日、2026年11月6日。電話: 03-1111-2468。</p>
 <p class="aside">tnum をかけると、1 がほかの数字と同じ幅になり、表や目次の桁がそろいます（上の「tnum」で、なし・あり・並べるを選べます）。</p>
 <p>分数（<code>frac</code>）: <span class="frac">1/2 3/4 10/25 1 1/2</span>　上付き: 10<sup class="sups">−3</sup>、x<sup class="sups">2</sup>、E = mc²　下付き: H₂O、CO<sub class="subs">2</sub>　⁰¹²³⁴⁵⁶⁷⁸⁹ ₀₁₂₃₄₅₆₇₈₉</p>
@@ -160,29 +186,39 @@ body.paper-dark { --paper: #1c1c1e; --ink: #d8d6d0; }
 .text .latin { hyphens: manual; }
 .text .narrow { max-inline-size: 12em; }
 .text .em { text-emphasis: sesame; }
-.text .tcy { text-combine-upright: all; font-feature-settings: "hwid"; }
-.text .frac { font-feature-settings: "frac"; }
-.text .sups { vertical-align: baseline; font-size: inherit; font-feature-settings: "sups"; }
-.text .subs { vertical-align: baseline; font-size: inherit; font-feature-settings: "subs"; }
-.text .hwid { font-feature-settings: "hwid"; }
-.text .zero { font-feature-settings: "zero"; }
-.text .palt { font-feature-settings: "palt"; }
+/* 併用する機能を同じ宣言に集め、子の要素で親の設定を消さない。 */
+.text, .text :is(.tcy, .frac, .sups, .subs, .hwid, .zero, .palt, .pnum, rt) {
+  __FEATURE_SETTINGS__
+}
+.vertical .text .tcy { text-combine-upright: all; --hwid: 1; }
+.text rt { font-size: 0.5em; --ss03: var(--ruby-trial, 0); }
+.text .pnum { --pnum: 1; }
+.text .frac { --frac: 1; }
+.text .sups { vertical-align: baseline; font-size: inherit; --sups: 1; }
+.text .subs { vertical-align: baseline; font-size: inherit; --subs: 1; }
+.text .hwid { --hwid: 1; }
+.text .zero { --zero: 1; }
+.text .palt { --palt: 1; }
 .text code { font-family: system-ui, monospace; font-size: 0.8em; color: #666; }
 .text .toc, .text .figures { border-collapse: collapse; margin-bottom: 0.8em; }
 .text .toc td { padding: 0 0.5em 0 0; }
 .text .toc .page { text-align: end; }
 .text .figures th { font-weight: normal; color: #666; font-size: 0.8em; padding: 0 0.8em 0.2em 0; text-align: end; }
 .text .figures td { padding: 0 0.8em 0 0; text-align: end; }
-/* tnum は font-variant-numeric でかける (font-feature-settings は、frac などを書いた子の要素で上書きされる) */
-.text.tnum { font-variant-numeric: tabular-nums; }
-.text.palt-all { font-feature-settings: "palt"; }
+/* tnum は font-variant-numeric で指定し、共通の機能一覧や子要素の frac・pnum と併用する。 */
+.text.tnum, .text .tnum { font-variant-numeric: tabular-nums; }
+.text.palt-all { --palt: 1; }
 .vertical #grid > .cell { writing-mode: vertical-rl; height: 26em; overflow-x: auto; }
 /* palt は横組で字を左右にずらす機能で、縦書きでかけると字が左右に揺れる。縦書きでは vpal にする */
-.vertical .text .palt, .vertical .text.palt-all { font-feature-settings: "vpal"; }
+.vertical .text .palt, .vertical .text.palt-all { --palt: 0; --vpal: 1; }
 /* 比較用: 横組用の palt を縦書きにも適用し、縦組の UDP と見比べられるようにする */
-.vertical.raw-palt .text .palt, .vertical.raw-palt .text.palt-all { font-feature-settings: "palt"; }
+.vertical.raw-palt .text .palt, .vertical.raw-palt .text.palt-all { --palt: 1; --vpal: 0; }
 .no-trim .text { text-spacing-trim: space-all; }
-.trim .text { text-spacing-trim: normal; }
+.trim .text { text-spacing-trim: normal; --chws: 1; }
+.vertical.trim .text { --chws: 0; --vchw: 1; }
+/* palt/vpal と文脈詰めは排他。ブラウザの自動詰めも見出しでは止める。 */
+.text .palt, .text.palt-all { text-spacing-trim: space-all; --chws: 0; --vchw: 0; }
+.vertical.trim .text.palt-all, .vertical.trim .text .palt { --chws: 0; --vchw: 0; }
 .autospace .text { text-autospace: normal; }
 .no-autospace .text { text-autospace: no-autospace; }
 .status { color: #b00; }
@@ -204,11 +240,16 @@ body.paper-dark { --paper: #1c1c1e; --ink: #d8d6d0; }
 <label><input type="checkbox" id="trim" checked> 約物の詰め</label>
 <label><input type="checkbox" id="autospace"> 和欧間のアキ</label>
 <label>tnum <select id="tnum"><option value="off">なし</option><option value="on">あり</option><option value="both">並べる</option></select></label>
+<label><input type="checkbox" id="kern" checked> 欧字カーニング</label>
+<label><input type="checkbox" id="japanese-quotes"> 和文引用符（ss01）</label>
+<label><input type="checkbox" id="latin-symbols"> 欧文記号（ss02）</label>
+<label><input type="checkbox" id="ruby-trial"> ルビ仮名の試作（ss03・20字）</label>
 <label><input type="checkbox" id="palt"> 全体に palt（縦は vpal）</label>
 <label><input type="checkbox" id="raw-palt"> 縦書きでも palt を適用（比較用）</label>
 <span id="status" class="status"></span>
 </header>
 <p class="note">両端揃えは、行の長さをそろえるために字の間を広げます。列が狭く、行の中に欧文が多いと、広げる所が少なくて空きが目立ちます。約物の詰めは CSS の <code>text-spacing-trim</code>（Chromium は既定で詰めます。切ると <code>space-all</code>）、和欧間のアキは <code>text-autospace</code>（Chromium 140 から）です。ブラウザが対応していなければ、切り替えても変わりません。BIZ UD・BIZ UDP は、比べるための元のフォントです。</p>
+<p class="note"><a href="proof.html">固定版面・印刷用の見本</a> ／ <a href="small-type.html">小さい数字とルビのラスタ比較</a></p>
 <div id="grid"></div>
 <template id="content">__CONTENT__</template>
 <script>
@@ -249,6 +290,10 @@ function render() {
       cell.style.fontWeight = weight === "Bold" ? "700" : "400";
       cell.classList.toggle("tnum", column.tabular);
       cell.classList.toggle("palt-all", $("palt").checked);
+      for (const [control, variable] of [["kern", "--kern"], ["japanese-quotes", "--ss01"],
+                                        ["latin-symbols", "--ss02"], ["ruby-trial", "--ruby-trial"]]) {
+        cell.style.setProperty(variable, $(control).checked ? 1 : 0);
+      }
       cell.append(section.cloneNode(true));
       grid.append(cell);
     }
@@ -266,7 +311,7 @@ function render() {
   document.documentElement.style.setProperty("--header", document.querySelector("header").offsetHeight + "px");
 }
 
-for (const id of ["paper", "family", "weight", "show-ud", "show-udp", "vertical", "justify", "trim", "autospace", "tnum", "palt", "raw-palt"]) {
+for (const id of ["paper", "family", "weight", "show-ud", "show-udp", "vertical", "justify", "trim", "autospace", "tnum", "palt", "raw-palt", "kern", "japanese-quotes", "latin-symbols", "ruby-trial"]) {
   $(id).addEventListener("change", render);
 }
 for (const [id, unit, variable] of [["size", "px", "--size"], ["leading", "", "--leading"]]) {
@@ -295,13 +340,9 @@ document.fonts.ready.then(async () => {
 
 
 def page() -> str:
-    # 書体ごとに Regular (400) と Bold (700) を 1 つのファミリーにする (太字の見出しは Bold のファイル)
-    # URL に更新日時を付ける (フォントを作り直したとき、ブラウザが前のファイルを使わないように)
-    faces = "\n".join(f"@font-face {{ font-family: '{font['id']}'; "
-                      f"src: url('{font['url']}?v={int((OUTPUT.parent / font['url']).resolve().stat().st_mtime)}'); "
-                      f"font-weight: {700 if font['weight'] == 'Bold' else 400}; }}" for font in fonts())
-    return (PAGE.replace("__FACES__", faces).replace("__CONTENT__", CONTENT)
-            .replace("__FONTS__", json.dumps(fonts(), ensure_ascii=False)))
+    available = fonts()
+    return (PAGE.replace("__FACES__", font_faces(available)).replace("__FEATURE_SETTINGS__", FEATURE_SETTINGS).replace("__CONTENT__", CONTENT)
+            .replace("__FONTS__", json.dumps(available, ensure_ascii=False)))
 
 
 def main() -> int:

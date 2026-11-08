@@ -22,6 +22,73 @@ with their substitutions, from BIZ UDP of the same design.
 ChangeLog
 ---------
 
+2026-11-08 (hayatedayon) Dokusho UD 1.007 (unreleased)
+- Added conservative Latin kerning for frequent pairs and their accented
+  forms. Full-width, hwid, tabular and vertical forms are excluded.
+- Excluded right-projecting carons (Tcaron and Lcaron) from left kerning
+  classes, and reduced T-u kerning in both Mincho weights to avoid contact
+  or near-contact. Both horizontal slices and closest outline-segment
+  distances must have at least 1% em of ink space.
+  Collision checks now expand every encoded GPOS kerning pair,
+  including accented forms, rather than just a small representative sample.
+- Aligned V/W/Y right-hand kerning classes with T's aeo/u split, so earlier
+  zero-valued Class Pair subtables do not mask lower-case pairs. GPOS
+  expansion now respects first-match rules including implicit class-zero
+  values; HarfBuzz checks every declared pair and its accented variants
+  against the configured adjustment, separately from collision checks.
+- Added pnum to undo tnum, including when both are requested.
+- Added named, opt-in ss01 (BIZ UD Japanese quotes) and ss02 (BIZ UDP Latin
+  symbols excluding quotes), supporting horizontal and vertical text.
+  ss02 uses dedicated copies of the Latin symbols and their vertical forms,
+  retaining outlines, metrics, hinting and GDEF classes. Supplemental width
+  lookups consume only these copies and restore the glyph that entered
+  ss02. Ordinary locl outputs and the published hwid/fwid behavior remain
+  unchanged. Shaping checks cover every symbol in Japanese/English,
+  horizontal/vertical and mixed text contexts. An independent fixture from
+  the published 1.006 checks widths, outlines and positioning for 961
+  characters in eight width/language/orientation combinations per font.
+  Kerning inputs are also checked against every hwid/fwid/tnum/vert/vrt2
+  output glyph, rather than only a few representative strings.
+- Added ss03, an opt-in ruby kana trial for 20 hiragana/katakana characters,
+  with slightly stronger strokes and 12% larger small kana. The existing
+  ruby feature and default kana are unchanged. Trial vertical forms keep
+  their original vertical origins and remain inside the line frame. Trial
+  glyphs inherit palt/vpal adjustments from the original kana. The trials
+  have no hinting; raster comparisons explicitly include this difference.
+- Added vertical-only TrueType hinting to 56 generated numeric glyphs
+  (superscripts, subscripts, numerators and denominators). Original 1-4
+  superscripts retain their hinting; generated symbols remain unhinted.
+  Each contour's extrema are touched with interpolated positions before IUP,
+  so counters follow the same vertical transform as the outer contour.
+  Generated digits now use additional, shared CVT top/bottom zones per role
+  rather than independently rounding each digit. Denominators share baseline
+  zero, including their fraction-adjacent forms. Original CVT entries and
+  superscripts 1-4 are preserved. FreeType checks both outline and raster
+  top/bottom alignment at 8-24 ppem, separately from counter distortion.
+- Documented mutually exclusive palt/chws/halt and vpal/vchw/vhal settings.
+  The specimen now preserves combined feature settings and prevents double
+  trimming in proportional headings. Tests explicitly reproduce incompatible
+  combinations and compare the safe settings with BIZ UDP.
+- Added fixed reading/print proofs and actual-size/4x FreeType raster
+  comparisons, generated in CI with a separate proof artifact. Added
+  end-to-end checks for the new features, glyph contact, clipping and
+  small digits at 8-24 ppem. Shared helpers append GSUB feature mappings
+  and render raster comparison figures with consistent HTML escaping.
+  Kerning adjustment conversion and effective-pair expansion are shared
+  between checks where appropriate, without repeating font-wide expansion.
+  Proof pages share their feature-setting declaration; each raster figure
+  embeds one PNG and uses SVG references for actual-size and 4x displays.
+  Fixed-proof margins now follow the block direction, preserving the 32-em
+  line measure and paragraph gaps in vertical text. Print styles release
+  both main and proof overflow. Proof pages share content-hashed font-face
+  declarations, and ruby raster samples follow the trial character list.
+  Font artifacts are uploaded before the optional proof steps; proof
+  generation or upload failures do not block a release.
+  Proof steps have individual time limits. Half-width settings for tate-chu-
+  yoko apply only in vertical proofs, keeping horizontal digits proportional.
+  The embedded VERSION remains 1.006 until 1.007 is published. No release
+  has been published by this change.
+
 2026-11-08 (hayatedayon) Dokusho UD 1.006
 - The releases now also include each font as WOFF2, for the web and for
   bundling with apps. The glyphs and tables are the same as in the TTF, and

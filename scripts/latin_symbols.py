@@ -108,6 +108,19 @@ def single(gsub, mapping: dict) -> int:
     return len(gsub.LookupList.Lookup) - 1
 
 
+def append_feature_mapping(gsub, tag: str, mapping: dict[str, str]) -> None:
+    """既存の tag のすべての FeatureRecord に、最後に適用する単置換を加える。"""
+    if not mapping:
+        return
+    records = [record for record in gsub.FeatureList.FeatureRecord if record.FeatureTag == tag]
+    if not records:
+        raise SystemExit(f"cannot append substitutions: GSUB has no {tag} feature")
+    index = single(gsub, mapping)
+    for record in records:
+        record.Feature.LookupListIndex = [*record.Feature.LookupListIndex, index]
+        record.Feature.LookupCount = len(record.Feature.LookupListIndex)
+
+
 def new_feature(gsub, lookups: list[int]) -> int:
     """lookups を持つ locl の機能を足して、その番号を返す (どの言語体系に入れるかは呼ぶ側が決める)"""
     feature = otTables.Feature()
@@ -224,13 +237,7 @@ def add(ud: TTFont, udp: TTFont) -> dict[str, int]:
     # BIZ UD に縦組の字が無い記号 (“ ” × など) は、locl が BIZ UDP の横組の字にした後で、BIZ UDP の
     # 縦組の字にする。lookup は番号の順にかかるので、locl より後の番号で vert・vrt2 に足す
     for tag, forms in after.items():
-        if not forms:
-            continue
-        index = single(gsub, forms)
-        for record in gsub.FeatureList.FeatureRecord:
-            if record.FeatureTag == tag:
-                record.Feature.LookupListIndex = record.Feature.LookupListIndex + [index]
-                record.Feature.LookupCount = len(record.Feature.LookupListIndex)
+        append_feature_mapping(gsub, tag, forms)
 
     # spec.ALWAYS_UDP は、ほかの用字系 (和文・ギリシャ文字・キリル文字と、記号だけの DFLT) でも
     # 置き換える。和文の後の “Hello の “ は、前の和文と同じ組に入る
@@ -257,4 +264,4 @@ def add(ud: TTFont, udp: TTFont) -> dict[str, int]:
     sort_features(gsub)
     # glyphs は、足した字 → BIZ UDP の元の字 (hinting.py が、その字の命令を入れる)
     return {"symbols": len(chosen), "glyphs": sources, "vertical": len(vertical) + sum(map(len, after.values())),
-            "shared": shared}
+            "shared": shared, "mapping": mapping, "vertical_mapping": vertical, "after": after}

@@ -3,7 +3,7 @@
 BIZ UDP の数字は、1 だけがほかの数字より狭い (明朝 Regular では 1065、ほかは 1393)。表や目次の
 ページ番号で桁がそろうように、1 の左右に同じだけ空きを足して、ほかの数字と同じ字幅にした字
 (one.tnum) を足し、tnum でそれにする。形とヒンティングは 1 のまま (横にずらすだけ)。プロポーショナル
-の数字 (pnum) は、今の数字のままなので足さない。
+の数字 (pnum) は、tnum の置き換え先から元の数字に戻す。
 
 BIZ UDP のコロンは、欧文の文章用に、ベースラインから x の高さまでの所にある。数字は x の高さより高い
 ので、11:11 や 0213:2004 では、コロンが数字の真ん中より下に見える (BIZ UD の半角のコロンは、数字の
@@ -54,6 +54,10 @@ def add(font: TTFont) -> dict[str, int]:
     subtable = otTables.SingleSubst()
     subtable.mapping = mapping
     fraction_digits._new_feature(gsub, "tnum", fraction_digits._lookup(gsub, 1, subtable))
+    # lookup の順も tnum より後にする。両方指定した場合は pnum が勝つ (OpenType の仕様)。
+    proportional = otTables.SingleSubst()
+    proportional.mapping = {target: source for source, target in mapping.items()}
+    fraction_digits._new_feature(gsub, "pnum", fraction_digits._lookup(gsub, 1, proportional))
     latin_symbols.sort_features(gsub)
     return {"tabular": len(mapping), "width": width}
 

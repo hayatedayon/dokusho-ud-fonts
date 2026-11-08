@@ -17,11 +17,13 @@
    spec.UNHINTED は、元のフォントのヒンティングも外す)
 5. 名前を読書 UD に変え (BIZ UD はモリサワの商標)、等幅の印 (post.isFixedPitch) を外す
 6. 見えない文字・空白・2 倍と 3 倍のダッシュを足す (extra_glyphs.py)
-7. 等幅の数字 (tnum) と、数字の間で持ち上げるコロン (calt) を足す (tabular_digits.py)
+7. 等幅の数字 (tnum)、元に戻す pnum と、数字の間で持ち上げるコロン (calt) を足す (tabular_digits.py)
 8. 結合用の記号 (アクセントと、仮名の濁点・半濁点) を、前の字に乗せる (combining_marks.py。字幅を
    0 にするのは、欧字を BIZ UDP の字にする前。hwid の置き換え先なら、BIZ UD の字を残す)
 9. 約物の詰め (halt・vhal) と、BIZ UDP の字幅・字送りで仮名・約物を詰める palt・vpal を足す (spacing.py。
    結合用の記号の mark・mkmk と GDEF も、ここで一緒に組み込み、その後に i の ccmp を足す)
+10. 欧字の kern、任意の和文引用符・欧文記号 (ss01・ss02)、小さい数字の縦方向のヒントと
+    任意のルビ仮名の試作 (ss03) を足す (kerning.py・reading_styles.py・small_type.py)
 
 BIZ UD と BIZ UDP は、ヒンティングの cvt と prep が違う。BIZ UDP から持ってきた字の命令は、
 いったん外し (BIZ UD の cvt では正しく働かない)、hinting.py が cvt と prep を付け足してから、
@@ -44,6 +46,9 @@ import extra_glyphs
 import fraction_digits
 import hinting
 import latin_symbols
+import kerning
+import reading_styles
+import small_type
 import spacing
 import spec
 import tabular_digits
@@ -443,11 +448,15 @@ def build(family: dict, weight: str) -> Path:
     extra = extra_glyphs.add(ud)
     tabular = tabular_digits.add(ud)
     colon = tabular_digits.raise_colon(ud)
-    marks = combining_marks.add(ud, prepared)
-    spaced = spacing.add(ud, udp, marks["fea"])
+    small_hints = small_type.hint_digits(ud)
+    ruby = small_type.ruby_trial(ud)
+    marks = combining_marks.add(ud, prepared, ruby)
+    spaced = spacing.add(ud, udp, marks["fea"] + kerning.feature(ud, family["key"]), ruby=ruby)
     combining_marks.dotless_i(ud, marks["dotless_above"], marks["fullwidth_dotless"])
+    reading_styles.add(ud, symbols)
 
     rename(ud, family, weight, versions)
+    reading_styles.label(ud)
     ud["post"].isFixedPitch = 0
     ud["OS/2"].achVendID = "NONE"
     ud["OS/2"].recalcAvgCharWidth(ud)
@@ -481,7 +490,8 @@ def build(family: dict, weight: str) -> Path:
           f"hinting of BIZ UDP on {hinted['hinted']} glyphs (cvt +{hinted['cvt']}); "
           f"{extra['invisible']} invisible, {extra['spaces']} spaces and {extra['dashes']} dashes added; "
           f"tnum {tabular['tabular']} glyph; colon between digits raised by {colon['raise']}; {marks['marks']} combining marks on {marks['bases']} bases; "
-          f"halt {spaced['halt']}, vhal {spaced['vhal']}, palt {spaced['palt']}, vpal {spaced['vpal']} glyphs")
+          f"halt {spaced['halt']}, vhal {spaced['vhal']}, palt {spaced['palt']}, vpal {spaced['vpal']} glyphs; "
+          f"{small_hints} small digits hinted, {len(ruby)} trial ruby glyphs; kern, pnum and ss01–ss03")
     return out
 
 
