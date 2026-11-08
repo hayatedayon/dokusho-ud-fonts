@@ -47,6 +47,14 @@ ChangeLog
   horizontal/vertical and mixed text contexts. An independent fixture from
   the published 1.006 checks widths, outlines and positioning for 961
   characters in eight width/language/orientation combinations per font.
+  ss02 also supplies vrt2 forms for horizontally identical symbols such as
+  superscripts 1-3 and, in two faces, cedilla. These forms are imported and
+  hinted before style lookups are added; ordinary locl/vrt2 behavior stays
+  unchanged. Checks cover default vert and explicit vert=0/vrt2 paths.
+  Each style copy is matched to its corresponding BIZ UDP character/path,
+  including otherwise unused copies with locl disabled, and rendered at
+  8-24 ppem in three FreeType modes. ss01 vertical quote mappings now use
+  recorded substitution metadata instead of glyph-name suffixes.
   Kerning inputs are also checked against every hwid/fwid/tnum/vert/vrt2
   output glyph, rather than only a few representative strings.
 - Added ss03, an opt-in ruby kana trial for 20 hiragana/katakana characters,

@@ -1923,6 +1923,9 @@ def check_small_digit_alignment(label: str, font: TTFont, shaper, path: Path, so
         original.close()
 
 
+STYLE_MODES = ((False, ()), (True, ()), (True, ("vert=0", "vrt2")))
+
+
 def check_style_widths(label: str, font: TTFont, shaper) -> int:
     """記号の全対象字を実際に組み、ss02 が明示した幅・字形・縦組位置を変えないこと。"""
     cmap = font.getBestCmap()
@@ -1933,37 +1936,72 @@ def check_style_widths(label: str, font: TTFont, shaper) -> int:
         for language in ("ja", "en"):
             for context in ("{}", "字{}字", "A{}A"):
                 text = context.format(chr(code))
-                for vertical in (False, True):
+                for vertical, vertical_features in STYLE_MODES:
                     for tag in ("hwid", "fwid"):
-                        plain = shaper.shape(text, language, vertical, (tag,))
-                        styled = shaper.shape(text, language, vertical, (tag, "ss02"))
+                        plain = shaper.shape(text, language, vertical, (tag, *vertical_features))
+                        styled = shaper.shape(text, language, vertical, (tag, "ss02", *vertical_features))
                         if plain != styled:
-                            bad.append((f"U+{code:04X}", language, context, vertical, tag))
+                            bad.append((f"U+{code:04X}", language, context, vertical, vertical_features, tag))
                         count += 1
     check(bool(count), f"{label}: no style/width combinations were checked")
     check(not bad, f"{label}: {len(bad)} ss02 combinations override explicit widths: {bad[:8]}")
     return count
 
 
-def check_style_copies(label: str, font: TTFont) -> None:
-    """ss02 の複製が通常の locl と別で、輪郭・メトリクス・ヒントをそのまま持つこと。"""
+def check_style_copies(label: str, ours: Shaped, udp: Shaped, path: Path, source_path: Path) -> None:
+    """各複製を対応する文字・縦組経路の UDP 字形に照合し、未符号化の候補も描いて比べる。"""
+    font = ours.font
     clones = vertical_closure(font, outputs(font, ("ss02",)))
     originals = vertical_closure(font, outputs(font, ("locl",)))
     check(bool(clones) and not clones & originals, f"{label}: ss02 copies are not isolated from locl")
+    covered, pairs = set(), {}
+    cmap, cmap_udp = font.getBestCmap(), udp.font.getBestCmap()
+    unhinted = {cmap_udp[code] for code in spec.UNHINTED if code in cmap_udp}
+    local = gsub_mapping(font, "locl")
+    forms = {tag: gsub_mapping(font, tag) for tag in ("vert", "vrt2")}
+    definitions = [getattr(font["GDEF"].table, field, None)
+                   for field in ("GlyphClassDef", "MarkAttachClassDef")]
 
-    def signature(name):
-        coordinates, ends, flags = font["glyf"][name].getCoordinates(font["glyf"])
-        glyph = font["glyf"][name]
-        program = bytes(glyph.program.getBytecode()) if hasattr(glyph, "program") else b""
-        classes = tuple(getattr(font["GDEF"].table, field).classDefs.get(name, 0)
-                        if getattr(font["GDEF"].table, field, None) is not None else 0
-                        for field in ("GlyphClassDef", "MarkAttachClassDef"))
-        return (tuple(coordinates), tuple(ends), tuple(flag & 1 for flag in flags),
-                font["hmtx"][name], font["vmtx"][name], program, classes)
+    def classes(name):
+        return tuple(definition.classDefs.get(name, 0) if definition is not None else 0 for definition in definitions)
 
-    signatures = {signature(name) for name in originals}
-    different = [name for name in sorted(clones) if signature(name) not in signatures]
-    check(not different, f"{label}: ss02 changed copied outlines, metrics, hinting or GDEF classes: {different[:6]}")
+    for code in spec.LATIN_SYMBOLS:
+        if code not in cmap or code not in cmap_udp or code in spec.LATIN_QUOTES or unicodedata.category(chr(code)) == "Cf":
+            continue
+        for vertical, features in STYLE_MODES:
+            normal = cmap[code]
+            if vertical:
+                form = forms["vrt2" if features else "vert"]
+                normal = form.get(normal, normal)
+            normal = local.get(normal, normal)
+            if vertical:
+                normal = form.get(normal, normal)
+            # 通常の locl が先に変える ALWAYS_UDP の専用複製も、直接選んで検査する。
+            actual = ours.shaper.shape(chr(code), "ja", vertical, ("locl=0", "ss02", *features))
+            wanted = udp.shaper.shape(chr(code), "ja", vertical, features)
+            check(len(actual) == len(wanted), f"{label}: ss02 copy count differs for U+{code:04X} {features}")
+            for a, b in zip(actual, wanted):
+                name, source = ours.order[a[0]], udp.order[b[0]]
+                if name not in clones:
+                    continue
+                covered.add(name)
+                check(classes(name) == classes(normal),
+                      f"{label}: ss02 changed GDEF classes for U+{code:04X} {features}")
+                check(outline(font, name) == outline(udp.font, source)
+                      and font["hmtx"][name] == udp.font["hmtx"][source]
+                      and font["vmtx"][name] == udp.font["vmtx"][source],
+                      f"{label}: ss02 copy of U+{code:04X} {features} is not the corresponding UDP glyph")
+                if source not in unhinted:
+                    pairs[(a[0], b[0])] = f"U+{code:04X} {features}"
+    check(not clones - covered, f"{label}: ss02 copies have no character/path correspondence: {sorted(clones - covered)[:8]}")
+    for mode, interpreter, flags in freetype_render.MODES:
+        actual = freetype_render.Renderer(path, interpreter, flags)
+        reference = freetype_render.Renderer(source_path, interpreter, flags)
+        bad = [(description, ppem) for (gid, source), description in pairs.items() for ppem in HINTING_PPEMS
+               if actual.render(gid, ppem) != reference.render(source, ppem)]
+        check(not bad, f"{label}: {mode}: ss02 copies differ from corresponding UDP rasters: {bad[:6]}")
+        actual.close()
+        reference.close()
 
 
 def check_kern_exclusions(label: str, font: TTFont, pairs: dict) -> None:
@@ -1992,7 +2030,6 @@ def check_reading_features(label: str, family: dict, weight: str) -> None:
     check_kern_shaping(label, font, shaper, family["key"], effective_kern)
     check_kern_contacts(label, font, effective_kern)
     check_kern_exclusions(label, font, effective_kern)
-    check_style_copies(label, font)
     problems.extend(width_reference.check_recorded(label, font, shaper))
     check_style_widths(label, font, shaper)
     for text in ("Ťu", "Ťü", "T\u030cu", "T\u0330\u030cu", "ĽT"):
@@ -2022,7 +2059,9 @@ def check_reading_features(label: str, family: dict, weight: str) -> None:
         check(run(text, ("frac", "tnum", "pnum")) == run(text, ("frac",)), f"{label}: numeric widths alter {text}")
     ours = Shaped(path)
     ud = Shaped(SOURCES / f"{family['ud']}-{weight}.ttf")
-    udp = Shaped(SOURCES / f"{family['udp']}-{weight}.ttf")
+    udp_path = SOURCES / f"{family['udp']}-{weight}.ttf"
+    udp = Shaped(udp_path)
+    check_style_copies(label, ours, udp, path, udp_path)
     cmap_udp = udp.font.getBestCmap()
     # chws/vchw と halt/vhal を明示的に有効にして二重詰めを再現し、安全な指定と区別する。
     text = "「春、（花）・風。」"
@@ -2048,19 +2087,19 @@ def check_reading_features(label: str, family: dict, weight: str) -> None:
             check(double_advance < safe_advance and a != b,
                   f"{label}: {proportional}+{incompatible} did not reproduce double trimming")
     for language in ("ja", "en"):
-        for vertical in (False, True):
+        for vertical, vertical_features in STYLE_MODES:
             for char in "‘’“”":
-                check(ours.run(char, language, vertical, ("ss01",)) == ud.run(char, language, vertical),
+                check(ours.run(char, language, vertical, ("ss01", *vertical_features)) == ud.run(char, language, vertical, vertical_features),
                       f"{label}: ss01 {char} is not BIZ UD ({language}, vertical={vertical})")
-                check(ours.run(char, language, vertical, ("ss01", "ss02")) == ours.run(char, language, vertical, ("ss01",)),
+                check(ours.run(char, language, vertical, ("ss01", "ss02", *vertical_features)) == ours.run(char, language, vertical, ("ss01", *vertical_features)),
                       f"{label}: ss02 overrides ss01 quotes")
             for code in spec.LATIN_SYMBOLS:
                 if (code not in cmap or code not in cmap_udp or code in spec.LATIN_QUOTES
                         or unicodedata.category(chr(code)) == "Cf"):
                     continue
                 char = chr(code)
-                check(ours.run(char, language, vertical, ("ss02",)) == udp.run(char, language, vertical),
-                      f"{label}: ss02 U+{code:04X} is not BIZ UDP ({language}, vertical={vertical})")
+                check(ours.run(char, language, vertical, ("ss02", *vertical_features)) == udp.run(char, language, vertical, vertical_features),
+                      f"{label}: ss02 U+{code:04X} is not BIZ UDP ({language}, vertical={vertical}, {vertical_features})")
     for tag in ("ss01", "ss02", "ss03"):
         for record in font["GSUB"].table.FeatureList.FeatureRecord:
             if record.FeatureTag == tag:

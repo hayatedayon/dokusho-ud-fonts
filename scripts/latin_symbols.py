@@ -181,6 +181,39 @@ def vertical_forms(ud: TTFont, udp: TTFont, chosen, mapping: dict, sources: dict
     return vertical, after, shared
 
 
+def stylistic_vertical_forms(ud: TTFont, udp: TTFont, mapping: dict, sources: dict) -> dict:
+    """横組では同じでも縦組候補が違う記号を、ss02 専用に用意する。通常の locl は変えない。"""
+    import build
+
+    cmap, cmap_udp = ud.getBestCmap(), udp.getBestCmap()
+    forms = {tag: (build.single_mapping(ud["GSUB"].table, tag, set(cmap.values())),
+                   build.single_mapping(udp["GSUB"].table, tag, set(cmap_udp.values())))
+             for tag in ("vert", "vrt2")}
+    extra, after = {}, {"vert": {}, "vrt2": {}}
+    for code in spec.LATIN_SYMBOLS:
+        if code not in cmap or code not in cmap_udp or code in spec.LATIN_QUOTES or unicodedata.category(chr(code)) == "Cf":
+            continue
+        base, source = cmap[code], cmap_udp[code]
+        if base in mapping:
+            continue
+        for tag, (ours, reference) in forms.items():
+            actual, wanted = ours.get(base, base), reference.get(source, source)
+            if (ud["hmtx"][actual] == udp["hmtx"][wanted]
+                    and ud["vmtx"][actual] == udp["vmtx"][wanted]
+                    and drawing(ud.getGlyphSet(), actual) == drawing(udp.getGlyphSet(), wanted)):
+                continue
+            target = base + ".ss02." + tag
+            if target in sources:
+                if sources[target] != wanted:
+                    raise SystemExit(f"{tag}: incompatible ss02 forms share {base}")
+            else:
+                add_glyph(ud, udp, wanted, target)
+            sources[target] = wanted  # hinting.add が UDP の命令の CVT 番号を移す。
+            extra[base] = base
+            after[tag][base] = target
+    return {"mapping": extra, "after": after}
+
+
 def add(ud: TTFont, udp: TTFont) -> dict[str, int]:
     gsub = ud["GSUB"].table
     latn = next((r.Script for r in gsub.ScriptList.ScriptRecord if r.ScriptTag == "latn"), None)
@@ -262,6 +295,8 @@ def add(ud: TTFont, udp: TTFont) -> dict[str, int]:
             system.FeatureIndex = system.FeatureIndex + [japanese_feature]
         system.FeatureCount = len(system.FeatureIndex)
     sort_features(gsub)
+    stylistic = stylistic_vertical_forms(ud, udp, mapping, sources)
     # glyphs は、足した字 → BIZ UDP の元の字 (hinting.py が、その字の命令を入れる)
     return {"symbols": len(chosen), "glyphs": sources, "vertical": len(vertical) + sum(map(len, after.values())),
-            "shared": shared, "mapping": mapping, "vertical_mapping": vertical, "after": after}
+            "shared": shared, "mapping": mapping, "vertical_mapping": vertical, "after": after,
+            "stylistic": stylistic}

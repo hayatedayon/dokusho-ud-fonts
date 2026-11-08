@@ -29,6 +29,7 @@ def add(font, symbols: dict) -> None:
     quotes = {cmap[c] for c in spec.LATIN_QUOTES}
     japanese = {mapping[g]: g for g in quotes}
     latin = {g: target for g, target in mapping.items() if g not in quotes}
+    latin.update(symbols["stylistic"]["mapping"])
     for original, (base, target) in symbols["vertical_mapping"].items():
         if base in quotes:
             japanese[target] = original
@@ -36,25 +37,28 @@ def add(font, symbols: dict) -> None:
             latin[original] = target
     # “ ” は BIZ UD に縦組専用の字が無い。その UDP 縦組字形も元の全角の字へ戻す。
     for base in quotes:
-        for suffix in (".vert", ".vrt2"):
-            target = mapping[base] + suffix
-            if target in font["hmtx"].metrics:
-                original = build.single_mapping(gsub, "vert", {base}).get(base, base)
+        for tag in ("vert", "vrt2"):
+            target = symbols["after"][tag].get(mapping[base])
+            if target is not None:
+                original = build.single_mapping(gsub, tag, {base}).get(base, base)
                 japanese.setdefault(target, original)
     # locl と出力を共有すると、ss02 が無効でも幅の補正が働いてしまう。ss02 専用の
     # 複製にし、幅を指定した場合は「ss02 に入る直前の字」へ戻す。幅変換と通常の locl・
     # 縦組変換は既に済んでいるので、幅変換先のない字を別の幅へ戻すこともない。
     restore = {}
 
+    def copy_classes(source: str, name: str) -> None:
+        for field in ("GlyphClassDef", "MarkAttachClassDef"):
+            definition = getattr(font["GDEF"].table, field, None)
+            if definition is not None and source in definition.classDefs:
+                definition.classDefs[name] = definition.classDefs[source]
+
     def clone(source: str, name: str, before: str) -> str:
         glyph = copy.deepcopy(font["glyf"][source])
         glyph.expand(font["glyf"])
         fraction_digits._add_glyph(font, name, glyph, font["hmtx"][source][0], font["vmtx"][source])
         font["hmtx"][name] = font["hmtx"][source]
-        for field in ("GlyphClassDef", "MarkAttachClassDef"):
-            definition = getattr(font["GDEF"].table, field, None)
-            if definition is not None and source in definition.classDefs:
-                definition.classDefs[name] = definition.classDefs[source]
+        copy_classes(source, name)
         restore[name] = before
         return name
 
@@ -69,6 +73,12 @@ def add(font, symbols: dict) -> None:
             vertical = symbols["after"][tag].get(target)
             if base in chosen and vertical is not None:
                 forms[chosen[base]] = clone(vertical, base + ".ss02." + tag, base)
+        # ¹²³ など、横組は既に UDP と同じ字の vrt2 も、ss02 専用の字にだけつなぐ。
+        # 命令は hinting.add の前に UDP から取り込んでおく。
+        for base, vertical in symbols["stylistic"]["after"][tag].items():
+            forms[chosen[base]] = vertical
+            copy_classes(base, vertical)
+            restore[vertical] = base
         latin_symbols.append_feature_mapping(gsub, tag, forms)
     for tag in ("fwid", "hwid"):
         latin_symbols.append_feature_mapping(gsub, tag, restore)
