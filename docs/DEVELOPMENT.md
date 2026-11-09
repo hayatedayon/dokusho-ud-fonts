@@ -31,3 +31,7 @@ python3 -m http.server 8000
 `.venv/bin/python scripts/versions_page.py` は、公開した各版を同じ文で見比べる `dist/versions.html` を作ります（ファイルを直接開けます。各版のフォントはリリースから取得します）。README の画像は `scripts/readme_images.py` で `docs/images/` に作ります。
 
 CI も見本を生成し、比較に必要なフォントと一緒に `DokushoUD-proof` 成果物へ保存します。フォントの検証・保存を先に行い、見本の生成やアップロードの失敗はリリースを止めません。展開したルートで HTTP サーバーを起動してください。検証手順と確認済みの範囲は [docs/PROOFING.md](PROOFING.md) にあります。元フォントとの組み方の比較では新しい `kern` を切り、その効果・等幅を保つこと・文字同士が接触しないことは別に検査します。
+
+## GitHub Pages
+
+リリースの公開時と手動実行のとき、`.github/workflows/pages.yml` が最新のリリースのフォントから文章の見本と版の比較を作り、公開します。ページをまとめる処理は `scripts/pages_site.py` です。

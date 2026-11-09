@@ -24,6 +24,8 @@
 
 [最新のリリース](https://github.com/hayatedayon/dokusho-ud-fonts/releases/latest)から、TTF または WOFF2 をダウンロードしてください。
 
+実際の文章で見比べるには、[文章の見本](https://hayatedayon.github.io/dokusho-ud-fonts/)と[版ごとの変化](https://hayatedayon.github.io/dokusho-ud-fonts/versions.html)をご覧ください。
+
 ## なぜ合成したか
 
 日本語の横組の本は、仮名・漢字・約物を全角のマス目に並べ（[日本語組版処理の要件（JLReq）](https://www.w3.org/TR/jlreq/?lang=ja) のベタ組）、欧字はプロポーショナルの欧文書体で組みます。BIZ UD と BIZ UDP は、どちらか一方ではこの組み方になりません。

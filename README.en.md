@@ -24,6 +24,8 @@ Fonts for reading books. They are Morisawa's [BIZ UDMincho](https://github.com/g
 
 Download the TTF or WOFF2 files from the [latest release](https://github.com/hayatedayon/dokusho-ud-fonts/releases/latest).
 
+See the [text specimen](https://hayatedayon.github.io/dokusho-ud-fonts/) and the [changes by version](https://hayatedayon.github.io/dokusho-ud-fonts/versions.html) to compare them in real text (Japanese pages).
+
 ## Why
 
 Horizontal Japanese books set kana, kanji and punctuation on a full-width grid (solid setting in the [Requirements for Japanese Text Layout](https://www.w3.org/TR/jlreq/)), and Latin letters in a proportional typeface. Neither BIZ UD nor BIZ UDP does that on its own.

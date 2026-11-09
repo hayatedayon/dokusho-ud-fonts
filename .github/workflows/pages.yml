@@ -1,0 +1,73 @@
+name: Pages
+
+# リリースの公開時と手動実行のときだけ、公開済みのフォントから GitHub Pages を作り直す
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: Build the site
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Install fontTools
+        run: |
+          python3 -m venv .venv
+          .venv/bin/pip install -r requirements.txt
+
+      - name: Install FreeType, HarfBuzz and the Unicode data
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends libfreetype6 libharfbuzz0b unicode-data
+
+      - name: Fetch the original fonts
+        run: .venv/bin/python scripts/fetch_sources.py
+
+      # 見本は最新のリリースのフォントで表示する
+      - name: Fetch the latest release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          mkdir -p fonts
+          gh release download --repo "$GITHUB_REPOSITORY" --pattern '*.ttf' --dir fonts --clobber
+
+      - name: Generate the pages
+        run: |
+          .venv/bin/python scripts/specimen_page.py
+          .venv/bin/python scripts/versions_page.py
+          .venv/bin/python scripts/pages_site.py
+
+      - name: Upload the site
+        uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5.0.0
+        with:
+          path: _site
+
+  deploy:
+    name: Deploy to GitHub Pages
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy
+        id: deployment
+        uses: actions/deploy-pages@368f82528645a54fb793d4d04e342629a3f51346 # v5.0.1
