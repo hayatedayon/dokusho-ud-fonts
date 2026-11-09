@@ -49,6 +49,6 @@ CI も見本を生成し、比較に必要なフォントと一緒に `DokushoUD
 
 追加字のページは４書体の12・14・16pxの FreeType 実寸・４倍画像と96px画像を保存します。既存の上下部品と並べて接合・太さ・２セルの送りを見比べられます。
 
-`.github/workflows/native-proof.yml` は既存の build・release と独立した補助 CI です。macOS 15の CoreText（`scripts/native/coretext.swift`）、Windows 2025の DirectWrite（`scripts/native/directwrite.cpp`）が、同じ45条件×４書体を24pxで組みます。横縦の和英混植、句読点のペア、アクセント付きの字、追加字、17記号の `locl` 有効・無効を記録します。句読点の単独ペアは宣言した送りとも照合します。フォントはファイルから直接読み、別フォントへのフォールバックや欠落グリフを検出します。成果物 `DokushoUD-coretext`・`DokushoUD-directwrite` の `dist/native/index.html`、各 PNG・JSON（グリフ ID・送り・配置）、フォント SHA-256、OS情報を保存します。同じ SHA-256 の２成果物を比較し、`locl-off` の違いは後の cmap 変更の判断材料にします。`locl` 無効時も同じ字になることは合格条件にしません。
+`.github/workflows/native-proof.yml` は既存の build・release と独立した、手動で実行する（`workflow_dispatch`）補助 CI です。macOS 15の CoreText（`scripts/native/coretext.swift`）、Windows 2025の DirectWrite（`scripts/native/directwrite.cpp`）が、同じ45条件×４書体を24pxで組みます。横縦の和英混植、句読点のペア、アクセント付きの字、追加字、17記号の `locl` 有効・無効を記録します。句読点の単独ペアは宣言した送りとも照合します。フォントはファイルから直接読み、別フォントへのフォールバックや欠落グリフを検出します。成果物 `DokushoUD-coretext`・`DokushoUD-directwrite` の `dist/native/index.html`、各 PNG・JSON（グリフ ID・送り・配置）、フォント SHA-256、OS情報を保存します。同じ SHA-256 の２成果物を比較し、`locl-off` の違いは後の cmap 変更の判断材料にします。`locl` 無効時も同じ字になることは合格条件にしません。
 
 ローカルで各 OS を使う場合は、ワークフローのコンパイル手順を実行してから `scripts/native_proof.py --renderer <実行ファイル>` を実行します。Linux では `--prepare`、Pythonの構文検査、YAML解析、`check.py` のダミー入力検査までです。Swift／Windows SDK のコンパイル・API・実描画は、この環境では未実施です。ダミー検査を実環境の合格記録にしません。
