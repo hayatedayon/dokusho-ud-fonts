@@ -68,6 +68,8 @@ def prepare(output: Path):
 def validate(output: Path, engine: str):
     manifest = json.loads((output / "manifest.json").read_text(encoding="utf-8"))
     for font, data in manifest["fonts"].items():
+        # DirectWrite may return an uppercase filename from GetFilePathFromKey.
+        expected_fonts = {font.casefold(), data["file"].casefold()}
         for case in manifest["cases"]:
             stem = output / engine / font / case
             record = json.loads(stem.with_suffix(".json").read_text(encoding="utf-8"))
@@ -78,7 +80,7 @@ def validate(output: Path, engine: str):
             if not record["runs"]:
                 raise ValueError(f"no shaped runs: {stem}")
             for run in record["runs"]:
-                if run["font"] not in (font, data["file"]):
+                if run["font"].casefold() not in expected_fonts:
                     raise ValueError(f"font fallback in {stem}: {run['font']}")
                 if not run["glyphs"] or 0 in run["glyphs"] or len(run["glyphs"]) != len(run["advances"]):
                     raise ValueError(f"missing glyph or advance: {stem}")
