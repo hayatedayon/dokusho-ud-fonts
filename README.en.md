@@ -12,6 +12,8 @@
 
 Fonts for reading books. They are Morisawa's [BIZ UDMincho](https://github.com/googlefonts/morisawa-biz-ud-mincho) and [BIZ UDGothic](https://github.com/googlefonts/morisawa-biz-ud-gothic) with only the Latin letters taken from BIZ UDP, the proportional version of the same design, so that text is set the way printed Japanese books are, both horizontally and vertically.
 
+![Specimen of Dokusho UD Mincho and Dokusho UD Gothic: vertical body text, and horizontal Japanese and Latin text](docs/images/specimen.svg)
+
 | | Dokusho UD Mincho | Dokusho UD Gothic |
 | --- | --- | --- |
 | Japanese name | 読書 UD明朝 | 読書 UDゴシック |
@@ -27,6 +29,8 @@ Horizontal Japanese books set kana, kanji and punctuation on a full-width grid (
 | BIZ UD | Full width, on the grid | Monospaced half width (`i` is as wide as `W`) |
 | BIZ UDP | Their own widths (a full stop is 60% of full width, an opening bracket half) | Their own widths |
 | **Dokusho UD** | **Full width, as BIZ UD** | **Their own widths, as BIZ UDP** |
+
+![The same sentence set in BIZ UDMincho, BIZ UDPMincho and Dokusho UD Mincho](docs/images/comparison.svg)
 
 The vertical forms (`vert`, `vrt2`) and vertical metrics of kana, kanji and punctuation, and the kanji of JIS levels 1 and 2, are those of BIZ UD.
 
@@ -160,5 +164,7 @@ python3 -m http.server 8000
 ```
 
 Open `http://localhost:8000/dist/specimen.html` for feature controls, `dist/proof.html` for a fixed 32-em line measure and 1.75 line spacing, or `dist/small-type.html` for actual-size and enlarged FreeType raster comparisons. The fixed proof offers 12/14/16px and 9–12pt, horizontal/vertical text and comparisons with BIZ UD/UDP. Print at 100%; vertical proofs use A4 landscape.
+
+`.venv/bin/python scripts/versions_page.py` builds `dist/versions.html`, which compares each published version with the same text (it opens directly as a file; the fonts of each version are fetched from the releases). The README images are made in `docs/images/` by `scripts/readme_images.py`.
 
 CI generates these pages and uploads a `DokushoUD-proof` artifact with the required fonts. Fonts are checked and uploaded first; proof generation or upload failures do not block a release. Serve its extracted root with an HTTP server. [docs/PROOFING.md](docs/PROOFING.md) records the procedure and verification limits. Source-equivalence shaping checks disable the newly added `kern`; separate checks verify kerning, fixed-width exclusions, non-touching pairs and numeric feature interactions.

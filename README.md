@@ -12,6 +12,8 @@
 
 本を読むためのフォントです。モリサワの [BIZ UD明朝](https://github.com/googlefonts/morisawa-biz-ud-mincho)・[BIZ UDゴシック](https://github.com/googlefonts/morisawa-biz-ud-gothic)を元に、欧字だけを同じデザインのプロポーショナルな BIZ UDP の字にしました。縦書きでも横書きでも、印刷された日本語の本と同じ組み方になります。
 
+![読書 UD明朝と読書 UDゴシックの見本。縦組の本文と、和文・欧文の横組](docs/images/specimen.svg)
+
 | | 読書 UD明朝 | 読書 UDゴシック |
 | --- | --- | --- |
 | 英語名 | Dokusho UD Mincho | Dokusho UD Gothic |
@@ -27,6 +29,8 @@
 | BIZ UD | 全角（マス目に並ぶ） | 半角の等幅（`i` も `W` も同じ幅） |
 | BIZ UDP | 字ごとの幅（句点は全角の 6 割、始め括弧は半分） | 字ごとの幅 |
 | **読書 UD** | **全角（BIZ UD と同じ）** | **字ごとの幅（BIZ UDP と同じ）** |
+
+![BIZ UD明朝、BIZ UDP明朝、読書 UD明朝で同じ文を組んだ比較](docs/images/comparison.svg)
 
 和文（仮名・漢字・約物）の縦書きの字形（`vert`・`vrt2`）と縦の字送り、JIS 第 1・第 2 水準の漢字は BIZ UD のままです。
 
@@ -170,5 +174,7 @@ python3 -m http.server 8000
 ```
 
 `http://localhost:8000/dist/specimen.html` は機能を切り替える見本、`dist/proof.html` は１行32字分・行送り1.75の固定版面です。画面用12・14・16px、印刷用9〜12pt、縦横組、元の BIZ UD・BIZ UDP を比較できます。印刷・PDF保存は倍率100%で使います（縦組はA4横向き）。`dist/small-type.html` は数字のヒント有無とルビ仮名の試作を、FreeType の実寸・拡大画像で並べます。
+
+`.venv/bin/python scripts/versions_page.py` は、公開した各版を同じ文で見比べる `dist/versions.html` を作ります（ファイルを直接開けます。各版のフォントはリリースから取得します）。README の画像は `scripts/readme_images.py` で `docs/images/` に作ります。
 
 CI も見本を生成し、比較に必要なフォントと一緒に `DokushoUD-proof` 成果物へ保存します。フォントの検証・保存を先に行い、見本の生成やアップロードの失敗はリリースを止めません。展開したルートで HTTP サーバーを起動してください。検証手順と確認済みの範囲は [docs/PROOFING.md](docs/PROOFING.md) にあります。元フォントとの組み方の比較では新しい `kern` を切り、その効果・等幅を保つこと・文字同士が接触しないことは別に検査します。
