@@ -51,8 +51,8 @@ jobs:
         run: |
           mkdir -p dist/native
           sw_vers > dist/native/platform.txt
-          swiftc scripts/native/coretext.swift -o dist/native/coretext
-          .venv/bin/python scripts/native_proof.py --renderer dist/native/coretext
+          swiftc scripts/native/coretext.swift -o dist/native/coretext-renderer
+          .venv/bin/python scripts/native_proof.py --renderer dist/native/coretext-renderer
       - name: DirectWrite (Windows SDK / Direct2D / WIC)
         if: runner.os == 'Windows'
         shell: pwsh
