@@ -22,7 +22,7 @@ with their substitutions, from BIZ UDP of the same design.
 ChangeLog
 ---------
 
-Dokusho UD 1.008 (unreleased)
+2026-11-10 (hayatedayon) Dokusho UD 1.008
 - Extended conservative Latin kerning to periods and commas after T, V, W,
   Y, P, F, r, y, v and w, including compatible accented forms. The values
   differ between Mincho and Gothic. Punctuation has its own lookup so
