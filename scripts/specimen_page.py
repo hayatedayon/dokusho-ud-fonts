@@ -166,12 +166,14 @@ header label { white-space: nowrap; }
 header fieldset { border: 0; padding: 0; margin: 0; display: flex; gap: 0.6rem; align-items: center; }
 header legend { float: left; color: #666; margin-right: 0.3rem; }
 .note { font-size: 0.8rem; color: #666; padding: 0.4rem 1rem; margin: 0; }
-/* 節ごとに 1 行。比べる書体を横に並べるので、どの列でも同じ節が同じ位置から始まる */
+/* 段落ごとに 1 行。比べる書体を横に並べるので、どの列でも同じ段落が同じ位置から始まる */
 #grid { display: grid; gap: 0 1rem; padding: 0 1rem 1rem; align-items: stretch; }
 #grid > .name { position: sticky; top: var(--header, 0); z-index: 1; font-size: 0.8rem; color: #fff; background: #555;
                 padding: 0.25rem 0.6rem; margin-top: 1rem; }
 #grid > .name.ours { background: #1d6fd8; }
-#grid > .cell { min-width: 0; background: var(--paper, #fff); color: var(--ink, #222); border: 1px solid #ddd; border-top: 0; padding: 1.2rem 1.5rem; }
+#grid > .cell { min-width: 0; background: var(--paper, #fff); color: var(--ink, #222); border: solid #ddd; border-width: 0 1px; padding: 0 1.5rem; }
+#grid > .cell.first { padding-top: 1.2rem; }
+#grid > .cell.last { padding-bottom: 1.2rem; border-bottom-width: 1px; }
 body.paper-cream { --paper: #f5efdf; --ink: #2b2620; }
 body.paper-dark { --paper: #1c1c1e; --ink: #d8d6d0; }
 .text { font-size: var(--size); line-height: var(--leading); hanging-punctuation: allow-end; }
@@ -208,7 +210,7 @@ body.paper-dark { --paper: #1c1c1e; --ink: #d8d6d0; }
 /* tnum は font-variant-numeric で指定し、共通の機能一覧や子要素の frac・pnum と併用する。 */
 .text.tnum, .text .tnum { font-variant-numeric: tabular-nums; }
 .text.palt-all { --palt: 1; }
-.vertical #grid > .cell { writing-mode: vertical-rl; height: 26em; overflow-x: auto; }
+.vertical #grid > .cell { writing-mode: vertical-rl; max-height: 26em; overflow-x: auto; }
 /* palt は横組で字を左右にずらす機能で、縦書きでかけると字が左右に揺れる。縦書きでは vpal にする */
 .vertical .text .palt, .vertical .text.palt-all { --palt: 0; --vpal: 1; }
 /* 比較用: 横組用の palt を縦書きにも適用し、縦組の UDP と見比べられるようにする */
@@ -281,10 +283,16 @@ function render() {
     name.textContent = column.label;
     grid.append(name);
   }
-  for (const section of [...content.children].filter((e) => e.tagName === "SECTION")) {
+  const rows = [...content.children].filter((e) => e.tagName === "SECTION").flatMap((section) => {
+    const parts = [...section.children];
+    return parts.map((part, index) => ({ part, first: index === 0, last: index === parts.length - 1 }));
+  });
+  for (const { part, first, last } of rows) {
     for (const column of columns) {
       const cell = document.createElement("div");
       cell.className = "cell text";
+      cell.classList.toggle("first", first);
+      cell.classList.toggle("last", last);
       cell.lang = "ja";
       cell.style.fontFamily = `'${column.font.id}'`;
       cell.style.fontWeight = weight === "Bold" ? "700" : "400";
@@ -294,7 +302,7 @@ function render() {
                                         ["latin-symbols", "--ss02"], ["ruby-trial", "--ruby-trial"]]) {
         cell.style.setProperty(variable, $(control).checked ? 1 : 0);
       }
-      cell.append(section.cloneNode(true));
+      cell.append(part.cloneNode(true));
       grid.append(cell);
     }
   }
