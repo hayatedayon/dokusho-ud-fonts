@@ -51,11 +51,12 @@ Dokusho UD 1.008 (unreleased)
 - Added FreeType actual-size/4x/96px proofs for the new Japanese glyphs.
   Added an independent advisory CI workflow for native CoreText and
   DirectWrite glyph IDs, advances and PNGs, including explicit locl-off
-  diagnostics for all 17 ALWAYS_UDP symbols. Native APIs and compilers have
-  not been run in the Linux development environment; local checks cover
-  Python syntax, YAML and dummy records only. The manual application,
-  e-reader, PDF and print checklist records all these checks as unperformed.
-- The embedded version remains 1.007 until release.
+  diagnostics for all 17 ALWAYS_UDP symbols. It passed on macOS 15.8.2 and
+  Windows Server 2025. With both engines, ALWAYS_UDP takes BIZ UDP's widths
+  in horizontal text by default, and locl=0 changes nothing, so it does not
+  reproduce an environment without locl. In DirectWrite's vertical text,
+  “ ” are set sideways at half width rather than as 〝 〟. Word, InDesign,
+  e-readers, PDF and print remain unchecked (docs/PROOFING.md).
 
 2026-11-09 (hayatedayon) Dokusho UD 1.007
 - The double prime quotation mark 〞 (U+301E) is now 〝 mirrored about the
