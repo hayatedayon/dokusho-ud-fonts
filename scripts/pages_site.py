@@ -27,9 +27,15 @@ BACK = (f'<p class="lead"><a href="index.html">文章の見本</a> ／ <a href="
 def specimen() -> str:
     page = (DIST / "specimen.html").read_text(encoding="utf-8")
     page = page.replace("../fonts/", "fonts/").replace("../sources/", "sources/")
-    page, count = re.subn(r'<p class="note"><a href="proof\.html">.*?</p>', INTRO, page, count=1, flags=re.S)
+    # フォントを探している人向けの説明を先に置き、表示の切り替えの注記は折りたたむ
+    page, count = re.subn(r'<p class="note"><a href="proof\.html">.*?</p>\n?', "", page, count=1, flags=re.S)
     if count != 1:
         raise SystemExit("specimen.html: the links to the proofs were not found")
+    page, count = re.subn(r'<p class="note">(両端揃えは.*?)</p>',
+                          lambda m: INTRO + f'<details class="note"><summary>表示の切り替えについて</summary>{m.group(1)}</details>',
+                          page, count=1, flags=re.S)
+    if count != 1:
+        raise SystemExit("specimen.html: the note about the controls was not found")
     return page
 
 
