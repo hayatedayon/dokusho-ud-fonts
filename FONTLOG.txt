@@ -22,7 +22,7 @@ with their substitutions, from BIZ UDP of the same design.
 ChangeLog
 ---------
 
-2026-11-08 (hayatedayon) Dokusho UD 1.007 (unreleased)
+2026-11-09 (hayatedayon) Dokusho UD 1.007
 - The double prime quotation mark 〞 (U+301E) is now 〝 mirrored about the
   center of the em, leaning the opposite way from 〝 as in other Japanese
   fonts such as Noto Serif CJK JP. It was 〟 raised, which leaned the same
@@ -64,7 +64,7 @@ ChangeLog
   ss02. Ordinary locl outputs and the published hwid/fwid behavior remain
   unchanged. Shaping checks cover every symbol in Japanese/English,
   horizontal/vertical and mixed text contexts. An independent fixture from
-  the published 1.006 checks widths, outlines and positioning for 961
+  the published 1.006 checks widths, outlines and positioning for 956
   characters in eight width/language/orientation combinations per font.
   ss02 also supplies vrt2 forms for horizontally identical symbols such as
   superscripts 1-3 and, in two faces, cedilla. These forms are imported and
@@ -113,8 +113,6 @@ ChangeLog
   generation or upload failures do not block a release.
   Proof steps have individual time limits. Half-width settings for tate-chu-
   yoko apply only in vertical proofs, keeping horizontal digits proportional.
-  The embedded VERSION remains 1.006 until 1.007 is published. No release
-  has been published by this change.
 
 2026-11-08 (hayatedayon) Dokusho UD 1.006
 - The releases now also include each font as WOFF2, for the web and for
