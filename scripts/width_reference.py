@@ -22,6 +22,8 @@ from harfbuzz_shape import Shaper
 ROOT = Path(__file__).resolve().parent.parent
 FIXTURE = ROOT / "tests" / "fixtures" / "widths-1.006.json"
 FILES = tuple(f"DokushoUD{family}-{weight}.ttf" for family in ("Mincho", "Gothic") for weight in ("Regular", "Bold"))
+# 1.007 で字形を意図して変えた字 (〞 の左右の向きと、縦組の “ ” ‘ ’ のミニュートの形)。ほかの字は compare が全字を比べる。
+INTENDED_CHANGES = {0x301E, 0x2018, 0x2019, 0x201C, 0x201D}
 
 
 def cases():
@@ -68,7 +70,7 @@ def record(reference: Path, output: Path):
         inputs = {key for i in indexes for raw in gsub.LookupList.Lookup[i].SubTable
                   for key in getattr(getattr(raw, "ExtSubTable", raw), "mapping", {})}
         codes = sorted(code for code, glyph in font.getBestCmap().items()
-                       if glyph in inputs or unicodedata.category(chr(code))[0] in "PSZ")
+                       if (glyph in inputs or unicodedata.category(chr(code))[0] in "PSZ") and code not in INTENDED_CHANGES)
         if data["codepoints"] is None:
             data["codepoints"] = codes
         if codes != data["codepoints"]:
@@ -119,7 +121,7 @@ def compare(reference: Path, current: Path) -> int:
             raise SystemExit(f"{name}: reference file does not match the recorded published 1.006 SHA-256")
         old_font, new_font = TTFont(reference / name), TTFont(current / name)
         old, new = Shaper(reference / name), Shaper(current / name)
-        codes = sorted(old_font.getBestCmap())
+        codes = sorted(set(old_font.getBestCmap()) - INTENDED_CHANGES)
         missing = set(codes) - new_font.getBestCmap().keys()
         if missing:
             raise SystemExit(f"{name}: {len(missing)} published characters missing")

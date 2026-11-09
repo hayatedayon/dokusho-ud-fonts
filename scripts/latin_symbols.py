@@ -28,6 +28,7 @@ import copy
 import unicodedata
 
 from fontTools.pens.recordingPen import DecomposingRecordingPen
+from fontTools.pens.transformPen import TransformPen
 from fontTools.pens.ttGlyphPen import TTGlyphPen
 from fontTools.ttLib import TTFont
 from fontTools.ttLib.tables import otTables
@@ -214,6 +215,142 @@ def stylistic_vertical_forms(ud: TTFont, udp: TTFont, mapping: dict, sources: di
     return {"mapping": extra, "after": after}
 
 
+def swap_vertical_quotes(ud: TTFont) -> None:
+    """spec.VERTICAL_SWAPPED_QUOTES の元の vert・vrt2 を入れ替える。locl と ss01 はこの出力を引き継ぐ。
+
+    輪郭を入れ替えるとヒンティングが字に合わなくなるので、置き換えの表だけを変える。vertical_forms の後に呼ぶ
+    (locl の対応は、入れ替える前の字どうしで作る)。
+    """
+    import build
+
+    gsub, cmap = ud["GSUB"].table, ud.getBestCmap()
+    left, right = (cmap[code] for code in sorted(spec.VERTICAL_SWAPPED_QUOTES))
+    indexes = {*build.feature_lookups(gsub, "vert"), *build.feature_lookups(gsub, "vrt2")}
+    swapped = 0
+    for index in sorted(indexes):
+        for subtable in build.subtables(gsub, index, "mapping"):
+            if left in subtable.mapping and right in subtable.mapping:
+                subtable.mapping[left], subtable.mapping[right] = subtable.mapping[right], subtable.mapping[left]
+                swapped += 1
+    if not swapped:
+        raise SystemExit("the vertical forms of the single quotes were not found")
+
+
+def minute_glyph(ud: TTFont, source: str, single_stroke: bool):
+    """縦組の 〝 〟 の字の複製。‘ ’ 用は 1 画だけを残し、2 画の中央へ移す (ヒンティングは持たない)"""
+    glyph = copy.deepcopy(ud["glyf"][source])
+    glyph.expand(ud["glyf"])
+    if not single_stroke:
+        return glyph
+    if glyph.numberOfContours != 2:
+        raise SystemExit(f"{source}: expected the two strokes of a double minute")
+    pen = DecomposingRecordingPen(ud.getGlyphSet())
+    ud.getGlyphSet()[source].draw(pen)
+    strokes, current = [], None
+    for operator, arguments in pen.value:
+        if operator == "moveTo":
+            current = []
+            strokes.append(current)
+        current.append((operator, arguments))
+    xs = lambda stroke: [p[0] for _operator, arguments in stroke for p in arguments if p]
+    pair = (min(map(min, map(xs, strokes))) + max(map(max, map(xs, strokes)))) / 2
+    stroke = strokes[0]
+    dx = round(pair - (min(xs(stroke)) + max(xs(stroke))) / 2)
+    out = TTGlyphPen(None)
+    for operator, arguments in stroke:
+        getattr(out, operator)(*[(p[0] + dx, p[1]) if p else p for p in arguments])
+    return out.glyph()
+
+
+def vertical_minutes(ud: TTFont, mapping: dict, vertical: dict, after: dict) -> dict:
+    """縦組の “ ” ‘ ’ をミニュートの形にする (spec.VERTICAL_MINUTES)。locl の後に足し、横組は変えない。
+    用字系で形を変えるので、finish_vertical_quotes に渡す。
+
+    〝 〟 自身と区別するため複製を使う (ss01 が元の引用符へ戻す入力になる)。返すのは 複製 → ss01 の出力 と、
+    複製 → 詰めの量を引き継ぐ縦組の 〝 〟。
+    """
+    import build
+    import fraction_digits
+
+    gsub, cmap = ud["GSUB"].table, ud.getBestCmap()
+    forms, restore, sources, quotes, sideways_names = {}, {}, {}, {}, {}
+    for code, source_code in spec.VERTICAL_MINUTES.items():
+        name = f"uni{code:04X}.minute"
+        source = build.single_mapping(gsub, "vert", {cmap[source_code]})[cmap[source_code]]
+        glyph = minute_glyph(ud, source, code in spec.VERTICAL_SWAPPED_QUOTES)
+        fraction_digits._add_glyph(ud, name, glyph, ud["hmtx"][source][0], ud["vmtx"][source])
+        forms[code], sources[name] = name, source
+    for tag in ("vert", "vrt2"):
+        final = {}
+        for code, name in forms.items():
+            base = cmap[code]
+            ud_form = build.single_mapping(gsub, tag, {base}).get(base)
+            if ud_form in vertical:  # ‘ ’: BIZ UD の縦組の字 → locl で BIZ UDP の縦組の字
+                source = vertical[ud_form][1]
+                restore[name] = ud_form
+            else:  # “ ”: locl で BIZ UDP の横組の字 → その縦組の字
+                source = after[tag][mapping[base]]
+                restore[name] = base
+            if code not in spec.VERTICAL_SWAPPED_QUOTES:  # “ ” は日本語に続く英語でも開きと閉じをそろえ、常にミニュート
+                final[source] = name
+                continue
+            turned = build.single_mapping(gsub, "vrt2", {cmap[0x48]})[cmap[0x48]]
+            if code not in sideways_names:
+                glyph, advance, vmtx = sideways_quote(ud, mapping[base], cmap[0x48], turned)
+                fraction_digits._add_glyph(ud, f"uni{code:04X}.sideways", glyph, advance, vmtx)
+                sideways_names[code] = f"uni{code:04X}.sideways"
+            quotes.setdefault(tag, {})[source] = (name, sideways_names[code])
+        append_feature_mapping(gsub, tag, final)
+    return {"restore": restore, "sources": sources, "quotes": quotes}
+
+
+def sideways_quote(ud: TTFont, source: str, reference: str, turned: str):
+    """横組の字を、vrt2 の欧字 (reference → turned) と同じ変換で右へ 90 度回した字と、その縦の字送りの情報"""
+    glyf, glyphs = ud["glyf"], ud.getGlyphSet()
+    plain, target = glyf[reference], glyf[turned]
+    dx, dy = target.xMin - plain.yMin, target.yMax + plain.xMin
+    pen = TTGlyphPen(None)
+    glyphs[source].draw(TransformPen(pen, (0, -1, 1, 0, dx, dy)))
+    glyph = pen.glyph()
+    glyph.recalcBounds(glyf)
+    origin = ud["vmtx"][turned][1] + target.yMax
+    return glyph, ud["hmtx"][turned][0], (ud["hmtx"][source][0], origin - glyph.yMax)
+
+
+def finish_vertical_quotes(font: TTFont, quotes: dict) -> None:
+    """縦組の ‘ ’ を用字系で分ける。欧字の組 (英語の It’s など) では横倒し、ほかではミニュートの形。
+
+    ブラウザは引用符を前の字の用字系で組むが、前後の字とは別の組にするので、前後の字では区別できない。すべての lookup を
+    足し終えてから呼ぶ (ss01 は先に元の字へ戻している)。
+    """
+    gsub = font["GSUB"].table
+    for tag, forms in quotes.items():
+        minute = single(gsub, {source: name for source, (name, _sideways) in forms.items()})
+        sideways = single(gsub, {source: turned for source, (_name, turned) in forms.items()})
+        records = gsub.FeatureList.FeatureRecord
+        latin = next(r.Script for r in gsub.ScriptList.ScriptRecord if r.ScriptTag == "latn")
+        clones: dict[int, int] = {}
+        for system in filter(None, [latin.DefaultLangSys, *(r.LangSys for r in latin.LangSysRecord)]):
+            for position, index in enumerate(system.FeatureIndex):
+                if records[index].FeatureTag != tag:
+                    continue
+                if index not in clones:
+                    feature = otTables.Feature()
+                    feature.FeatureParams = records[index].Feature.FeatureParams
+                    feature.LookupListIndex = [*records[index].Feature.LookupListIndex, sideways]
+                    feature.LookupCount = len(feature.LookupListIndex)
+                    record = otTables.FeatureRecord()
+                    record.FeatureTag, record.Feature = tag, feature
+                    records.append(record)
+                    clones[index] = len(records) - 1
+                system.FeatureIndex[position] = clones[index]
+        gsub.FeatureList.FeatureCount = len(records)
+        for record in records:
+            if record.FeatureTag == tag and sideways not in record.Feature.LookupListIndex:
+                record.Feature.LookupListIndex = [*record.Feature.LookupListIndex, minute]
+                record.Feature.LookupCount = len(record.Feature.LookupListIndex)
+
+
 def add(ud: TTFont, udp: TTFont) -> dict[str, int]:
     gsub = ud["GSUB"].table
     latn = next((r.Script for r in gsub.ScriptList.ScriptRecord if r.ScriptTag == "latn"), None)
@@ -296,7 +433,9 @@ def add(ud: TTFont, udp: TTFont) -> dict[str, int]:
         system.FeatureCount = len(system.FeatureIndex)
     sort_features(gsub)
     stylistic = stylistic_vertical_forms(ud, udp, mapping, sources)
+    swap_vertical_quotes(ud)
+    minutes = vertical_minutes(ud, mapping, vertical, after)
     # glyphs は、足した字 → BIZ UDP の元の字 (hinting.py が、その字の命令を入れる)
     return {"symbols": len(chosen), "glyphs": sources, "vertical": len(vertical) + sum(map(len, after.values())),
             "shared": shared, "mapping": mapping, "vertical_mapping": vertical, "after": after,
-            "stylistic": stylistic}
+            "stylistic": stylistic, "minutes": minutes}

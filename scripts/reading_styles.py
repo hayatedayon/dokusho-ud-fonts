@@ -42,6 +42,8 @@ def add(font, symbols: dict) -> None:
             if target is not None:
                 original = build.single_mapping(gsub, tag, {base}).get(base, base)
                 japanese.setdefault(target, original)
+    # 縦組のミニュートの形からも、ss01 では元の引用符へ戻す
+    japanese.update(symbols["minutes"]["restore"])
     # locl と出力を共有すると、ss02 が無効でも幅の補正が働いてしまう。ss02 専用の
     # 複製にし、幅を指定した場合は「ss02 に入る直前の字」へ戻す。幅変換と通常の locl・
     # 縦組変換は既に済んでいるので、幅変換先のない字を別の幅へ戻すこともない。
@@ -82,6 +84,7 @@ def add(font, symbols: dict) -> None:
         latin_symbols.append_feature_mapping(gsub, tag, forms)
     for tag in ("fwid", "hwid"):
         latin_symbols.append_feature_mapping(gsub, tag, restore)
+    latin_symbols.finish_vertical_quotes(font, symbols["minutes"]["quotes"])
     latin_symbols.sort_features(gsub)
 
 

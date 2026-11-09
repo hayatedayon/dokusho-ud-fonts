@@ -221,10 +221,8 @@ def contextual_spacing(font: TTFont, values: dict) -> list[str]:
         space = [cmap[0x3000]]
 
         def quote_forms(codes) -> list[str]:
-            """locl で BIZ UDP の字にした引用符 (縦組は、その縦組の字もあれば含める)"""
+            """locl で BIZ UDP の字にした引用符 (縦組の引用符はミニュートの形で、halt・vhal の字として数える)"""
             names = [f"{cmap[code]}.latn" for code in codes]
-            if vertical:
-                names += [f"{name}.vert" for name in names if f"{name}.vert" in font["hmtx"].metrics]
             return names
 
         opening_quotes, closing_quotes = quote_forms((0x2018, 0x201C)), quote_forms((0x2019, 0x201D))
@@ -241,7 +239,8 @@ def contextual_spacing(font: TTFont, values: dict) -> list[str]:
     return lines
 
 
-def add(font: TTFont, udp: TTFont, extra: str = "", ruby: dict[str, str] | None = None) -> dict[str, int]:
+def add(font: TTFont, udp: TTFont, extra: str = "", ruby: dict[str, str] | None = None,
+        minutes: dict[str, str] | None = None) -> dict[str, int]:
     """GPOS に halt・vhal・palt・vpal を作る (元の BIZ UD には GPOS が無い)。用字系は GSUB と同じにする。
     extra は、一緒に組み込む機能ファイルの文 (結合用の記号の mark・mkmk と GDEF。combining_marks.py)"""
     if "GPOS" in font:
@@ -249,6 +248,11 @@ def add(font: TTFont, udp: TTFont, extra: str = "", ruby: dict[str, str] | None 
     values = plan(font)
     values["palt"] = proportional(font, udp)
     values["vpal"] = proportional_vertical(font, udp)
+    # 縦組のミニュートの形の引用符は、元の 〝 〟 と同じに詰める
+    for tag in ("vhal", "vpal"):
+        for target, source in (minutes or {}).items():
+            if source in values[tag]:
+                values[tag][target] = values[tag][source]
     # ss03 で字形を選んでも、詰める量は元の仮名とそろえる。縦組用の試作字形にも引き継ぐ。
     for tag in ("palt", "vpal"):
         for source, target in (ruby or {}).items():

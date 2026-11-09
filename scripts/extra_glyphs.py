@@ -7,9 +7,12 @@
 - 改行しないハイフン (U+2011): - と同じ字
 - 2 倍・3 倍ダッシュ (⸺ U+2E3A・⸻ U+2E3B): ― (U+2015) を 2 つ・3 つつないだ字。縦組では、縦組の ―
   をつないだ字にする (vert・vrt2)。部品を並べた字 (複合グリフ) にする (横組の ― はヒンティングを外した字)
-- 〞 (U+301E): 〟 (U+301F) を、〝 (U+301D) と同じ高さへ持ち上げた字。縦組では 〟 の縦組の字にする
+- 〞 (U+301E): 〝 (U+301D) を全角の枠の中心で左右反転した字 (Noto Serif CJK JP などと同じ向き)。縦方向の
+  ヒントは small_type.hint_marks が付ける。縦組では 〟 の縦組の字にする
 """
 
+from fontTools.pens.reverseContourPen import ReverseContourPen
+from fontTools.pens.transformPen import TransformPen
 from fontTools.pens.ttGlyphPen import TTGlyphPen
 from fontTools.ttLib import TTFont
 from fontTools.ttLib.tables._g_l_y_f import Glyph, GlyphComponent
@@ -112,18 +115,16 @@ def add(font: TTFont) -> dict[str, int]:
         for index in vertical_lookups:
             next(build.subtables(gsub, index, "mapping")).mapping[name] = vertical
 
-    # 〞。〟 を 〝 の高さへ持ち上げる
+    # 〞。〝 を em の中心で左右反転する。輪郭の向きを保つため、点の順序も逆にする
     low, high = cmap[LOW_DOUBLE_PRIME_QUOTE], cmap[REVERSED_DOUBLE_PRIME_QUOTE]
     low_form = build.single_mapping(gsub, "vert", {low}).get(low)
     if low_form is None:
         raise SystemExit("〟 has no vertical form")
-    glyf = font["glyf"]
-    lift = glyf[high].yMin - glyf[low].yMin
     name = f"uni{DOUBLE_PRIME_QUOTE:04X}"
-    glyph = _joined(low, 1, 0, 0)
-    glyph.components[0].y = lift
-    advance, top_side = font["vmtx"][low]
-    _add(font, name, glyph, font["hmtx"][low][0], (advance, top_side - lift), [DOUBLE_PRIME_QUOTE])
+    glyphs = font.getGlyphSet()
+    pen = TTGlyphPen(glyphs)
+    glyphs[high].draw(TransformPen(ReverseContourPen(pen), (-1, 0, 0, 1, em, 0)))
+    _add(font, name, pen.glyph(), font["hmtx"][high][0], font["vmtx"][high], [DOUBLE_PRIME_QUOTE])
     for index in vertical_lookups:
         next(build.subtables(gsub, index, "mapping")).mapping[name] = low_form
     return {"invisible": len(INVISIBLE), "spaces": len(SPACES), "dashes": len(DASHES)}

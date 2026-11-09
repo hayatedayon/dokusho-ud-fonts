@@ -449,9 +449,11 @@ def build(family: dict, weight: str) -> Path:
     tabular = tabular_digits.add(ud)
     colon = tabular_digits.raise_colon(ud)
     small_hints = small_type.hint_digits(ud)
+    # 作った約物 (〞 と、縦組の引用符のうち 〝 〟 の命令を流用できない字) の縦方向のヒント
+    small_type.hint_marks(ud, [ud.getBestCmap()[0x301E], *spec.GENERATED_VERTICAL_QUOTES])
     ruby = small_type.ruby_trial(ud)
     marks = combining_marks.add(ud, prepared, ruby)
-    spaced = spacing.add(ud, udp, marks["fea"] + kerning.feature(ud, family["key"]), ruby=ruby)
+    spaced = spacing.add(ud, udp, marks["fea"] + kerning.feature(ud, family["key"]), ruby=ruby, minutes=symbols["minutes"]["sources"])
     combining_marks.dotless_i(ud, marks["dotless_above"], marks["fullwidth_dotless"])
     reading_styles.add(ud, symbols)
 

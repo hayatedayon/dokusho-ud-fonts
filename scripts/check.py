@@ -19,6 +19,7 @@ import harfbuzz_shape
 import kerning
 import small_type
 import spec
+import glyph_reference
 import width_reference
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -152,6 +153,12 @@ def check_font(family: dict, weight: str) -> None:
     # 欧文の中の記号の、BIZ UDP の縦組の字
     fraction_glyphs |= (set(latin_symbol_mapping(font, "latn", None, vertical=True).values())
                         | outputs(font, ["vert", "vrt2"])) - set(order_ud)
+    # 縦組の “ ” ‘ ’ の字 (ミニュートの形と、欧字の用字系の ‘ ’ の横倒しの字)
+    sideways_shaper = harfbuzz_shape.Shaper(FONTS / label)
+    fraction_glyphs |= {order[record[0]] for char in "“”‘’" for script in ("Latn", "Hani")
+                        for features in ((), ("vert=0", "vrt2"))
+                        for record in sideways_shaper.shape(char, "en", True, features, script)}
+    sideways_shaper.close()
     check(extra == set(latin_symbol_mapping(font, "latn", None).values()) | half_widths | fraction_glyphs,
           f"{label}: glyphs other than the symbols for Latin text, the half widths for hwid and the fraction "
           "digits and stylistic sets were added")
@@ -895,14 +902,16 @@ def check_extra(label: str, font: TTFont) -> None:
         check(font["hmtx"][name][0] == want, f"{label}: U+{code:04X} is {font['hmtx'][name][0]} wide, not {want}")
         check(font["glyf"][name].numberOfContours == 0, f"{label}: U+{code:04X} has ink")
     check(cmap.get(0x2011) == cmap[0x2D], f"{label}: ‑ is not the glyph of -")
-    # 〞 は 〟 を 〝 の高さへ持ち上げた字で、縦組は 〟 の縦組の字
+    # 〞 は 〝 を em の中心で左右反転した字で、縦組は 〟 の縦組の字
     name, low, high = cmap.get(0x301E), cmap[0x301F], cmap[0x301D]
     if name is None:
         problems.append(f"{label}: U+301E is missing")
     else:
-        lift = glyph_bounds(font, high)[1] - glyph_bounds(font, low)[1]
-        check(list(map(tuple, outline(font, name)[0])) == [(x, y + lift) for x, y in outline(font, low)[0]],
-              f"{label}: 〞 is not 〟 at the height of 〝")
+        em = font["head"].unitsPerEm
+        check(sorted(map(tuple, outline(font, name)[0])) == sorted((em - x, y) for x, y in outline(font, high)[0]),
+              f"{label}: 〞 is not 〝 mirrored about the center of the em")
+        check(font["hmtx"][name][0] == font["hmtx"][high][0] and font["vmtx"][name] == font["vmtx"][high],
+              f"{label}: 〞 does not have the metrics of 〝")
         for tag in ("vert", "vrt2"):
             check(gsub_mapping(font, tag).get(name) == gsub_mapping(font, tag).get(low),
                   f"{label}: {tag} of 〞 is not that of 〟")
@@ -1420,7 +1429,7 @@ def check_shaping(label: str, family: dict, weight: str) -> None:
             cluster = len(context[:index].encode())
             if ours.run(text, language, cluster=cluster) != expected:
                 report("always-UDP symbols are not BIZ UDP's in horizontal text", f"U+{code:04X} in {context}")
-            if ours.run(text, language, True, cluster=cluster) != udp.run(text, language, True, cluster=cluster):
+            if code not in spec.VERTICAL_MINUTES and ours.run(text, language, True, cluster=cluster) != udp.run(text, language, True, cluster=cluster):
                 report("always-UDP symbols are not BIZ UDP's in vertical text", f"U+{code:04X} in {context}")
 
     # BIZ UD の合字と異体字
@@ -1497,6 +1506,8 @@ def check_shaping(label: str, family: dict, weight: str) -> None:
             horizontal = ours.run_script(char, script, language, False)
             follows = udp if horizontal == udp.run_script(char, script, language, False) else \
                 ud if horizontal == ud.run_script(char, script, language, False) else None
+            if code in spec.VERTICAL_MINUTES:  # 縦組はミニュートの形。check_vertical_minutes が検査する
+                continue
             if follows is not None and not near(vertical_run(ours, char, script, language),
                                                 vertical_run(follows, char, script, language)):
                 report("in vertical text is not set as in the font it follows horizontally",
@@ -2012,6 +2023,67 @@ def check_kern_exclusions(label: str, font: TTFont, pairs: dict) -> None:
         check(not overlap, f"{label}: kern includes {tag} output glyphs: {sorted(overlap)[:8]}")
 
 
+def check_generated_mark_hints(label: str, path: Path, font: TTFont, shaper) -> None:
+    """作った約物のヒントが効いていて、8–24 ppem の全描画モードで消えず、〝 〟 と高さがそろうこと。"""
+    cmap, order = font.getBestCmap(), font.getGlyphOrder()
+    vertical = lambda char, script: shaper.shape(char, "ja", True, (), script)[0][0]
+    names = [(cmap[0x301E], cmap[0x301D])]
+    for char, source, script in (("‘", "〝", "Hani"), ("’", "〟", "Hani"), ("‘", "〝", "Latn"), ("’", "〟", "Latn")):
+        names.append((order[vertical(char, script)], order[vertical(source, "Hani")] if script == "Hani" else None))
+    for name, reference in names:
+        check(len(font["glyf"][name].program.getBytecode()) > 0, f"{label}: {name} has no hinting")
+    for mode, interpreter, flags in freetype_render.MODES:
+        renderer = freetype_render.Renderer(path, interpreter, flags)
+        for ppem in range(8, 25):
+            for name, reference in names:
+                index = font.getGlyphID(name)
+                bitmap = renderer.render(index, ppem)
+                check(bitmap[4] >= 1 and any(bitmap[5]), f"{label}: {name} vanishes at {ppem} ppem ({mode})")
+                if reference is not None:
+                    ys = [y for _x, y in renderer.outline(index, ppem)]
+                    reference_ys = [y for _x, y in renderer.outline(font.getGlyphID(reference), ppem)]
+                    check(abs(min(ys) - min(reference_ys)) <= 64 and abs(max(ys) - max(reference_ys)) <= 64,
+                          f"{label}: {name} is more than 1 px off {reference} at {ppem} ppem ({mode})")
+        renderer.close()
+
+
+def check_vertical_minutes(label: str, font: TTFont, shaper) -> None:
+    """縦組の “ ” は 〝 〟 と同じ形、‘ ’ は同じ位置の 1 画で、送りは全角。既定と vrt2、ja と en の両方を調べる。"""
+    glyf, order, em = font["glyf"], font.getGlyphOrder(), font["head"].unitsPerEm
+    for language in ("ja", "en"):
+        for features in ((), ("vert=0", "vrt2")):
+            def shaped(char):
+                records = shaper.shape(char, language, True, features, "Hani")
+                check(len(records) == 1, f"{label}: {char} is not one glyph in vertical text")
+                return order[records[0][0]], records[0][3]
+            for code, source_code in spec.VERTICAL_MINUTES.items():
+                name, advance = shaped(chr(code))
+                source, _ = shaped(chr(source_code))
+                check(advance == -em, f"{label}: vertical U+{code:04X} is not one em high ({advance})")
+                check(name != source, f"{label}: vertical U+{code:04X} shares the glyph of U+{source_code:04X}")
+                if code in spec.VERTICAL_SWAPPED_QUOTES:
+                    check(glyf[name].numberOfContours == 1, f"{label}: vertical U+{code:04X} is not one stroke")
+                    middle = lambda g: glyf[g].xMin + glyf[g].xMax
+                    check(abs(middle(name) - middle(source)) <= 2 and glyf[name].yMin >= glyf[source].yMin
+                          and glyf[name].yMax <= glyf[source].yMax,
+                          f"{label}: vertical U+{code:04X} is not placed where U+{source_code:04X} is")
+                else:
+                    check(outline(font, name) == outline(font, source), f"{label}: vertical U+{code:04X} is not U+{source_code:04X}")
+            minutes = {shaped(chr(code))[0] for code in spec.VERTICAL_MINUTES}
+            for char in "“”‘’":
+                horizontal = shaper.shape(char, language, False, ())
+                check(order[horizontal[0][0]] not in minutes, f"{label}: {char} takes a minute form in horizontal text")
+            for char in "“”":
+                # “ ” は英語の中でもミニュートのまま (日本語に続く “Hello” の開きと閉じをそろえる)
+                latin = shaper.shape(char, language, True, features, "Latn")
+                check(len(latin) == 1 and order[latin[0][0]] in minutes, f"{label}: {char} in Latin text is not the minute form in vertical text")
+            for char in "‘’":
+                # 英語の中 (用字系が欧字) の ‘ ’ はミニュートではなく、全角より短い横倒しの字
+                latin = shaper.shape(char, language, True, features, "Latn")
+                check(len(latin) == 1 and -em < latin[0][3] < 0 and order[latin[0][0]] not in minutes,
+                      f"{label}: {char} in Latin text is not the sideways form in vertical text")
+
+
 def check_reading_features(label: str, family: dict, weight: str) -> None:
     """新しい組版機能は元との一致とは別に、実際の組み方と衝突・小サイズの画素で検査する。"""
     path = FONTS / label
@@ -2031,7 +2103,11 @@ def check_reading_features(label: str, family: dict, weight: str) -> None:
     check_kern_contacts(label, font, effective_kern)
     check_kern_exclusions(label, font, effective_kern)
     problems.extend(width_reference.check_recorded(label, font, shaper))
+    problems.extend(glyph_reference.check_font(label, path, family["key"],
+                                               [SOURCES / f"{family['ud']}-{weight}.ttf", SOURCES / f"{family['udp']}-{weight}.ttf"]))
     check_style_widths(label, font, shaper)
+    check_vertical_minutes(label, font, shaper)
+    check_generated_mark_hints(label, path, font, shaper)
     for text in ("Ťu", "Ťü", "T\u030cu", "T\u0330\u030cu", "ĽT"):
         check(run(text) == run(text, ("kern=0",)), f"{label}: projecting caron is kerned in {text}")
     for text in ("AV", "WA", "To", "Te", "YA", "LT", "Tó", "ÁV"):
@@ -2089,7 +2165,8 @@ def check_reading_features(label: str, family: dict, weight: str) -> None:
     for language in ("ja", "en"):
         for vertical, vertical_features in STYLE_MODES:
             for char in "‘’“”":
-                check(ours.run(char, language, vertical, ("ss01", *vertical_features)) == ud.run(char, language, vertical, vertical_features),
+                reference = chr(spec.VERTICAL_SWAPPED_QUOTES.get(ord(char), ord(char))) if vertical else char
+                check(ours.run(char, language, vertical, ("ss01", *vertical_features)) == ud.run(reference, language, vertical, vertical_features),
                       f"{label}: ss01 {char} is not BIZ UD ({language}, vertical={vertical})")
                 check(ours.run(char, language, vertical, ("ss01", "ss02", *vertical_features)) == ours.run(char, language, vertical, ("ss01", *vertical_features)),
                       f"{label}: ss02 overrides ss01 quotes")

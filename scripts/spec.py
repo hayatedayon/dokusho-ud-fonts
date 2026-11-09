@@ -43,6 +43,15 @@ LATIN_SYMBOLS = [code for start, end in LATIN_SYMBOL_RANGES for code in range(st
 # 入り、フォントからは “本当” の “ と区別できない)
 LATIN_QUOTES = [0x2018, 0x2019, 0x201C, 0x201D]
 
+# ss01 で BIZ UD の縦組の ‘ ’ を選ぶときの入れ替え。BIZ UD の字の向きは一般的な和文フォント (Noto CJK JP) と 180 度
+# 逆で、“ ” ともそろわない。hwid の縦組の字はもともと正しい向きなので変えない
+VERTICAL_SWAPPED_QUOTES = {0x2018: 0x2019, 0x2019: 0x2018}
+
+# 縦組の引用符は、JLReq の縦組の括弧類であるミニュートの形で全角の枠に組む。文字は変えず vert・vrt2 の出力だけを
+# 変える。‘ ’ に当たるシングルミニュートは Unicode に無いので、〝 〟 の 1 画で作る。キーは文字、値は形の元の字
+GENERATED_VERTICAL_QUOTES = [f"uni{code:04X}.{kind}" for code in VERTICAL_SWAPPED_QUOTES for kind in ("minute", "sideways")]
+VERTICAL_MINUTES = {0x201C: 0x301D, 0x201D: 0x301F, 0x2018: 0x301D, 0x2019: 0x301F}
+
 # どの用字系・言語でも BIZ UDP の字にする記号。引用符とアポストロフィのほかに、
 # — (BIZ UD は半角で、—— が 1 em にしかならない)・− (+ = と字幅と線の長さをそろえる)・分数 ¼ ½ ¾ ⅓ ⅔ ⅕・
 # ° (BIZ UD は全角で、35°C の後ろが空く)・‼ ⁇ ⁈ ⁉ (BIZ UD は 2 つの記号を半角に詰めた形)。

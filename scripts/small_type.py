@@ -73,6 +73,35 @@ def hint_digits(font) -> int:
     return count
 
 
+def hint_marks(font, names) -> int:
+    """命令の無い約物の字に、縦方向だけのヒントを付ける。字の上下をグリッドに合わせ、各輪郭の極点を間で補間する。"""
+    count = 0
+    for name in names:
+        glyph = font["glyf"][name]
+        if glyph.isComposite() or glyph.numberOfContours <= 0 or len(glyph.program.getBytecode()):
+            raise SystemExit(f"{name}: expected a simple glyph without instructions")
+        coords = glyph.coordinates
+        bottom = min(range(len(coords)), key=lambda i: coords[i][1])
+        top = max(range(len(coords)), key=lambda i: coords[i][1])
+        extrema, start = set(), 0
+        for end in glyph.endPtsOfContours:
+            points = range(start, end + 1)
+            extrema.update((min(points, key=lambda i: coords[i][1]), max(points, key=lambda i: coords[i][1])))
+            start = end + 1
+        assembly = ["PUSHB[ ]", "1", "SZPS[ ]", "SVTCA[0]", "RTG[ ]",
+                    "PUSHW[ ]", str(bottom), "MDAP[1]", "PUSHW[ ]", str(top), "MDAP[1]",
+                    "PUSHW[ ]", str(bottom), "SRP1[ ]", "PUSHW[ ]", str(top), "SRP2[ ]"]
+        for point in sorted(extrema - {bottom, top}):
+            assembly.extend(["PUSHW[ ]", str(point), "IP[ ]"])
+        program = Program()
+        program.fromAssembly(assembly + ["IUP[0]"])
+        glyph.program = program
+        font["maxp"].maxSizeOfInstructions = max(font["maxp"].maxSizeOfInstructions, len(program.getBytecode()))
+        font["maxp"].maxStackElements = max(font["maxp"].maxStackElements, 2)
+        count += 1
+    return count
+
+
 def ruby_trial(font) -> dict[str, str]:
     import build
     from spacing import ink

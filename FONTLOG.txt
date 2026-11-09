@@ -23,6 +23,25 @@ ChangeLog
 ---------
 
 2026-11-08 (hayatedayon) Dokusho UD 1.007 (unreleased)
+- The double prime quotation mark 〞 (U+301E) is now 〝 mirrored about the
+  center of the em, leaning the opposite way from 〝 as in other Japanese
+  fonts such as Noto Serif CJK JP. It was 〟 raised, which leaned the same
+  way as 〝. Its position, width and vertical form do not change. The new
+  outline carries vertical-only hinting.
+- In vertical text, “ ” now take the forms of the double minutes 〝 〟, and
+  ‘ ’ one stroke of them, in a full-width body: JLReq treats “ ” ‘ ’ as
+  horizontal-only and 〝 〟 as the vertical quotes. The text itself does not
+  change, so copying and searching still find “ ” ‘ ’, and horizontal text is
+  unchanged. Up to 1.006 they were half an em high beside the column, with
+  ‘ ’ turned 180 degrees from other Japanese fonts. ss01 still selects BIZ
+  UD's quotes in vertical text, with ‘ ’ in the corrected orientation.
+  In Latin runs, as in the sideways word It’s, ‘ ’ take new forms turned 90
+  degrees with the word, so that the word is not split. “ ” keep the minute
+  forms there too: an opening “ after Japanese text belongs to the Japanese
+  run, so turning only Latin runs would leave “Hello” with unmatched marks.
+  The generated forms of ‘ ’ carry vertical-only hinting.
+- check.py now detects mirrored or rotated glyphs and wrong digit mappings,
+  horizontally and vertically, against a fixture recorded from Noto CJK JP.
 - Added conservative Latin kerning for frequent pairs and their accented
   forms. Full-width, hwid, tabular and vertical forms are excluded.
 - Excluded right-projecting carons (Tcaron and Lcaron) from left kerning
