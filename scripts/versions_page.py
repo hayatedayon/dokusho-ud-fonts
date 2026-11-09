@@ -52,7 +52,7 @@ class Raster:
 
 
 VERSIONS = [
-    ("1.001", "2026-11-03", "BIZ UD の欧字を、同じデザインの BIZ UDP の字に", [
+    ("1.001", "2026-11-03", "BIZ UD の欧字を同じデザインの BIZ UDP の字に", [
         Demo("欧文の本文", "Alice was beginning to get very tired", "BIZ UD の欧字は半角の等幅で、i も W も同じ幅でした。", "en"),
         Demo("和欧混植", "画面にHello, worldと出た午後3時", "仮名と漢字は全角のまま、欧字だけが字ごとの幅になります。"),
     ]),
@@ -71,12 +71,12 @@ VERSIONS = [
     ("1.005", "2026-11-08", "和文の記号の修正、分数・上付き・下付き・tnum・palt など多数", [
         Demo("ダッシュ", "彼は——そう言った", "BIZ UD の — は半角で、—— が全角 1 字分にしかなりませんでした。"),
         Demo("度とマイナス", "気温は35°C、昨日は−5°C", "° の後の空きと、+ より短かった − を直しました。"),
-        Demo("感嘆符と分数の字", "本当‼ 約½か¾", "半角に押し込まれていた ‼ や分数が、本来の幅になりました。"),
+        Demo("感嘆符と分数の字", "本当‼ 約½か¾", "半角に詰まっていた ‼ や分数が、本来の幅になりました。"),
         Demo("和文の中の引用符", "画面に“Hello”と出た", "開きと閉じで別の幅になる問題を避けるため、和文の中でも欧文の字にしました。"),
         Demo("ピンインと IPA", "nǐ hǎo ə ƒ ﬁ", "語の途中で全角・半角に分かれていた字が、続いて読めるようになりました。", "en"),
         Demo("分数 (frac)", "1/2 10/25 3/8", "1.004 までは 1 2 3 が上がるだけで、4/5 などは変わりませんでした。", features=["frac"]),
-        Demo("上付きと下付き", "10⁻³ x⁵ H₂O", "点線の枠は、その版に無かった字です。"),
-        Demo("等幅の数字 (tnum)", "1111 2026", "BIZ UDP の 1 は他の数字より狭いので、揃える機能を足しました。", features=["tnum"]),
+        Demo("上付きと下付き", "10⁻³ x⁵ H₂O", "点線の枠はその版に無かった字です。"),
+        Demo("等幅の数字 (tnum)", "1111 2026", "BIZ UDP の 1 は他の数字より狭いので、幅を揃える機能を足しました。", features=["tnum"]),
         Demo("数字の間のコロン", "午後11:11", "数字の間で低く見えたコロンを、数字の中央に上げます。"),
         Demo("結合用の記号", "q̃ あ゙ か゚", "記号が次の字の位置にずれていたのを、前の字の上に置きます。"),
         Demo("縦中横 (hwid)", "12月24日",
@@ -86,7 +86,7 @@ VERSIONS = [
         Demo("見出しの詰め (palt)", "「読書」のためのフォント", "本文はベタ組のまま、見出しだけ字ごとの幅にできます。", features=["palt"]),
         Demo("新しい字", "〝読書〟 〝読書〞 ⸺ ⸻",
              "日本語の二重引用符の通常の閉じは右下の 〟 で、前の版にもありました。追加した U+301E の 〞 は右上に置く字です。"
-             "2 倍・3 倍のダッシュも追加しました。点線の枠は、その版に無かった字です。"),
+             "2 倍・3 倍のダッシュも追加しました。点線の枠はその版に無かった字です。"),
     ]),
     ("1.006", "2026-11-08", "WOFF2 の配布を追加 (字は変更なし)", []),
     (UNRELEASED, "未公開", "欧字のカーニング、スタイルセット、小さい数字のヒンティング", [
@@ -362,12 +362,12 @@ def main() -> int:
         shaper.close()
     toc = "".join(f'<a href="#v{v.replace(".", "")}">{v}</a>' for v, *_ in VERSIONS)
     content = (f'<header class="top"><h1>読書 UD 版ごとの変化</h1>'
-               '<p class="lead">同じ文を、前の版とその版で上下に並べました。下の赤い番号の行が、その版の表示です。点線の枠は、その版に無かった字です。</p>'
+               '<p class="lead">同じ文を前の版とその版で上下に並べました。下の赤い番号の行が、その版の表示です。点線の枠はその版に無かった字です。</p>'
                f'<nav class="toc">{toc}</nav></header>'
                '<div class="controls"><label class="control">書体 <select id="family"><option value="Mincho">読書 UD明朝</option>'
                '<option value="Gothic">読書 UDゴシック</option></select></label>'
                '<label class="control">太さ <select id="weight"><option value="400">Regular</option><option value="700">Bold</option></select></label></div>'
-               f'<main><section id="all"><div class="version-head"><h2>全版の並び</h2><p class="summary">同じ文を、元の BIZ UD から順に並べました。色の付いた行は、すぐ上の行と字形か配置が違います。</p></div>{matrix(shaped)}</section>'
+               f'<main><section id="all"><div class="version-head"><h2>全版の並び</h2><p class="summary">同じ文を元の BIZ UD から順に並べました。色の付いた行は、すぐ上の行と字形か配置が違います。</p></div>{matrix(shaped)}</section>'
                f'{"".join(sections)}</main>'
                '<footer>各版のフォントはリリースのファイルから、ページで使う字だけを取り出して埋め込んでいます。ヒンティングは除いています（ヒンティングの差は画素の画像で示しています）。'
                '色の付いた行の判定と各見本の差は、明朝 Regular を HarfBuzz で組んで確かめています。ライセンスは SIL Open Font License 1.1 です。</footer>')
