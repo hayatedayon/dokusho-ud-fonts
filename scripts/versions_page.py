@@ -30,7 +30,7 @@ ROOT = Path(__file__).resolve().parent.parent
 OUTPUT = ROOT / "dist" / "versions.html"
 RELEASES = ROOT / "dist" / "releases"
 REPOSITORY = "https://github.com/hayatedayon/dokusho-ud-fonts"
-UNRELEASED = "1.007"
+UNRELEASED = None  # fonts/ の未公開の版を最後に並べるときは、その版番号にする
 BASE = "BIZ UD"
 WEIGHTS = ("Regular", "Bold")
 FEATURES = ["locl", "ccmp", "mark", "mkmk", "liga", "calt", "kern", "vert", "vrt2", "halt", "vhal", "palt", "vpal",
@@ -89,7 +89,7 @@ VERSIONS = [
              "2 倍・3 倍のダッシュも追加しました。点線の枠はその版に無かった字です。"),
     ]),
     ("1.006", "2026-11-08", "WOFF2 の配布を追加 (字は変更なし)", []),
-    (UNRELEASED, "未公開", "欧字のカーニング、スタイルセット、小さい数字のヒンティング", [
+    ("1.007", "2026-11-09", "欧字のカーニング、スタイルセット、小さい数字のヒンティング", [
         Demo("カーニング", "AVATAR To Te WAVE You", "頻出のペアを控えめに詰めます。既定で有効です。", "en"),
         Demo("二重引用符 〞 の向き", "〝読書〞", "〞 を 〝 と左右対称の向きに直しました。位置と幅は変わりません。"),
         Demo("縦組の引用符", "字“読”字と‘本’", "縦組では “ ” を 〝 〟 の形、‘ ’ をその 1 画の形で全角の枠に組みます。文字は変わりません。",
@@ -320,7 +320,7 @@ apply();
 
 
 def main() -> int:
-    missing = [p for f in spec.FAMILIES for w in WEIGHTS for p in [source_path(BASE, f, w), source_path(UNRELEASED, f, w)] if not p.exists()]
+    missing = [p for f in spec.FAMILIES for w in WEIGHTS for p in [source_path(BASE, f, w)] if not p.exists()]
     if missing:
         raise SystemExit(f"run fetch_sources.py and build.py first: {missing[0]}")
     # 本文を組み立てる前に、見本の差を確かめる
@@ -387,7 +387,7 @@ def main() -> int:
             rules.append(f".{family['key'].lower()} [data-v=\"{version}\"]{{font-family:'{name}',serif}}")
     ui = spec.FAMILIES
     for name, family, weight in (("UI Gothic", ui[1], "Regular"), ("UI Gothic", ui[1], "Bold"), ("UI Mincho", ui[0], "Bold")):
-        css, size = face_css(name, source_path(UNRELEASED, family, weight), weight, plain)
+        css, size = face_css(name, source_path(VERSIONS[-1][0], family, weight), weight, plain)
         faces.append(css)
         total += size
     page = ('<!doctype html><html lang="ja"><head><meta charset="utf-8">'
