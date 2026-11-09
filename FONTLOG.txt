@@ -22,6 +22,41 @@ with their substitutions, from BIZ UDP of the same design.
 ChangeLog
 ---------
 
+Dokusho UD 1.008 (unreleased)
+- Extended conservative Latin kerning to periods and commas after T, V, W,
+  Y, P, F, r, y, v and w, including compatible accented forms. The values
+  differ between Mincho and Gothic. Punctuation has its own lookup so
+  zero-valued entries in earlier Class Pair subtables cannot mask it.
+  Full-width, hwid, tabular and substituted vertical forms remain excluded;
+  all declared pairs are checked with HarfBuzz and at least 1% em of ink space.
+- Set hhea.lineGap and OS/2.sTypoLineGap to 1024 (0.5 em) in all four faces,
+  so line-height: normal is 1.5 em. Ascenders, descenders,
+  usWinAscent/usWinDescent and USE_TYPO_METRICS are unchanged. Existing
+  documents using line-height: normal may change line spacing and pagination;
+  applications that ignore these line gaps can behave differently.
+- Added U+20BB7 (𠮷) using only original BIZ UD outlines: the upper 土 of 圭,
+  translated without scaling, and the unchanged lower 口 of 吉. Its advances
+  and vertical origin match 吉. The new outline has no hinting.
+- Added U+3031/U+3032 (〱/〲) by joining the shared edges of 〳/〴 and 〵.
+  Unicode specifies double-height vertical glyphs occupying two ideographic
+  cells. Horizontal width is 1 em and vertical advance 2 em, also as in the
+  locally available Noto Serif CJK JP; no Noto outlines are imported. The
+  horizontal preview is uniformly half size inside one cell; vert/vrt2 select
+  the original stroke size across two vertical cells. Both forms have no
+  hinting. Their vertical bounds are checked in the two-cell frame, as for
+  multi-em dashes, and horizontal forms stay within the existing line bounds.
+- Added format 12 Unicode cmaps for the supplementary character. Existing
+  cmap assignments and aalt alternatives are unchanged; ALWAYS_UDP still
+  relies on locl.
+- Added FreeType actual-size/4x/96px proofs for the new Japanese glyphs.
+  Added an independent advisory CI workflow for native CoreText and
+  DirectWrite glyph IDs, advances and PNGs, including explicit locl-off
+  diagnostics for all 17 ALWAYS_UDP symbols. Native APIs and compilers have
+  not been run in the Linux development environment; local checks cover
+  Python syntax, YAML and dummy records only. The manual application,
+  e-reader, PDF and print checklist records all these checks as unperformed.
+- The embedded version remains 1.007 until release.
+
 2026-11-09 (hayatedayon) Dokusho UD 1.007
 - The double prime quotation mark 〞 (U+301E) is now 〝 mirrored about the
   center of the em, leaning the opposite way from 〝 as in other Japanese

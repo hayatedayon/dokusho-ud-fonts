@@ -45,7 +45,8 @@ The vertical forms (`vert`, `vrt2`) and vertical metrics of kana, kanji and punc
 - Kana, kanji and punctuation sit on a full-width grid (solid setting), and Latin letters have their own widths, so English words inside Japanese text are not split by gaps.
 - In vertical text, quotation marks take the forms of the vertical quotes `〝 〟`. The text itself does not change, so copying and searching are not affected.
 - Consecutive brackets and punctuation can be trimmed as in printed books (`halt`, `vhal`, `chws`, `vchw`), and headings can use proportional setting (`palt`, `vpal`).
-- Latin kerning for frequent pairs is on by default.
+- Latin kerning for frequent pairs is on by default. The next version extends it to punctuation, as in `T.` and `P,`.
+- The next version sets `line-height: normal` to 1.5 em and adds `𠮷` and the vertical kana repeat marks `〱 〲`, made from the original glyph parts. Existing documents using `line-height: normal` will have different line spacing.
 - Fractions, superscripts, subscripts, tabular figures and half-width alphanumerics for tate-chu-yoko (`hwid`) are available.
 - Symbols in Latin text take BIZ UDP's glyphs, so `It’s` and `“Hello”` have no full-width gaps around them.
 - Japanese quotation marks (`ss01`), Latin symbols (`ss02`) and a ruby kana trial (`ss03`) can be selected when needed.

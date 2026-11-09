@@ -35,3 +35,20 @@ CI も見本を生成し、比較に必要なフォントと一緒に `DokushoUD
 ## GitHub Pages
 
 リリースの公開時と手動実行のとき、`.github/workflows/pages.yml` が最新のリリースのフォントから文章の見本と版の比較を作り、公開します。ページをまとめる処理は `scripts/pages_site.py` です。
+
+## 次期版の追加字・行送り・実環境の比較
+
+欧字とピリオド・コンマのカーニングは `scripts/kerning.py` で書体別に定めます。句読点は ASCII の比例幅グリフだけを右クラスへ入れ、欧字同士とは別 lookup にします。同じ lookup の先の Class Pair サブテーブルのゼロ値に遮られるのを防ぐためです。`check.py` は追加ペアとアクセント付きの字も、宣言値・HarfBuzz の実効値・1% em以上の輪郭間隔で照合します。`hhea` と typo の行間は1024、ほかの行メトリクスと `fsSelection` は BIZ UD と一致することを検査します。
+
+`extra_glyphs.py` は「圭」の上部の土を平行移動し、「吉」の下部の口と組み合わせて `𠮷` を作ります。`〱 〲` は `〳/〴` と `〵` の接合辺を除いて輪郭をつなぎます。[Unicode §6.2](https://www.unicode.org/versions/Unicode17.0.0/core-spec/chapter-6/) の２セルの字という規定と、手元の Noto Serif CJK JP の横1 em・縦2 emのメトリクスを参考にしました。Noto の輪郭は使いません。横組の見本は半分の大きさで１セル内に収め、`vert`・`vrt2` では元の線の太さと2 emの送りを使います。縦組専用字の上下は、ダッシュと同様に１行のクリップ枠ではなく２セルの縦枠で検査します。追加字にはヒントを付けません。非 BMP の `𠮷` は既存の割り当てを保った format 12 cmap に追加し、Unicode 範囲の Non-Plane 0（bit 57）は元の４書体すべてに設定済みなので、そのまま引き継ぎます。
+
+```sh
+.venv/bin/python scripts/additions_proof.py  # dist/additions.html と dist/additions/*.png
+.venv/bin/python scripts/native_proof.py --prepare  # OS 非依存の資料だけを作る
+```
+
+追加字のページは４書体の12・14・16pxの FreeType 実寸・４倍画像と96px画像を保存します。既存の上下部品と並べて接合・太さ・２セルの送りを見比べられます。
+
+`.github/workflows/native-proof.yml` は既存の build・release と独立した補助 CI です。macOS 15の CoreText（`scripts/native/coretext.swift`）、Windows 2025の DirectWrite（`scripts/native/directwrite.cpp`）が、同じ45条件×４書体を24pxで組みます。横縦の和英混植、句読点のペア、アクセント付きの字、追加字、17記号の `locl` 有効・無効を記録します。句読点の単独ペアは宣言した送りとも照合します。フォントはファイルから直接読み、別フォントへのフォールバックや欠落グリフを検出します。成果物 `DokushoUD-coretext`・`DokushoUD-directwrite` の `dist/native/index.html`、各 PNG・JSON（グリフ ID・送り・配置）、フォント SHA-256、OS情報を保存します。同じ SHA-256 の２成果物を比較し、`locl-off` の違いは後の cmap 変更の判断材料にします。`locl` 無効時も同じ字になることは合格条件にしません。
+
+ローカルで各 OS を使う場合は、ワークフローのコンパイル手順を実行してから `scripts/native_proof.py --renderer <実行ファイル>` を実行します。Linux では `--prepare`、Pythonの構文検査、YAML解析、`check.py` のダミー入力検査までです。Swift／Windows SDK のコンパイル・API・実描画は、この環境では未実施です。ダミー検査を実環境の合格記録にしません。

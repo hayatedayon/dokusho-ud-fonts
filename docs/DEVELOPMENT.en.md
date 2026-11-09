@@ -33,3 +33,20 @@ Open `http://localhost:8000/dist/specimen.html` for feature controls, `dist/proo
 `.venv/bin/python scripts/versions_page.py` builds `dist/versions.html`, which compares each published version with the same text (it opens directly as a file; the fonts of each version are fetched from the releases). The README images are made in `docs/images/` by `scripts/readme_images.py`.
 
 CI generates these pages and uploads a `DokushoUD-proof` artifact with the required fonts. Fonts are checked and uploaded first; proof generation or upload failures do not block a release. Serve its extracted root with an HTTP server. [docs/PROOFING.md](PROOFING.md) records the procedure and verification limits. Source-equivalence shaping checks disable the newly added `kern`; separate checks verify kerning, fixed-width exclusions, non-touching pairs and numeric feature interactions.
+
+## Next version: added glyphs, line spacing and native proofs
+
+`scripts/kerning.py` defines family-specific kerning before periods and commas. Only proportional ASCII punctuation enters the right classes, in a separate lookup from letter pairs, preventing earlier Class Pair zero values from masking them. `check.py` covers the new pairs and accented variants against declared adjustments, HarfBuzz advances and at least 1% em of outline clearance. It also requires hhea/typo line gaps of 1024 and checks every other line metric and `fsSelection` against BIZ UD.
+
+`extra_glyphs.py` translates the upper 土 of 圭 and combines it with 吉's lower 口 to make `𠮷`. It joins the outlines of `〳/〴` and `〵`, removing their joining edges, to make `〱 〲`. The two-cell definition in [Unicode §6.2](https://www.unicode.org/versions/Unicode17.0.0/core-spec/chapter-6/) and the locally available Noto Serif CJK JP metrics (1 em horizontally, 2 em vertically) inform the advances; no Noto outlines are used. Horizontal previews are scaled to half size inside one cell. `vert` and `vrt2` select the original stroke size with 2-em vertical advances. As with multi-em dashes, these dedicated vertical glyphs are checked against their two-cell vertical frame instead of a single horizontal line's clipping bounds. Added glyphs have no hinting. Supplementary `𠮷` enters format 12 cmaps that retain all existing assignments; Non-Plane 0 (bit 57) is already set in all four sources and is inherited unchanged.
+
+```sh
+.venv/bin/python scripts/additions_proof.py  # dist/additions.html and dist/additions/*.png
+.venv/bin/python scripts/native_proof.py --prepare  # platform-independent input only
+```
+
+The added-glyph page saves actual-size and 4x FreeType rasters at 12/14/16px, plus 96px images, for all four faces. Compare joints, stroke size and two-cell advances with the original halves beside them.
+
+`.github/workflows/native-proof.yml` is an advisory CI workflow independent of build/release. CoreText on macOS 15 (`scripts/native/coretext.swift`) and DirectWrite on Windows 2025 (`scripts/native/directwrite.cpp`) shape the same 45 cases in four faces at 24px. Cases include Japanese/English horizontal/vertical text, punctuation kerning, accents, new characters, and the 17 symbols with `locl` enabled/disabled. Isolated punctuation pairs are checked against declared advances. Fonts load directly from files; fallback and missing glyphs fail validation. `DokushoUD-coretext` and `DokushoUD-directwrite` retain `dist/native/index.html`, PNGs, JSON glyph IDs/advances/positions, font SHA-256 and OS details. Compare artifacts with matching font hashes. Differences in the `locl-off` diagnostics inform a future cmap decision; equality with `locl` disabled is not required.
+
+On each native OS, compile using the workflow commands, then run `scripts/native_proof.py --renderer <executable>`. Linux can prepare inputs, check Python syntax, parse YAML and run `check.py`'s dummy-input checks. Swift/Windows SDK compilation, APIs and native rendering have not been run in this environment. Dummy checks do not count as native verification.

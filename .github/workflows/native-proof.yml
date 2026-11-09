@@ -1,0 +1,80 @@
+name: Native shaping proofs
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# Independent, advisory workflow: build.yml / release.yml do not depend on it.
+jobs:
+  native-proof:
+    name: ${{ matrix.engine }} (advisory)
+    continue-on-error: true
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-15
+            engine: coretext
+          - os: windows-2025
+            engine: directwrite
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Install dependencies and build all four fonts
+        shell: bash
+        run: |
+          if [ "$RUNNER_OS" = Windows ]; then
+            python -m venv .venv
+          else
+            python3 -m venv .venv
+          fi
+          if [ -f .venv/Scripts/python.exe ]; then
+            proof_python=.venv/Scripts/python.exe
+          else
+            proof_python=.venv/bin/python
+          fi
+          "$proof_python" -m pip install -r requirements.txt
+          "$proof_python" scripts/fetch_sources.py
+          export SOURCE_DATE_EPOCH="$(git log -1 --format=%ct)"
+          "$proof_python" scripts/build.py
+      - name: CoreText (Swift / CoreGraphics)
+        if: runner.os == 'macOS'
+        shell: bash
+        run: |
+          mkdir -p dist/native
+          sw_vers > dist/native/platform.txt
+          swiftc scripts/native/coretext.swift -o dist/native/coretext
+          .venv/bin/python scripts/native_proof.py --renderer dist/native/coretext
+      - name: DirectWrite (Windows SDK / Direct2D / WIC)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force dist/native | Out-Null
+          Get-ComputerInfo -Property WindowsProductName, WindowsVersion, OsBuildNumber | Out-File dist/native/platform.txt
+          $vswhere = "${env:ProgramFiles(x86)}/Microsoft Visual Studio/Installer/vswhere.exe"
+          $vs = & $vswhere -latest -products '*' -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath
+          if (-not $vs) { throw 'MSVC tools not found' }
+          $devcmd = Join-Path $vs 'Common7/Tools/VsDevCmd.bat'
+          cmd /c "`"$devcmd`" -arch=x64 && cl /nologo /std:c++17 /EHsc /W4 /utf-8 scripts/native/directwrite.cpp /Fe:dist/native/directwrite.exe /Fo:dist/native/directwrite.obj /link dwrite.lib d2d1.lib windowscodecs.lib ole32.lib"
+          if ($LASTEXITCODE -ne 0) { throw 'DirectWrite compiler failed' }
+          .venv/Scripts/python.exe scripts/native_proof.py --renderer dist/native/directwrite.exe
+          if ($LASTEXITCODE -ne 0) { throw 'DirectWrite proofs failed' }
+      - name: Preserve fonts, glyph IDs, advances and images (including partial failures)
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: DokushoUD-${{ matrix.engine }}
+          path: |
+            dist/native/
+            fonts/*.ttf
+            OFL.txt
+          if-no-files-found: error
+          retention-days: 7

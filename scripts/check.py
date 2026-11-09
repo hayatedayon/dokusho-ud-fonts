@@ -126,13 +126,13 @@ def check_font(family: dict, weight: str) -> None:
     cmap, cmap_ud, cmap_udp = font.getBestCmap(), ud.getBestCmap(), udp.getBestCmap()
     em = font["head"].unitsPerEm
 
-    # 文字の割り当ては BIZ UD のまま。足すのは、作った上付きの数字 ⁰ ⁵ ⁶ ⁷ ⁸ ⁹ などだけ。変えるのは、
+    # 文字の割り当ては BIZ UD のまま。作った数字・空白・記号と、新しい和文３字だけを加える。変えるのは、
     # ほかの文字と字を分け合っていた結合用の記号 (˜ U+02DC と同じ字の U+0303) だけ
     added = {code: cmap[code] for code in cmap.keys() - cmap_ud.keys()}
     remapped = {code for code in cmap_ud if cmap.get(code) != cmap_ud[code]}
     shared_marks = {code for code in combining_codes(cmap_ud)
                     if any(c != code and g == cmap_ud[code] for c, g in cmap_ud.items())}
-    check(remapped <= shared_marks and set(added) == set(NEW_SUPERSCRIPTS) | set(EXTRA_CODES) | {0x301E},
+    check(remapped <= shared_marks and set(added) == set(NEW_SUPERSCRIPTS) | set(EXTRA_CODES) | {0x301E, 0x20BB7, 0x3031, 0x3032},
           f"{label}: the character map differs from BIZ UD by more than the superscripts and subscripts")
     # BIZ UD のグリフの後に、欧文の中の記号 (BIZ UDP の字) だけが足してあること
     order, order_ud = font.getGlyphOrder(), ud.getGlyphOrder()
@@ -277,7 +277,7 @@ def check_font(family: dict, weight: str) -> None:
     check("DSIG" not in font, f"{label}: the signature of BIZ UD is still there")
     check(f"{font['head'].fontRevision:.3f}" == spec.VERSION, f"{label}: font revision")
     check(font["OS/2"].fsType == 0, f"{label}: embedding is restricted")
-    # BIZ UD の範囲ビットに、足した上付きと下付きの bit 32 だけを加える (BOM を足しただけで bit 67 などを名乗らない)
+    # BIZ UD の範囲に、追加した数字の bit 32 だけを加える。
     ranges = ("ulUnicodeRange1", "ulUnicodeRange2", "ulUnicodeRange3", "ulUnicodeRange4")
     check([getattr(font["OS/2"], a) for a in ranges]
           == [ud["OS/2"].ulUnicodeRange1, ud["OS/2"].ulUnicodeRange2 | 1, ud["OS/2"].ulUnicodeRange3, ud["OS/2"].ulUnicodeRange4],
@@ -288,6 +288,8 @@ def check_font(family: dict, weight: str) -> None:
     check_spacing(label, font)
     check_fractions(label, font, udp)
     check_extra(label, font)
+    check_line_metrics(label, font, ud)
+    check_japanese_additions(label, font, ud)
     check_proportional(label, font, udp)
     check_proportional_vertical(label, font, udp)
     check_tabular(label, font)
@@ -938,6 +940,98 @@ def check_extra(label: str, font: TTFont) -> None:
                   f"{label}: the vertical form of U+{code:04X} is not {count} vertical ― in a column")
 
 
+def check_line_metrics(label: str, font: TTFont, ud: TTFont) -> None:
+    check(font["hhea"].lineGap == font["OS/2"].sTypoLineGap == 1024,
+          f"{label}: hhea/typo line gaps are not 1024")
+    for table, attrs in (("hhea", ("ascent", "descent")),
+                         ("OS/2", ("sTypoAscender", "sTypoDescender", "usWinAscent", "usWinDescent", "fsSelection"))):
+        check(all(getattr(font[table], a) == getattr(ud[table], a) for a in attrs),
+              f"{label}: line metrics other than lineGap changed in {table}")
+    for ascent, descent in ((font["hhea"].ascent, font["hhea"].descent),
+                            (font["OS/2"].sTypoAscender, font["OS/2"].sTypoDescender)):
+        check(ascent - descent + 1024 == font["head"].unitsPerEm * 1.5,
+              f"{label}: normal line height is not 1.5 em")
+
+
+def check_japanese_additions(label: str, font: TTFont, ud: TTFont) -> None:
+    cmap, source, em = font.getBestCmap(), ud.getBestCmap(), font["head"].unitsPerEm
+    new = {cmap.get(c) for c in (0x20BB7, 0x3031, 0x3032)}
+    check(None not in new and len(new) == 3, f"{label}: new Japanese glyphs missing or aliased")
+    if None in new:
+        return
+    for table in font["cmap"].tables:
+        if not table.isUnicode() or table.format == 14:
+            continue
+        for code in (0x20BB7, 0x3031, 0x3032):
+            check(table.cmap.get(code) == (cmap[code] if code <= 0xFFFF or table.format in (12, 13) else None),
+                  f"{label}: U+{code:04X} inconsistent in cmap {table.platformID}/{table.platEncID}")
+    check(any(t.format == 12 and t.platformID == 3 and t.platEncID == 10 for t in font["cmap"].tables),
+          f"{label}: no Windows supplementary cmap")
+    # 生成側の関数は使わず、元フォントの輪郭と保存済みフォントを照合する。
+    def contours(f, name):
+        pts, ends, flags = outline(f, name)
+        starts = [0] + [e + 1 for e in ends[:-1]]
+        return [(pts[s:e + 1], flags[s:e + 1]) for s, e in zip(starts, ends)]
+    kichi = contours(ud, source[0x5409])
+    upper = max(kichi, key=lambda c: min(y for x, y in c[0]))
+    earth = max(contours(ud, source[0x572D]), key=lambda c: min(y for x, y in c[0]))
+    ours = contours(font, cmap[0x20BB7])
+    check(ours[:-1] == [c for c in kichi if c is not upper], f"{label}: 𠮷 changed 吉's mouth")
+    dx = ours[-1][0][0][0] - earth[0][0][0]
+    dy = ours[-1][0][0][1] - earth[0][0][1]
+    check(ours[-1] == ([(x + dx, y + dy) for x, y in earth[0]], earth[1]),
+          f"{label}: 𠮷's 土 is not a translated copy of 圭's upper part")
+    check(outline(font, cmap[0x20BB7]) != outline(ud, source[0x5409]), f"{label}: 𠮷 is still 吉")
+    check(font["vmtx"][cmap[0x20BB7]] == ud["vmtx"][source[0x5409]], f"{label}: 𠮷 vertical metrics differ from 吉")
+    for code in (0x20BB7, 0x3031, 0x3032):
+        name = cmap[code]
+        box = glyph_bounds(font, name)
+        check(box is not None and box[0] >= 0 and box[2] <= em
+              and box[1] >= -font["OS/2"].usWinDescent and box[3] <= font["OS/2"].usWinAscent,
+              f"{label}: U+{code:04X} is empty or outside its horizontal line frame: {box}")
+        check(font["hmtx"][name][0] == em, f"{label}: U+{code:04X} is not full width")
+        check(not font["glyf"][name].program.getBytecode(), f"{label}: generated Japanese glyph has unexpected hinting")
+        check(name not in gsub_alternates(font, "aalt"), f"{label}: new glyph has unintended aalt alternatives")
+    shaper = harfbuzz_shape.Shaper(FONTS / label)
+    for code, top_code in ((0x3031, 0x3033), (0x3032, 0x3034)):
+        name = cmap[code]
+        for tag, features in (("vert", ()), ("vrt2", ("vert=0", "vrt2"))):
+            vertical = gsub_mapping(font, tag).get(name)
+            check(vertical is not None, f"{label}: {tag} is missing for U+{code:04X}")
+            if vertical is None:
+                continue
+            box = glyph_bounds(font, vertical)
+            origin = font["glyf"][vertical].yMax + font["vmtx"][vertical][1]
+            check(font["hmtx"][vertical][0] == em and font["vmtx"][vertical][0] == 2 * em,
+                  f"{label}: repeat mark must occupy one horizontal / two vertical cells")
+            check(box and 0 <= box[0] < box[2] <= em and origin - 2 * em <= box[1] < box[3] <= origin,
+                  f"{label}: repeat mark exceeds its two-cell vertical frame")
+            top = outline(ud, source[top_code])[0]
+            lower = outline(ud, source[0x3035])[0]
+            offset = min(y for x, y in top) - max(y for x, y in lower)
+            expected = set(top) | {(x, y + offset) for x, y in lower}
+            check(set(outline(font, vertical)[0]) == expected,
+                  f"{label}: repeat mark does not retain the source halves' points")
+            check(len(outline(font, vertical)[1]) == len(outline(ud, source[top_code])[1]),
+                  f"{label}: repeat halves have an unjoined seam")
+            shaped = shaper.shape(chr(code), "ja", True, features)
+            check(len(shaped) == 1 and shaped[0][0] == font.getGlyphID(vertical) and shaped[0][3] == -2 * em,
+                  f"{label}: {tag} does not shape one two-cell repeat glyph")
+        check(outline(font, name) != outline(ud, source[top_code]), f"{label}: repeat mark is only its upper half")
+    check(outline(font, cmap[0x3031]) != outline(font, cmap[0x3032]), f"{label}: voiced repeat mark lacks dakuten")
+    for features in ((), ("vert=0", "vrt2")):
+        shaped = shaper.shape("𠮷", "ja", True, features)
+        check(len(shaped) == 1 and shaped[0][0] == font.getGlyphID(cmap[0x20BB7]) and shaped[0][3] == -em,
+              f"{label}: 𠮷 vertical shaping is not a full cell")
+    shaper.close()
+    renderer = freetype_render.Renderer(FONTS / label, 40, 0)
+    for code in (0x20BB7, 0x3031, 0x3032):
+        for ppem in (12, 14, 16):
+            rendered = renderer.render(font.getGlyphID(cmap[code]), ppem)
+            check(any(rendered[-1]), f"{label}: U+{code:04X} disappears at {ppem}px")
+    renderer.close()
+
+
 def semi_voiced_kana_ligatures(font: TTFont, udp: TTFont) -> list[tuple[str, str, str]]:
     """ccmp の仮名と半濁点・濁点の合字 (か゚・ㇷ゚ など) の、(文字列, 読書 UD の字, BIZ UDP の字)"""
     cmap, cmap_udp = font.getBestCmap(), udp.getBestCmap()
@@ -1262,11 +1356,12 @@ def check_overflow(label: str, font: TTFont, ud: TTFont, udp: TTFont) -> None:
     """行の上と下 (usWinAscent・usWinDescent。Windows はその外を描かない) からのはみ出しが、元の
     フォントより増えていないこと。BIZ UD の字は、同じ名前の BIZ UD か BIZ UDP の字 (欧字は BIZ UDP の
     字にした) より出ないこと。足した字は、出ないか、元のフォントのはみ出す字をそのまま写したもの。
-    縦組の ⸺ ⸻ (下へ 2 em・3 em 伸びる、縦の字送りの向きの字) は除く"""
+    縦組の ⸺ ⸻ と 〱 〲 (2 em・3 em の縦の字送りの向きに伸びる字) は専用枠で検査する"""
     order_ud = set(ud.getGlyphOrder())
     names_udp = set(udp.getGlyphOrder())
     cmap = font.getBestCmap()
-    vertical_dashes = {gsub_mapping(font, "vert").get(cmap.get(code)) for code in (0x2E3A, 0x2E3B)}
+    # ２セルのくの字点も専用の縦組枠で check_japanese_additions が上下を検査する。
+    vertical_dashes = {gsub_mapping(font, "vert").get(cmap.get(code)) for code in (0x2E3A, 0x2E3B, 0x3031, 0x3032)}
     copies = {}
     for source in (ud, udp):
         for name in source.getGlyphOrder():
@@ -1756,6 +1851,8 @@ def check_kern_shaping(label: str, font: TTFont, shaper, family: str, effective=
         if code in cmap and unicodedata.category(chr(code)).startswith("L"):
             base = unicodedata.normalize("NFD", chr(code))[0]
             variants.setdefault(base, set()).add(chr(code))
+    for char in ".,":
+        variants[char] = {char}
     if effective is None:
         effective = kerning_pairs(font)
     declared = {}
@@ -2270,10 +2367,61 @@ def check_license() -> None:
     check(spec.COPYRIGHT in lines, "OFL.txt: our copyright line is missing")
 
 
+def check_native_proof_tools() -> None:
+    """OS 非依存の資料・読み取り部分だけをダミーで検査する。ネイティブ描画の実施ではない。"""
+    import base64
+    import contextlib
+    import io
+    import json
+    import tempfile
+    import native_proof
+    from proof_page import png
+    with tempfile.TemporaryDirectory(prefix="dokusho-native-") as temporary:
+        root = Path(temporary)
+        fonts = native_proof.prepare(root)
+        manifest = json.loads((root / "manifest.json").read_text())
+        cases = (root / "cases.tsv").read_text(encoding="utf-8").splitlines()
+        check(len(cases) == len(native_proof.CASES), "native corpus lost cases")
+        symbols = next(c[-1] for c in native_proof.CASES if c[0] == "always-udp")
+        check(all(chr(c) in symbols for c in spec.ALWAYS_UDP), "native corpus omits ALWAYS_UDP symbols")
+        for path in fonts:
+            with TTFont(path) as font:
+                missing = {c for case in native_proof.CASES for c in case[-1] if ord(c) not in font.getBestCmap()}
+                check(not missing, f"native corpus needs fallback in {path.name}: {missing}")
+        for engine in ("coretext", "directwrite"):
+            for name, data in manifest["fonts"].items():
+                folder = root / engine / name
+                folder.mkdir(parents=True)
+                for case in native_proof.CASES:
+                    advance = data["pairWidths"].get(case[0], 24)
+                    record = {"engine": engine, "sample": case[0], "emSize": 24, "vertical": case[2],
+                              "runs": [{"font": name, "glyphs": [1], "advances": [advance]}]}
+                    (folder / (case[0] + ".json")).write_text(json.dumps(record))
+                    (folder / (case[0] + ".png")).write_bytes(base64.b64decode(png(16, 16, bytes(range(256))).split(",")[1]))
+            with contextlib.redirect_stdout(io.StringIO()):
+                native_proof.validate(root, engine)
+            native_proof.gallery(root, engine)
+            check((root / "index.html").exists(), "native gallery missing")
+            path = root / engine / next(iter(manifest["fonts"])) / "ja.json"
+            record = json.loads(path.read_text())
+            for bad in ({"font": "fallback.ttf", "glyphs": [1], "advances": [24]},
+                        {"font": next(iter(manifest["fonts"])), "glyphs": [0], "advances": [24]},
+                        {"font": next(iter(manifest["fonts"])), "glyphs": [1], "advances": []}):
+                path.write_text(json.dumps(record | {"runs": [bad]}))
+                try:
+                    native_proof.validate(root, engine)
+                except ValueError:
+                    pass
+                else:
+                    check(False, f"native validator accepts malformed run: {bad}")
+            path.write_text(json.dumps(record))
+
+
 def main() -> int:
     check_kern_lookup_precedence()
     check_outline_distance()
     check_license()
+    check_native_proof_tools()
     for family in spec.FAMILIES:
         for weight in spec.WEIGHTS:
             check_font(family, weight)

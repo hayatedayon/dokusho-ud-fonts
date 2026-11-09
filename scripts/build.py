@@ -462,9 +462,12 @@ def build(family: dict, weight: str) -> Path:
     ud["post"].isFixedPitch = 0
     ud["OS/2"].achVendID = "NONE"
     ud["OS/2"].recalcAvgCharWidth(ud)
-    # 上付きと下付きを足したので、bit 32 (Superscripts And Subscripts) だけを立てる。全部を計算し直すと、
+    # 上付きと下付きの bit 32 (Superscripts And Subscripts) を立てる。全部を計算し直すと、
     # BOM (U+FEFF) を足しただけで bit 67 (アラビア文字表示形 B) まで立ち、対応していない範囲を名乗ってしまう
     ud["OS/2"].ulUnicodeRange2 |= 1
+    # ascent/descent・Windows のクリップ枠・USE_TYPO_METRICS は元のまま。
+    # 2048/em の 1 em 本体 + 0.5 em の行間で normal の行送りを 1.5 em にする。
+    ud["hhea"].lineGap = ud["OS/2"].sTypoLineGap = 1024
     ud["head"].fontRevision = float(spec.VERSION)
     # 元の署名は、変えたフォントでは合わない
     if "DSIG" in ud:
@@ -490,7 +493,7 @@ def build(family: dict, weight: str) -> Path:
           f"{symbols['symbols']} symbols in Latin text ({symbols['vertical']} vertical forms, "
           f"vert only for {symbols['shared']}); "
           f"hinting of BIZ UDP on {hinted['hinted']} glyphs (cvt +{hinted['cvt']}); "
-          f"{extra['invisible']} invisible, {extra['spaces']} spaces and {extra['dashes']} dashes added; "
+          f"{extra['invisible']} invisible, {extra['spaces']} spaces, {extra['dashes']} dashes and {extra['japanese']} Japanese characters added; "
           f"tnum {tabular['tabular']} glyph; colon between digits raised by {colon['raise']}; {marks['marks']} combining marks on {marks['bases']} bases; "
           f"halt {spaced['halt']}, vhal {spaced['vhal']}, palt {spaced['palt']}, vpal {spaced['vpal']} glyphs; "
           f"{small_hints} small digits hinted, {len(ruby)} trial ruby glyphs; kern, pnum and ss01–ss03")
