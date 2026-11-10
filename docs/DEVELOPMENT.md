@@ -34,7 +34,7 @@ CI も見本を生成し、比較に必要なフォントと一緒に `DokushoUD
 
 ## GitHub Pages
 
-リリースの公開時と手動実行のとき、`.github/workflows/pages.yml` が最新のリリースのフォントから文章の見本と版の比較を作り、公開します。ページをまとめる処理は `scripts/pages_site.py` です。
+`.github/workflows/pages.yml` は最新のリリースのフォントから文章の見本と版の比較を作り、公開します。リリースを公開すると `release.yml` が最後にこのワークフローを起動し、手動でも実行できます。版の比較に載せる版は `scripts/versions_page.py` の `VERSIONS` に書きます。ページをまとめる処理は `scripts/pages_site.py` です。
 
 ## 追加字・行送り・実環境の比較
 

@@ -1,6 +1,7 @@
 name: Pages
 
-# リリースの公開時と手動実行のときだけ、公開済みのフォントから GitHub Pages を作り直す
+# リリースの公開時と手動実行のときだけ、公開済みのフォントから GitHub Pages を作り直す。
+# release.yml が作ったリリースでは release イベントが起きないので、release.yml が最後に手動実行として起動する
 on:
   release:
     types: [published]
