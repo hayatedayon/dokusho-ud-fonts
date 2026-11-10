@@ -55,8 +55,10 @@ ChangeLog
   Windows Server 2025. With both engines, ALWAYS_UDP takes BIZ UDP's widths
   in horizontal text by default, and locl=0 changes nothing, so it does not
   reproduce an environment without locl. In DirectWrite's vertical text,
-  “ ” are set sideways at half width rather than as 〝 〟. Word, InDesign,
-  e-readers, PDF and print remain unchecked (docs/PROOFING.md).
+  “ ” are set sideways at half width rather than as 〝 〟. Chrome on Windows
+  and a PDF saved from it also passed: line-height: normal is 1.5 em, the
+  widths and kerning are as declared, and 𠮷 is embedded and searchable.
+  Word, InDesign, e-readers and print remain unchecked (docs/PROOFING.md).
 
 2026-11-09 (hayatedayon) Dokusho UD 1.007
 - The double prime quotation mark 〞 (U+301E) is now 〝 mirrored about the
