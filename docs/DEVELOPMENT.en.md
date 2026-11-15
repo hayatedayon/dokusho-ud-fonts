@@ -39,10 +39,11 @@ Releases cannot be changed afterwards (GitHub immutable releases): the files and
 ```sh
 .venv/bin/python scripts/specimen_page.py
 .venv/bin/python scripts/proof_page.py
+.venv/bin/python scripts/ruby_proof.py
 python3 -m http.server 8000
 ```
 
-Open `http://localhost:8000/dist/specimen.html` for feature controls, `dist/proof.html` for a fixed 32-em line measure and 1.75 line spacing, or `dist/small-type.html` for actual-size and enlarged FreeType raster comparisons. The fixed proof offers 12/14/16px and 9–12pt, horizontal/vertical text and comparisons with BIZ UD/UDP. Print at 100%; vertical proofs use A4 landscape.
+Open `http://localhost:8000/dist/specimen.html` for feature controls, `dist/proof.html` for a fixed 32-em line measure and 1.75 line spacing, or `dist/small-type.html` for actual-size and enlarged FreeType raster comparisons of the small digits. `dist/ruby-trial.html` (from `scripts/ruby_proof.py`, about 40 seconds; see [docs/RUBY.md](RUBY.md), Japanese) lays out the ruby kana trial (`ss03`) as normal with hinting, normal without hinting and trial without hinting at 6–10 ppem, with and without honoring gasp, and with several emboldening amounts. The fixed proof offers 12/14/16px and 9–12pt, horizontal/vertical text and comparisons with BIZ UD/UDP. Print at 100%; vertical proofs use A4 landscape.
 
 `.venv/bin/python scripts/versions_page.py` builds `dist/versions.html`, which compares each published version with the same text (it opens directly as a file; the fonts of each version are fetched from the releases). The README images are made in `docs/images/` by `scripts/readme_images.py`.
 
