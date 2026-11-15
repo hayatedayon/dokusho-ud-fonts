@@ -115,6 +115,46 @@ def check_ruby(ctx: FontContext) -> None:
                 check(vertical.get(trial[source]) == trial[upright], f"{label}: trial ruby lacks {tag} of {source}")
 
 
+# 試作字形が持つ命令。原字のヒントは、点の番号を指す y 方向の命令だけ (cvt・関数・IF を使わない)
+RUBY_HINT_OPS = {"NPUSHB", "NPUSHW", "PUSHB", "PUSHW", "SVTCA", "MDAP", "SRP1", "SRP2", "IP", "SHP", "IUP"}
+
+
+def check_ruby_hint_programs(ctx: FontContext) -> None:
+    """ss03 の試作字形 (横組・縦組の 28 グリフ) すべてが、原字 (BIZ UD) と同じ命令を持つこと。
+
+    命令は点の番号だけを指すので、原字と輪郭の構成 (輪郭の数・終点・点の数と順序・on/off) が同じで、
+    点が原字の点を拡大・補強・平行移動した位置にあることを確かめる。ヒントを付けない字を作らないよう、
+    持たない字があれば失敗にする。
+    """
+    label = ctx.label
+    font = ctx.font
+    ud = ctx.ud
+    glyf, ud_glyf = font["glyf"], ud["glyf"]
+    trial = gsub_mapping(font, "ss03")
+    check(len(trial) == 28, f"{label}: expected 28 trial ruby glyphs, found {len(trial)}")
+    strength = small_type.trial_strength(font)
+    scales = small_type.trial_sources(font)
+    for source, target in trial.items():
+        gid = font.getGlyphID(source)
+        original, shipped, plain = glyf[source], glyf[target], ud_glyf[ud.getGlyphOrder()[gid]]
+        bytecode = shipped.program.getBytecode()
+        check(len(bytecode) > 0, f"{label}: trial ruby {target} (of {source}) has no hinting")
+        check(bytecode == plain.program.getBytecode() == original.program.getBytecode(),
+              f"{label}: trial ruby {target} does not have the instructions of {source} in BIZ UD")
+        ops = {line.split("[")[0].split()[0] for line in shipped.program.getAssembly() if not line[0].isdigit() and line[0] != "-"}
+        check(ops <= RUBY_HINT_OPS and "SVTCA" in ops, f"{label}: trial ruby {target} uses unexpected instructions {sorted(ops - RUBY_HINT_OPS)}")
+        check(shipped.numberOfContours == original.numberOfContours and list(shipped.endPtsOfContours) == list(original.endPtsOfContours)
+              and [f & 1 for f in shipped.flags] == [f & 1 for f in original.flags],
+              f"{label}: trial ruby {target} has a different contour structure from {source}")
+        # 点ごとの対応: 重心を引いた座標が、原字の座標 × 拡大率に、補強の分だけ近いこと
+        scale = scales[source]
+        o, t = original.coordinates, shipped.coordinates
+        mo = [sum(c[i] for c in o) / len(o) for i in (0, 1)]
+        mt = [sum(c[i] for c in t) / len(t) for i in (0, 1)]
+        worst = max(max(abs((t[k][i] - mt[i]) - scale * (o[k][i] - mo[i])) for i in (0, 1)) for k in range(len(o)))
+        check(worst <= 1.5 * strength + 2, f"{label}: trial ruby {target} points do not follow {source} ({worst:.1f} units)")
+
+
 def check_ruby_combinations(ctx: FontContext) -> None:
     """ss03 が、仮名の濁音・半濁点の分解形、結合濁点・半濁点、か゚ などの合字と組み合わさっても動きが変わらないこと。
 

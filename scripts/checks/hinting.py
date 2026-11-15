@@ -136,3 +136,45 @@ def check_generated_mark_hints(ctx: FontContext) -> None:
                     check(abs(min(ys) - min(reference_ys)) <= 64 and abs(max(ys) - max(reference_ys)) <= 64,
                           f"{label}: {name} is more than 1 px off {reference} at {ppem} ppem ({mode})")
         renderer.close()
+
+
+def check_ruby_hint_rendering(ctx: FontContext) -> None:
+    """ss03 の試作字形のヒントが、FreeType の全描画モードで効いていて、形を崩さないこと。
+
+    6・7 ppem は prep が命令を止めるので、グレースケールではヒントなしと同じ画素。8–24 ppem は、点が縦にだけ 1 px 以内で動き
+    (横は動かない)、消えず、濃さがヒントなしから大きく変わらず、横線の端が画素の境目にそろう (通常の仮名と同じくらい)。
+    """
+    label = ctx.label
+    font = ctx.font
+    trial = gsub_mapping(font, "ss03")
+    pairs = [(font.getGlyphID(source), font.getGlyphID(target)) for source, target in trial.items()]
+    for mode, interpreter, flags in freetype_render.MODES:
+        hinted = freetype_render.Renderer(ctx.path, interpreter, flags)
+        plain = freetype_render.Renderer(ctx.path, interpreter, flags | freetype_render.NO_HINTING)
+        for ppem in range(6, 25):
+            aligned = {"source": 0, "trial": 0, "plain": 0}
+            ink = [0, 0]
+            for source, target in pairs:
+                shown, unhinted = hinted.render(target, ppem), plain.render(target, ppem)
+                if ppem < 8:
+                    # モノクロでは、命令の無い字も NO_HINTING と同じにならない (通常の仮名も同じ) ので比べない
+                    check(flags or shown == unhinted, f"{label}: {mode}: trial ruby {target} is hinted at {ppem} ppem")
+                    continue
+                check(any(shown[5]), f"{label}: {mode}: trial ruby {target} vanishes at {ppem} ppem")
+                fitted, original = hinted.outline(target, ppem), plain.outline(target, ppem)
+                check(all(a[0] == b[0] and abs(a[1] - b[1]) <= 64 for a, b in zip(fitted, original)),
+                      f"{label}: {mode}: trial ruby {target} is distorted at {ppem} ppem")
+                for key, renderer, index in (("source", hinted, source), ("trial", hinted, target), ("plain", plain, target)):
+                    ys = [y for _x, y in renderer.outline(index, ppem)]
+                    aligned[key] += sum(1 for y in set(ys) if ys.count(y) >= 3 and y % 64 == 0)
+                if not flags:
+                    ratio = sum(shown[5]) / max(1, sum(unhinted[5]))
+                    check(0.75 <= ratio <= 1.4, f"{label}: {mode}: trial ruby {target} changes its ink by {ratio:.2f} at {ppem} ppem")
+                ink[0] += sum(shown[5]) if not flags else sum(bin(b).count("1") for b in shown[5])
+                ink[1] += sum(unhinted[5]) if not flags else sum(bin(b).count("1") for b in unhinted[5])
+            if ppem >= 8:
+                check(0.9 <= ink[0] / ink[1] <= 1.1, f"{label}: {mode}: hinting changes the ink of the trial ruby by {ink[0] / ink[1]:.2f} at {ppem} ppem")
+                check(aligned["trial"] >= 0.8 * aligned["source"] and aligned["trial"] >= 5 * max(1, aligned["plain"]),
+                      f"{label}: {mode}: trial ruby lines are not on pixel boundaries at {ppem} ppem {aligned}")
+        hinted.close()
+        plain.close()

@@ -71,6 +71,8 @@ STEPS = [
     styles.check_style_quotes,
     styles.check_style_labels,
     smalltype.check_ruby,
+    smalltype.check_ruby_hint_programs,
+    hinting.check_ruby_hint_rendering,
     smalltype.check_ruby_combinations,
     smalltype.check_small_digits,
     woff2.check_woff2,
