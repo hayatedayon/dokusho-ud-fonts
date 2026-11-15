@@ -88,6 +88,12 @@ jobs:
           .venv/bin/python scripts/proof_page.py
           .venv/bin/python scripts/additions_proof.py
 
+      # 数十秒かかるので、上の補助ページとは別のステップにする (失敗や時間切れで、ほかの見本の保存を止めない)。
+      - name: Generate ruby trial proof
+        continue-on-error: true
+        timeout-minutes: 3
+        run: .venv/bin/python scripts/ruby_proof.py
+
       # 展開後、ルートで http.server を起動して dist/proof.html を開く。
       # 比較に使う元フォントも含むため、OFL の全文を同梱する。
       - name: Upload reading proofs

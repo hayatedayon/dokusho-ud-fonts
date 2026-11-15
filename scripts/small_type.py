@@ -102,32 +102,54 @@ def hint_marks(font, names) -> int:
     return count
 
 
-def ruby_trial(font) -> dict[str, str]:
-    import build
+def trial_glyph(font, source: str, scale: float, ex: float, ey: float):
+    """試作ルビ仮名の輪郭。原字を scale 倍し、横に ex・縦に ey だけ太らせ、インクの中心を原字に合わせる。
+
+    ruby_trial が配るフォントのために使い、見本 (scripts/ruby_proof.py) も補強量を変えて同じ処理を使う。
+    """
     from spacing import ink
 
-    cmap, gsub = font.getBestCmap(), font["GSUB"].table
-    mapping = {}
     em = font["head"].unitsPerEm
-    strength = round(em * (0.002 if font["OS/2"].usWeightClass >= 700 else 0.004))
+    outline = fraction_digits.transform(fraction_digits.contours(font, source), scale, scale)
+    outline = fraction_digits.embolden(outline, ex, ey)
+    a, b = ink(font, source), fraction_digits.bounds(outline)
+    dx, dy = (a[0] + a[2] - b[0] - b[2]) / 2, (a[1] + a[3] - b[1] - b[3]) / 2
+    # 右上に寄った縦組小書き仮名は、拡大した輪郭が枠から出る場合だけ内側へ戻す。
+    low, high = -font["OS/2"].usWinDescent, font["OS/2"].usWinAscent
+    dx = max(-b[0], min(dx, em - b[2]))
+    dy = max(low - b[1], min(dy, high - b[3]))
+    return fraction_digits.make_glyph(fraction_digits.transform(outline, 1, 1, dx, dy))
+
+
+def trial_strength(font) -> int:
+    """試作ルビ仮名の補強量 (フォント単位)。Regular は em の 0.4%、Bold は 0.2%。"""
+    return round(font["head"].unitsPerEm * (0.002 if font["OS/2"].usWeightClass >= 700 else 0.004))
+
+
+def trial_sources(font) -> dict[str, float]:
+    """試作字形の元になる字 (横組と縦組の字形) と、その拡大率。小書き仮名だけ拡大する。"""
+    import build
+
+    cmap, gsub = font.getBestCmap(), font["GSUB"].table
+    sources = {}
     for char in RUBY_KANA:
         base = cmap[ord(char)]
         forms = {base}
         for tag in ("vert", "vrt2"):
             forms.update(build.single_mapping(gsub, tag, {base}).values())
-        scale = 1.12 if char in SMALL_KANA else 1.0
         for source in sorted(forms):
-            if source in mapping:
-                continue
-            outline = fraction_digits.transform(fraction_digits.contours(font, source), scale, scale)
-            outline = fraction_digits.embolden(outline, strength, strength)
-            a, b = ink(font, source), fraction_digits.bounds(outline)
-            dx, dy = (a[0] + a[2] - b[0] - b[2]) / 2, (a[1] + a[3] - b[1] - b[3]) / 2
-            # 右上に寄った縦組小書き仮名は、拡大した輪郭が枠から出る場合だけ内側へ戻す。
-            low, high = -font["OS/2"].usWinDescent, font["OS/2"].usWinAscent
-            dx = max(-b[0], min(dx, em - b[2]))
-            dy = max(low - b[1], min(dy, high - b[3]))
-            glyph = fraction_digits.make_glyph(fraction_digits.transform(outline, 1, 1, dx, dy))
+            sources.setdefault(source, 1.12 if char in SMALL_KANA else 1.0)
+    return sources
+
+
+def ruby_trial(font) -> dict[str, str]:
+    import build
+
+    gsub = font["GSUB"].table
+    mapping = {}
+    strength = trial_strength(font)
+    for source, scale in trial_sources(font).items():
+            glyph = trial_glyph(font, source, scale, strength, strength)
             name = source + ".rubytrial"
             fraction_digits._add_glyph(font, name, glyph, font["hmtx"][source][0], font["vmtx"][source])
             # 輪郭の yMax を変えた分だけ上サイドベアリングを補正し、縦組の原点も保つ。

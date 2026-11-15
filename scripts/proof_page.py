@@ -13,7 +13,6 @@ import html
 import json
 import struct
 import sys
-import unicodedata
 import zlib
 from pathlib import Path
 
@@ -21,7 +20,6 @@ from fontTools.ttLib import TTFont
 
 import freetype_render
 import harfbuzz_shape
-import small_type
 import spec
 from specimen_page import FEATURE_SETTINGS, font_faces, fonts
 
@@ -135,9 +133,8 @@ def raster(shaper, renderer, text: str, ppem: int, em: int, features=()) -> tupl
     return width, height, bytes(canvas)
 
 
-def raster_figure(shaper, renderer, text: str, ppem: int, em: int, features=(), *, figure_id: str, caption: str = "") -> str:
-    """PNG を一度だけ埋め込み、SVG の参照で実寸と４倍を並べる。figure_id はページ内で一意。"""
-    width, height, data = raster(shaper, renderer, text, ppem, em, features)
+def figure_html(width: int, height: int, data: bytes, text: str, ppem: int, *, figure_id: str, caption: str = "") -> str:
+    """ラスタ (raster の結果) を PNG にして一度だけ埋め込み、SVG の参照で実寸と４倍を並べる。"""
     uri = png(width, height, data)
     alt = html.escape(f"{text} {ppem}px 実寸", quote=True)
     image_id = html.escape(figure_id, quote=True)
@@ -152,10 +149,14 @@ def raster_figure(shaper, renderer, text: str, ppem: int, em: int, features=(), 
             '</svg></figure>')
 
 
+def raster_figure(shaper, renderer, text: str, ppem: int, em: int, features=(), *, figure_id: str, caption: str = "") -> str:
+    """PNG を一度だけ埋め込み、SVG の参照で実寸と４倍を並べる。figure_id はページ内で一意。"""
+    width, height, data = raster(shaper, renderer, text, ppem, em, features)
+    return figure_html(width, height, data, text, ppem, figure_id=figure_id, caption=caption)
+
+
 def small_page() -> str:
     rows = []
-    ruby_samples = ["".join(char for char in small_type.RUBY_KANA if unicodedata.name(char).startswith(script))
-                    for script in ("HIRAGANA", "KATAKANA")]
     for family in spec.FAMILIES:
         for weight in spec.WEIGHTS:
             path = ROOT / "fonts" / spec.output_name(family, weight)
@@ -180,17 +181,6 @@ def small_page() -> str:
                         rows.append(f"<p>{ppem} ppem・{html.escape(text)} {' '.join(features)}</p><div class=pair>{''.join(cells)}</div>")
                 hinted.close()
                 plain.close()
-            renderer = freetype_render.Renderer(path, 40, 0)
-            rows.append("<h3>ルビ仮名（通常と ss03 の試作）</h3>")
-            for ppem in (6, 7, 8, 10):
-                for text in ruby_samples:
-                    cells = []
-                    for features in ((), ("ss03",)):
-                        cells.append(raster_figure(shaper, renderer, text, ppem, em, features,
-                                                       figure_id=f"raster-{len(rows)}-{len(cells)}",
-                                                       caption="通常（元のヒント）" if not features else "試作（ヒントなし）"))
-                    rows.append(f"<p>{ppem} ppem・{html.escape(text)}</p><div class=pair>{''.join(cells)}</div>")
-            renderer.close()
             shaper.close()
             font.close()
     return """<!doctype html><html lang=ja><meta charset=utf-8><meta name=viewport content="width=device-width,initial-scale=1">
@@ -200,8 +190,8 @@ h2{margin-top:3rem}code{overflow-wrap:anywhere}.pair{display:flex;gap:1rem;flex-
 figure{margin:0;background:white;padding:8px;overflow:auto;max-width:100%}
 figcaption{font-size:12px;color:#666;margin-bottom:6px}
 svg{display:block}
-</style><h1>小さい数字とルビ仮名</h1><p>__VERSION__。各画像は上が実寸、下が同じ画素の4倍表示です。１画像ピクセルを１画面ピクセルに対応させるにはDPR 1・ズーム100%で見てください。高DPI画面ではCSSピクセルに拡大されます。
-数字は描画時のヒント有無を比較します。分子（numr）・分母（dnom）・下付き（subs）と18ppemの例も並べています。上付き¹²³⁴は元のヒントを保っています。ルビの通常字にはヒントがありますが、試作字形にはありません。ルビの比較には字形とヒント有無の両方の差が含まれます。見た目の好ましさや読みやすさは実寸で判断してください。
+</style><h1>小さい数字</h1><p>__VERSION__。各画像は上が実寸、下が同じ画素の4倍表示です。１画像ピクセルを１画面ピクセルに対応させるにはDPR 1・ズーム100%で見てください。高DPI画面ではCSSピクセルに拡大されます。
+数字は描画時のヒント有無を比較します。分子（numr）・分母（dnom）・下付き（subs）と18ppemの例も並べています。上付き¹²³⁴は元のヒントを保っています。ルビ仮名の試作（ss03）の比較は、ヒントの有無と gasp、補強量をそろえて <a href=ruby-trial.html>ruby-trial.html</a> にあります。見た目の好ましさや読みやすさは実寸で判断してください。
 FreeType の結果であり、Windows・macOS の実機描画とは別です。<a href=proof.html>固定版面</a> ／ <a href=specimen.html>文章の見本</a></p>""".replace("__VERSION__", spec.VERSION) + "\n".join(rows) + "</html>"
 
 

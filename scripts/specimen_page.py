@@ -251,7 +251,7 @@ body.paper-dark { --paper: #1c1c1e; --ink: #d8d6d0; }
 <span id="status" class="status"></span>
 </header>
 <p class="note">両端揃えは、行の長さをそろえるために字の間を広げます。列が狭く、行の中に欧文が多いと、広げる所が少なくて空きが目立ちます。約物の詰めは CSS の <code>text-spacing-trim</code>（Chromium は既定で詰めます。切ると <code>space-all</code>）、和欧間のアキは <code>text-autospace</code>（Chromium 140 から）です。ブラウザが対応していなければ、切り替えても変わりません。BIZ UD・BIZ UDP は、比べるための元のフォントです。</p>
-<p class="note"><a href="proof.html">固定版面・印刷用の見本</a> ／ <a href="small-type.html">小さい数字とルビのラスタ比較</a></p>
+<p class="note"><a href="proof.html">固定版面・印刷用の見本</a> ／ <a href="small-type.html">小さい数字のラスタ比較</a> ／ <a href="ruby-trial.html">ルビ仮名の試作の比較</a></p>
 <div id="grid"></div>
 <template id="content">__CONTENT__</template>
 <script>

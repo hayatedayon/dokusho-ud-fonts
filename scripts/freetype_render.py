@@ -57,6 +57,24 @@ _LOAD_RENDER = 1 << 2
 NO_HINTING = 1 << 1  # ヒンティングを動かさずに描く (Renderer の flags に足す)
 _LOAD_TARGET_MONO = 2 << 16
 
+# gasp の flags (OpenType の gasp 表)。GRIDFIT はグリッドに合わせる、SYMMETRIC_GRIDFIT は ClearType でグリッドに合わせる
+GASP_GRIDFIT = 0x1
+GASP_SYMMETRIC_GRIDFIT = 0x4
+
+
+def gasp_gridfit(path, ppem: int) -> bool:
+    """gasp 表を守る環境が、その ppem でグリッドに合わせる (ヒンティングを動かす) か。gasp が無ければ合わせる。"""
+    from fontTools.ttLib import TTFont
+
+    with TTFont(path, lazy=True) as font:
+        if "gasp" not in font:
+            return True
+        ranges = sorted(font["gasp"].gaspRange.items())
+    for max_ppem, flags in ranges:
+        if ppem <= max_ppem:
+            return bool(flags & (GASP_GRIDFIT | GASP_SYMMETRIC_GRIDFIT))
+    return True
+
 # (名前, TrueType の命令の解釈の版, 読み込みの指定)。v35 は昔の Windows に近く、ヒンティングが縦にも
 # 横にも効く。v40 は今の FreeType の既定で、主に縦に効く
 MODES = [("v35 gray", 35, 0), ("v35 mono", 35, _LOAD_TARGET_MONO), ("v40 gray", 40, 0)]
@@ -74,9 +92,13 @@ _ft = _load_library()
 
 
 class Renderer:
-    """1 つのフォントを、1 つの描き方で描く"""
+    """1 つのフォントを、1 つの描き方で描く
 
-    def __init__(self, path: str, interpreter: int, flags: int):
+    respect_gasp を True にすると、フォントの gasp 表がグリッドに合わせないとする ppem では、flags に
+    かかわらずヒンティングを動かさない (gasp を守る環境の再現)。既定は False で、gasp を見ない。
+    """
+
+    def __init__(self, path: str, interpreter: int, flags: int, respect_gasp: bool = False):
         self.library = c_void_p()
         if _ft.FT_Init_FreeType(byref(self.library)):
             raise SystemExit("FT_Init_FreeType failed")
@@ -88,6 +110,9 @@ class Renderer:
             raise SystemExit(f"FreeType cannot open {path}")
         self.flags = flags | _LOAD_RENDER
         self.ppem = None
+        self.respect_gasp = respect_gasp
+        self.path = path
+        self._gridfit: dict[int, bool] = {}
 
     def char_index(self, code: int) -> int:
         return _ft.FT_Get_Char_Index(self.face, c_long(code))
@@ -98,6 +123,11 @@ class Renderer:
                 raise SystemExit(f"FT_Set_Pixel_Sizes {ppem} failed")
             self.ppem = ppem
         flags = self.flags if render else self.flags & ~_LOAD_RENDER
+        if self.respect_gasp:
+            if ppem not in self._gridfit:
+                self._gridfit[ppem] = gasp_gridfit(self.path, ppem)
+            if not self._gridfit[ppem]:
+                flags |= NO_HINTING
         error = _ft.FT_Load_Glyph(self.face, glyph_index, c_int(flags))
         if error:
             raise SystemExit(f"FreeType could not load glyph {glyph_index} at {ppem} ppem (error {error})")
