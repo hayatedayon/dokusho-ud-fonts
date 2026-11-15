@@ -52,7 +52,35 @@ ChangeLog
   feature are unchanged (six glyphs, two GSUB lookups, one GPOS lookup, the
   curs feature, maxp, hmtx, vmtx, loca/glyf and vhea are added or updated).
   Without vert, WebKitGTK still shows ⸺ ⸻ as horizontal lines in vertical
-  text, as in 1.008 (not checked: Chrome, Word).
+  text, as in 1.008. Also checked in Chrome 150 on Windows (the advances
+  are 2, 2, 2 and 3 em, the ink does not move, selection and copy give the
+  original characters); not checked: Word, WebView2.
+- The trial ruby glyphs of ss03 (20 kana, 28 glyphs per font with the
+  vertical forms) now carry the hinting instructions of their original kana
+  in BIZ UD; 1.007 and 1.008 gave them none. The instructions only use point
+  numbers (SVTCA[0], MDAP, SRP1, SRP2, IP, SHP, IUP), no cvt entry and no
+  function, and the trial outlines have the same contours, points and
+  on/off flags as the originals, so the instructions are copied unchanged
+  (unlike the BIZ UDP hinting of 1.004, no cvt offset was needed). Outlines,
+  advances, palt/vpal, vert/vrt2 and every other glyph and table are
+  unchanged (only glyf, loca and the checksum of head differ from the build
+  without this change; maxp is the same). What changes is the rendering of
+  ss03 glyphs by renderers that run TrueType instructions, from 8 ppem up
+  (text of 16 px and larger for a ruby of half the size). Below 8 ppem the
+  prep switches instructions off, so 6 and 7 ppem (12 and 14 px text) are
+  pixel for pixel as before. Measured with FreeType (4 fonts, the 20 kana, 8
+  to 10 ppem): the difference in density between the hinted normal kana and
+  the trial kana, which was 380, 440 and 600 pixel units (unhinted trial)
+  against 159, 216 and 272 for emboldening alone, is now 235, 267 and 354.
+  The ink of the trial glyphs does not change with hinting (ratio 1.00 at 8
+  and 10 ppem, 0.99 at 9 ppem) and the ends of horizontal strokes fall on
+  pixel boundaries as often as in the normal kana (0.36 to 0.38 against 0.35
+  to 0.37; 0.02 unhinted). Points move vertically only, by less than 1 px.
+  Three glyphs (ッ in horizontal and vertical text, メ) gain no sharper edges
+  from the hinting (checked, they keep their shape). Hinted ss03 was
+  looked at with FreeType and in Chrome 150 on Windows (8 to 10 px: no
+  collapsed or displaced strokes); not checked with macOS rendering or
+  Word.
 
 2026-11-10 (hayatedayon) Dokusho UD 1.008
 - Extended conservative Latin kerning to periods and commas after T, V, W,

@@ -41,7 +41,7 @@ python3 -m venv .venv
 python3 -m http.server 8000
 ```
 
-`http://localhost:8000/dist/specimen.html` は機能を切り替える見本、`dist/proof.html` は１行32字分・行送り1.75の固定版面です。画面用12・14・16px、印刷用9〜12pt、縦横組、元の BIZ UD・BIZ UDP を比較できます。印刷・PDF保存は倍率100%で使います（縦組はA4横向き）。`dist/small-type.html` は数字のヒント有無を、FreeType の実寸・拡大画像で並べます。`scripts/ruby_proof.py` が作る `dist/ruby-trial.html` は、ルビ仮名の試作（`ss03`）を、通常・ヒントあり、通常・ヒントなし、試作・ヒントなしの3つで6〜10ppem に並べ、gasp を守る・守らない環境と補強量の組も比べます（約40秒。見方は [docs/RUBY.md](RUBY.md)）。
+`http://localhost:8000/dist/specimen.html` は機能を切り替える見本、`dist/proof.html` は１行32字分・行送り1.75の固定版面です。画面用12・14・16px、印刷用9〜12pt、縦横組、元の BIZ UD・BIZ UDP を比較できます。印刷・PDF保存は倍率100%で使います（縦組はA4横向き）。`dist/small-type.html` は数字のヒント有無を、FreeType の実寸・拡大画像で並べます。`scripts/ruby_proof.py` が作る `dist/ruby-trial.html` は、ルビ仮名の試作（`ss03`）を、通常・ヒントあり、通常・ヒントなし、試作・ヒントなし、試作・ヒントありの4つで6〜10ppem に並べ、gasp を守る・守らない環境と補強量の組も比べます（約40秒。見方は [docs/RUBY.md](RUBY.md)）。
 
 `.venv/bin/python scripts/versions_page.py` は、公開した各版を同じ文で見比べる `dist/versions.html` を作ります（ファイルを直接開けます。各版のフォントはリリースから取得します）。README の画像は `scripts/readme_images.py` で `docs/images/` に作ります。
 
