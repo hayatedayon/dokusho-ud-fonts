@@ -2,7 +2,7 @@
 
 ルビ仮名は全角の枠を保ち、原字のインクの中心を基準に細い線をわずかに補強する。小書き仮名だけは
 12% 大きくする。全面的なルビ書体ではなく、20 字を比較するための試作。通常の ruby と
-本文の字形は変えない。横組・縦組の字形を別々に作り、原字と同じ送りを使う。
+本文の字形は変えない。横組・縦組の字形を別々に作り、原字と同じ送りを使う。ヒントは原字の命令をそのまま付ける。
 """
 
 from fontTools.ttLib.tables.ttProgram import Program
@@ -142,6 +142,28 @@ def trial_sources(font) -> dict[str, float]:
     return sources
 
 
+def hint_trial(font, source: str, name: str) -> bool:
+    """試作字形 name に、原字 source の命令をそのまま付ける。付けたら True。
+
+    原字の命令は y 方向だけで、点の番号を指す MDAP・SHP・IP・SRP・IUP だけでできており、cvt も関数も使わない
+    (docs/RUBY.md)。試作字形は原字の輪郭を拡大・補強・平行移動したもので、輪郭の数・終点・点の数と順序・
+    on/off が同じなので、同じ命令が点に当たる。構成が違う字には付けない (ヒントなしのまま)。
+    """
+    glyf = font["glyf"]
+    original, trial = glyf[source], glyf[name]
+    if (original.isComposite() or original.numberOfContours != trial.numberOfContours
+            or list(original.endPtsOfContours) != list(trial.endPtsOfContours)
+            or [f & 1 for f in original.flags] != [f & 1 for f in trial.flags]):
+        return False
+    bytecode = original.program.getBytecode()
+    if not bytecode:
+        return False
+    program = Program()
+    program.fromBytecode(bytecode)
+    trial.program = program
+    return True
+
+
 def ruby_trial(font) -> dict[str, str]:
     import build
 
@@ -158,6 +180,7 @@ def ruby_trial(font) -> dict[str, str]:
             advance, side = font["vmtx"][source]
             font["vmtx"][name] = (advance, side + original.yMax - glyph.yMax)
             mapping[source] = name
+            hint_trial(font, source, name)
     fraction_digits._new_feature(gsub, "ss03", latin_symbols.single(gsub, mapping))
     # 字形パネルで試作字形を選んだ場合や、vert を後の段階で適用する組版環境にも対応する。
     for tag in ("vert", "vrt2"):

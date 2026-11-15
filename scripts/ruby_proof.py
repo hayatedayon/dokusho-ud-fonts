@@ -100,7 +100,10 @@ class Counter:
 
 
 def hinting_section(path: Path, counter: Counter, summary: list) -> str:
-    """通常・ヒントあり / 通常・ヒントなし / 試作・ヒントなし を、gasp と FreeType の版ごとに並べる。"""
+    """通常・ヒントあり / 通常・ヒントなし / 試作・ヒントなし / 試作・ヒントあり を、gasp と FreeType の版ごとに並べる。
+
+試作・ヒントありは配るフォントのままの描画 (試作字形は原字の命令を持つ)、試作・ヒントなしは、同じ字形を
+ヒンティングを動かさずに描いたもの。"""
     font = TTFont(path)
     em = font["head"].unitsPerEm
     shaper = harfbuzz_shape.Shaper(path)
@@ -112,25 +115,34 @@ def hinting_section(path: Path, counter: Counter, summary: list) -> str:
             hinted = freetype_render.Renderer(path, interpreter, 0, respect_gasp=respect)
             parts.append(f"<h4>FreeType {interpreter_label}・{environment}</h4>")
             for ppem in PPEMS:
-                totals = {"hint": [0, 0.0], "embolden": [0, 0.0], "all": [0, 0.0], "loader": [0, 0.0],
-                          "ink_hinted": 0.0, "ink_plain": 0.0, "ink_trial": 0.0}
+                totals = {"hint": [0, 0.0], "embolden": [0, 0.0], "all": [0, 0.0], "unhinted_trial": [0, 0.0], "trial_hint": [0, 0.0],
+                          "ink_hinted": 0.0, "ink_plain": 0.0, "ink_trial_plain": 0.0, "ink_trial": 0.0}
                 for script, text in SAMPLES:
                     a = raster(shaper, hinted, text, ppem, em)
                     b = raster(shaper, plain, text, ppem, em)
                     c = raster(shaper, hinted, text, ppem, em, ("ss03",))
                     c_plain = raster(shaper, plain, text, ppem, em, ("ss03",))
-                    for key, pair in (("hint", (a, b)), ("embolden", (b, c)), ("all", (a, c)), ("loader", (c, c_plain))):
+                    for key, pair in (("hint", (a, b)), ("embolden", (b, c_plain)), ("all", (a, c)), ("unhinted_trial", (a, c_plain)), ("trial_hint", (c_plain, c))):
                         count, amount = difference(*pair)
                         totals[key][0] += count
                         totals[key][1] += amount
                     totals["ink_hinted"] += ink(a)
                     totals["ink_plain"] += ink(b)
+                    totals["ink_trial_plain"] += ink(c_plain)
                     totals["ink_trial"] += ink(c)
                     cells = "".join(
                         figure_html(*canvas, text, ppem, figure_id=counter.next("r"), caption=caption)
-                        for caption, canvas in (("通常・ヒントあり", a), ("通常・ヒントなし", b), ("試作・ヒントなし", c)))
+                        for caption, canvas in (("通常・ヒントあり", a), ("通常・ヒントなし", b), ("試作・ヒントなし", c_plain), ("試作・ヒントあり", c)))
                     parts.append(f"<p>{ppem} ppem（本文{ppem * 2}px のルビ）・{script}</p><div class=pair>{cells}</div>")
                 summary.append((path.name, interpreter_label, environment, ppem, totals))
+            if not respect:
+                parts.append(f"<p>{LARGE_PPEM}px の拡大（画像は等倍）</p><div class=pair>")
+                for caption, renderer, features in (("通常・ヒントあり", hinted, ()), ("通常・ヒントなし", plain, ()),
+                                                    ("試作・ヒントなし", plain, ("ss03",)), ("試作・ヒントあり", hinted, ("ss03",))):
+                    width, height, data = raster(shaper, renderer, LARGE_TEXT, LARGE_PPEM, em, features)
+                    parts.append(f'<figure><figcaption>{caption}</figcaption><img alt="{LARGE_TEXT} {LARGE_PPEM}px {caption}" '
+                                 f'src="{png(width, height, data)}" width="{width}" height="{height}"></figure>')
+                parts.append("</div>")
             hinted.close()
         plain.close()
     shaper.close()
@@ -185,13 +197,13 @@ def embolden_section(path: Path, directory: Path, counter: Counter, ink_table: l
 
 def summary_table(rows: list) -> str:
     out = ["<table><thead><tr><th>書体</th><th>FreeType</th><th>環境</th><th>ppem</th>"
-           "<th>ヒントの差（画素数 / 濃さの差）</th><th>補強の差（画素数 / 濃さの差）</th><th>両方（画素数 / 濃さの差）</th>"
-           "<th>試作をヒントなしで読み込んだ差（画素数）</th><th>インク（通常ヒントあり / 通常ヒントなし / 試作）</th></tr></thead><tbody>"]
+           "<th>ヒントの差（画素数 / 濃さの差）</th><th>補強の差（画素数 / 濃さの差）</th><th>通常・ヒントありと試作・ヒントありの差（画素数 / 濃さの差）</th><th>通常・ヒントありと試作・ヒントなしの差（画素数 / 濃さの差）</th>"
+           "<th>試作のヒントの差（画素数 / 濃さの差）</th><th>インク（通常ヒントあり / 通常ヒントなし / 試作ヒントなし / 試作ヒントあり）</th></tr></thead><tbody>"]
     for name, interpreter, environment, ppem, t in rows:
         out.append(f"<tr><td>{html.escape(name)}</td><td>{interpreter}</td><td>{html.escape(environment)}</td><td>{ppem}</td>"
                    f"<td>{t['hint'][0]} / {t['hint'][1]:.1f}</td><td>{t['embolden'][0]} / {t['embolden'][1]:.1f}</td>"
-                   f"<td>{t['all'][0]} / {t['all'][1]:.1f}</td><td>{t['loader'][0]}</td>"
-                   f"<td>{t['ink_hinted']:.1f} / {t['ink_plain']:.1f} / {t['ink_trial']:.1f}</td></tr>")
+                   f"<td>{t['all'][0]} / {t['all'][1]:.1f}</td><td>{t['unhinted_trial'][0]} / {t['unhinted_trial'][1]:.1f}</td><td>{t['trial_hint'][0]} / {t['trial_hint'][1]:.1f}</td>"
+                   f"<td>{t['ink_hinted']:.1f} / {t['ink_plain']:.1f} / {t['ink_trial_plain']:.1f} / {t['ink_trial']:.1f}</td></tr>")
     out.append("</tbody></table>")
     return "".join(out)
 
@@ -225,9 +237,11 @@ td:first-child,td:nth-child(2){text-align:left}details{margin:1rem 0}
 <h2 id=how>見方</h2>
 <ul>
 <li>ルビは本文の半分の大きさです。本文12〜20pxのルビは6〜10ppemです。</li>
-<li><b>ヒントの有無をそろえた比較（1）</b>: 同じ字を「通常・ヒントあり」「通常・ヒントなし」「試作・ヒントなし」の3つで並べます。
-通常字は元のヒントを持ち、試作字形はヒントを持ちません。「通常・ヒントなし」は、この見本のために FreeType でヒンティングを動かさずに描いた通常字で（フォントは変えていません）、
-ヒントあり→ヒントなしの差がヒントによる差、ヒントなし→試作の差が線の補強（と小書き仮名の拡大）による差です。</li>
+<li><b>ヒントの有無をそろえた比較（1）</b>: 同じ字を「通常・ヒントあり」「通常・ヒントなし」「試作・ヒントなし」「試作・ヒントあり」の4つで並べます。
+通常字は元のヒントを持ち、試作字形は原字と同じ命令を持ちます（点の番号だけを指す縦方向の命令で、輪郭の点の構成が原字と同じなため）。「通常・ヒントなし」「試作・ヒントなし」は、
+この見本のために FreeType でヒンティングを動かさずに描いたもので（フォントは変えていません）、「通常・ヒントあり」→「通常・ヒントなし」の差がヒントによる差、
+「通常・ヒントなし」→「試作・ヒントなし」の差が線の補強（と小書き仮名の拡大）による差、「試作・ヒントなし」→「試作・ヒントあり」の差が試作字形のヒントによる差です。
+「通常・ヒントあり」と「試作・ヒントあり」の差は、補強と拡大だけの差に近くなります。64px の拡大も並べます。</li>
 <li><b>gasp を守る・守らない描画（2）</b>: フォントの gasp は <code>{7: 10, 65535: 15}</code> で、7ppem 以下はグリッドに合わせません（ヒントを使わない）。
 「gasp を守る環境」は、gasp がグリッドに合わせないとする大きさ（6・7ppem）でヒントを使わず、「守らない環境」はどの大きさでもヒントを使う描き方です。
 どちらの環境になるかは、アプリと OS によります。FreeType の TrueType 命令の解釈は、v40（今の既定）と v35（昔の Windows に近い）の両方を出します。</li>
@@ -269,8 +283,9 @@ def main() -> int:
     print("dist/ruby-trial.html")
     for name, interpreter, environment, ppem, t in summary:
         print(f"{name} {interpreter} {environment} {ppem}ppem: hint {t['hint'][0]} px / {t['hint'][1]:.1f}, "
-              f"embolden {t['embolden'][0]} px / {t['embolden'][1]:.1f}, all {t['all'][0]} px / {t['all'][1]:.1f}, "
-              f"trial loaded unhinted {t['loader'][0]} px, ink {t['ink_hinted']:.1f}/{t['ink_plain']:.1f}/{t['ink_trial']:.1f}")
+              f"embolden {t['embolden'][0]} px / {t['embolden'][1]:.1f}, all {t['all'][0]} px / {t['all'][1]:.1f}, unhinted trial {t['unhinted_trial'][0]} px / {t['unhinted_trial'][1]:.1f}, "
+              f"trial hint {t['trial_hint'][0]} px / {t['trial_hint'][1]:.1f}, "
+              f"ink {t['ink_hinted']:.1f}/{t['ink_plain']:.1f}/{t['ink_trial_plain']:.1f}/{t['ink_trial']:.1f}")
     for name in dict.fromkeys(row[0] for row in ink_rows):
         for label, _multipliers in VARIANTS:
             ratios = [f"{sum(r[3] for r in ink_rows if r[:3] == (name, label, ppem)) / len(SAMPLES):.3f}" for ppem in PPEMS]
