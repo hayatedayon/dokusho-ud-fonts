@@ -21,7 +21,7 @@ from fontTools.pens.boundsPen import BoundsPen
 from fontTools.pens.svgPathPen import SVGPathPen
 from fontTools.ttLib import TTFont
 
-import check
+from checks import fonttables
 import spec
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -57,7 +57,7 @@ def labels(font: TTFont) -> dict[str, str]:
     result = {}
     for code, name in sorted(cmap.items()):
         result.setdefault(name, f"{chr(code)} U+{code:04X}")
-    for name, symbol in check.latin_symbol_mapping(font, "latn", None).items():
+    for name, symbol in fonttables.latin_symbol_mapping(font, "latn", None).items():
         if symbol not in result and name in result:
             result[symbol] = f"欧文の中の {result[name]} (BIZ UDP の字)"
     return result
@@ -128,7 +128,7 @@ def section(family: dict, weight: str) -> str:
     em = font["head"].unitsPerEm
     os2 = font["OS/2"]
     cmap = font.getBestCmap()
-    vertical_dashes = {check.gsub_mapping(font, "vert").get(cmap.get(code)) for code in (0x2E3A, 0x2E3B)}
+    vertical_dashes = {fonttables.gsub_mapping(font, "vert").get(cmap.get(code)) for code in (0x2E3A, 0x2E3B)}
     names = labels(font)
     rows = []
     samples = []

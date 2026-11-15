@@ -37,7 +37,7 @@ KNOWN_ORIENTATION = {
     # 罫線: BIZ UD は縦組で回さず、Noto は回す
     **{(code, "v"): "BIZ UD は縦組で回さない罫線" for code in (0x250C, 0x2510, 0x2514, 0x2518, 0x250F, 0x2513, 0x2517, 0x251B)},
 }
-# 縦組の引用符は意図してミニュートの形にしてある。check.py の check_vertical_minutes が別に検査する
+# 縦組の引用符は意図してミニュートの形にしてある。checks/vertical.py の check_vertical_minutes が別に検査する
 for _code in (0x201C, 0x201D, 0x2018, 0x2019):
     KNOWN_ORIENTATION[(_code, "v")] = "ミニュートの形"
 # 細かいデザインの差で向きの判定が揺れる字
