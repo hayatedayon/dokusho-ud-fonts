@@ -1,6 +1,7 @@
 """小さい字: ルビ用の仮名 (ss03) と小さい数字のヒント。"""
 
 from pathlib import Path
+import unicodedata
 
 from fontTools.ttLib import TTFont
 
@@ -112,6 +113,39 @@ def check_ruby(ctx: FontContext) -> None:
         for source, upright in vertical.items():
             if source in trial and upright in trial:
                 check(vertical.get(trial[source]) == trial[upright], f"{label}: trial ruby lacks {tag} of {source}")
+
+
+def check_ruby_combinations(ctx: FontContext) -> None:
+    """ss03 が、仮名の濁音・半濁点の分解形、結合濁点・半濁点、か゚ などの合字と組み合わさっても動きが変わらないこと。
+
+    調べた範囲 (HarfBuzz、横組・縦組)。aalt を指定すると ss03 より先に半角の候補に置き換わり、ss03 は効かない。
+    それは BIZ UD の aalt の動きのままなので、ここでは検査しない (docs/RUBY.md)。
+    """
+    label = ctx.label
+    run = ctx.run
+    for vertical in (False, True):
+        where = "vertical" if vertical else "horizontal"
+        # 濁音・半濁音は、分解した形 (か + U+3099) でも、ccmp で合成してから ss03 の字形になる
+        for composed, decomposed in (("が", "か\u3099"), ("ぱ", "は\u309a"), ("ガ", "カ\u3099"), ("パ", "ハ\u309a")):
+            plain, trial = run(decomposed, (), vertical), run(decomposed, ("ss03",), vertical)
+            check(trial == run(composed, ("ss03",), vertical), f"{label}: ss03 of decomposed {composed} differs ({where})")
+            check(len(trial) == 1 and trial[0][0] != plain[0][0], f"{label}: ss03 is lost on decomposed {composed} ({where})")
+        # 20 字 + 結合濁点・半濁点。字形だけが試作になり、記号の字形・送り・位置と、仮名の送りは変わらない
+        for char in small_type.RUBY_KANA:
+            for mark in ("\u3099", "\u309a"):
+                text = char + mark
+                if unicodedata.normalize("NFC", text) != text:
+                    continue
+                plain, trial = run(text, (), vertical), run(text, ("ss03",), vertical)
+                check(len(plain) == len(trial) == 2 and trial[0][0] != plain[0][0] and trial[1:] == plain[1:]
+                      and trial[0][2:] == plain[0][2:], f"{label}: ss03 changes the mark or advance of {text!r} ({where})")
+        # か゚ などの合字は 20 字に入らず、ss03 でも変わらない。前後の字は通常どおり選ばれる
+        for char in "かきくけこカキクケコセツトㇷ":
+            text = char + "\u309a"
+            check(run(text, ("ss03",), vertical) == run(text, (), vertical), f"{label}: ss03 changes the ligature {text!r} ({where})")
+        mixed_plain, mixed_trial = run("か\u309aが", (), vertical), run("か\u309aが", ("ss03",), vertical)
+        check(mixed_trial[:-1] == mixed_plain[:-1] and mixed_trial[-1][0] != mixed_plain[-1][0],
+              f"{label}: ss03 misses the kana after か゚ ({where})")
 
 
 def check_small_digits(ctx: FontContext) -> None:

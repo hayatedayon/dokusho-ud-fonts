@@ -70,6 +70,7 @@ STEPS = [
     styles.check_style_quotes,
     styles.check_style_labels,
     smalltype.check_ruby,
+    smalltype.check_ruby_combinations,
     smalltype.check_small_digits,
     woff2.check_woff2,
 ]
