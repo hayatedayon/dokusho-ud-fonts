@@ -34,7 +34,7 @@ UNRELEASED = None  # fonts/ の未公開の版を最後に並べるときは、�
 BASE = "BIZ UD"
 WEIGHTS = ("Regular", "Bold")
 FEATURES = ["locl", "ccmp", "mark", "mkmk", "liga", "calt", "kern", "vert", "vrt2", "halt", "vhal", "palt", "vpal",
-            "chws", "vchw", "hwid", "fwid", "frac", "numr", "dnom", "sups", "subs", "sinf", "tnum", "pnum", "zero",
+            "chws", "vchw", "curs", "hwid", "fwid", "frac", "numr", "dnom", "sups", "subs", "sinf", "tnum", "pnum", "zero",
             "ss01", "ss02", "ss03"]
 
 
@@ -105,6 +105,17 @@ VERSIONS = [
         Demo("𠮷", "𠮷野さんの本", "元の字の部品から作って足しました。1.007 までは収録していません。"),
         Demo("縦組のくの字点", "いよ〱本番", "縦組では、〱 が 2 字分の高さの 1 字になります。",
              vertical=True, markup='<span class="vtext">いよ〱本番</span>'),
+    ]),
+    ("1.009", "2026-11-16", "縦組の 〱 〲 ⸺ ⸻ の送りと、ss03 のヒンティング", [
+        Demo("縦組の 〱 〲 ⸺ ⸻", "あ〱い〲う⸺え⸻お",
+             "1.009 では、これらの字の縦組の字形を 2 つの字に分けて、環境によらず送りが 2 字分（⸻ は 3 字分）になります。"
+             "1.008 では、縦組の送りに vmtx を使わない環境（CoreText、WebKitGTK。Safari などですが、Safari 自体は確かめていません）で、"
+             "〱 〲 が次の字に重なっていました。vmtx を使う Chrome などでは、1.008 と 1.009 は同じに見えます。",
+             vertical=True, markup='<span class="vtext">あ〱い〲う⸺え⸻お</span>'),
+        Raster("ss03 のルビ仮名の画素", "あめぬれゃゅょっがぱ", (8, 9, 10),
+               "ss03 の字形に、原字のヒンティングの命令を付けました。8ppem 以上で効きます（本文 16〜20px のルビ）。"
+               "6・7ppem は変わりません。FreeType (v40) の描画です。Windows の Chrome でも、8〜10px で画素が変わることを確かめました。",
+               features=["ss03"]),
     ]),
 ]
 

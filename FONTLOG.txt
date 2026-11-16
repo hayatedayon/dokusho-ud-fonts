@@ -22,7 +22,7 @@ with their substitutions, from BIZ UDP of the same design.
 ChangeLog
 ---------
 
-(unreleased) (hayatedayon) Dokusho UD next version
+2026-11-16 (hayatedayon) Dokusho UD 1.009
 - In vertical text, the two- and three-cell glyphs (〱 〲 ⸺ ⸻) are now
   replaced in two steps by vert/vrt2. The first step is unchanged from
   1.008: the cmap glyph becomes a glyph with a 2-em (3-em for ⸻) vertical
@@ -50,7 +50,8 @@ ChangeLog
   substitution stops after the first step and behaves as in 1.008. Horizontal
   text, cmap, outlines and metrics of all existing glyphs and every other
   feature are unchanged (six glyphs, two GSUB lookups, one GPOS lookup, the
-  curs feature, maxp, hmtx, vmtx, loca/glyf and vhea are added or updated).
+  curs feature, maxp, hmtx, hhea (numberOfHMetrics), vmtx, loca/glyf and
+  vhea are added or updated).
   Without vert, WebKitGTK still shows ⸺ ⸻ as horizontal lines in vertical
   text, as in 1.008. Also checked in Chrome 150 on Windows (the advances
   are 2, 2, 2 and 3 em, the ink does not move, selection and copy give the
