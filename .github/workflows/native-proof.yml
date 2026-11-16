@@ -1,31 +1,53 @@
 name: Native shaping proofs
 
+# 手動実行 (workflow_dispatch) は、ビルドしたフォントを固定した OS の版で確かめる (結果を残す。advisory)。
+# 週 1 回の定期実行 (schedule) は、公開中の最新のリリースのフォントを、最新の OS の版 (macos-latest・windows-latest)
+# で確かめ、合否の検査が外れたら実行を失敗にする (GitHub がメールで知らせる)。schedule は main でだけ動く。
 on:
   workflow_dispatch:
+    inputs:
+      fonts:
+        description: 'Fonts to check: build (fonts built from this ref) or release (a published release)'
+        type: choice
+        options: [build, release]
+        default: build
+      release_tag:
+        description: 'With fonts=release: the release tag (empty = the latest release)'
+        type: string
+        default: ''
+  schedule:
+    # 毎週日曜 19:17 UTC (月曜 04:17 JST)。毎時 0 分・30 分の混雑を避ける
+    - cron: '17 19 * * 0'
 
 permissions:
   contents: read
 
-# Independent, advisory workflow: build.yml / release.yml do not depend on it.
+# Independent workflow: build.yml / release.yml / pages.yml do not depend on it.
+# advisory (continue-on-error) は schedule 以外。schedule では検査が外れるとジョブも実行も失敗になる。
 jobs:
   native-proof:
-    name: ${{ matrix.engine }} (advisory)
-    continue-on-error: true
+    name: ${{ matrix.engine }} (${{ github.event_name == 'schedule' && 'scheduled, latest release' || 'advisory' }})
+    continue-on-error: ${{ github.event_name != 'schedule' }}
     timeout-minutes: 15
     strategy:
       fail-fast: false
       matrix:
         include:
           - os: macos-15
+            latest: macos-latest
             engine: coretext
           - os: windows-2025
+            latest: windows-latest
             engine: directwrite
-    runs-on: ${{ matrix.os }}
+    runs-on: ${{ github.event_name == 'schedule' && matrix.latest || matrix.os }}
+    env:
+      FONT_SOURCE: ${{ github.event_name == 'schedule' && 'release' || inputs.fonts || 'build' }}
+      RELEASE_TAG: ${{ inputs.release_tag }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - name: Install dependencies and build all four fonts
+      - name: Install dependencies
         shell: bash
         run: |
           if [ "$RUNNER_OS" = Windows ]; then
@@ -39,30 +61,48 @@ jobs:
             proof_python=.venv/bin/python
           fi
           "$proof_python" -m pip install -r requirements.txt
-          "$proof_python" scripts/fetch_sources.py
+          echo "PROOF_PYTHON=$proof_python" >> "$GITHUB_ENV"
+      - name: Build all four fonts
+        if: env.FONT_SOURCE == 'build'
+        shell: bash
+        run: |
+          "$PROOF_PYTHON" scripts/fetch_sources.py
           export SOURCE_DATE_EPOCH="$(git log -1 --format=%ct)"
-          "$proof_python" scripts/build.py
+          "$PROOF_PYTHON" scripts/build.py
+          echo "FONT_DIR=fonts" >> "$GITHUB_ENV"
+          echo "FONT_LABEL=built from $GITHUB_SHA ($GITHUB_REF_NAME)" >> "$GITHUB_ENV"
+      - name: Fetch the published release fonts
+        if: env.FONT_SOURCE == 'release'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          mkdir -p release-fonts
+          gh release download ${RELEASE_TAG:+"$RELEASE_TAG"} --repo "$GITHUB_REPOSITORY" --pattern '*.ttf' --dir release-fonts --clobber
+          tag="${RELEASE_TAG:-$(gh release view --repo "$GITHUB_REPOSITORY" --json tagName --jq .tagName)}"
+          echo "FONT_DIR=release-fonts" >> "$GITHUB_ENV"
+          echo "FONT_LABEL=release $tag" >> "$GITHUB_ENV"
       - name: CoreText (Swift / CoreGraphics)
         if: runner.os == 'macOS'
         shell: bash
         run: |
           mkdir -p dist/native
-          sw_vers > dist/native/platform.txt
+          { sw_vers; echo "runner image: $ImageOS $ImageVersion"; echo "fonts: $FONT_LABEL"; } | tee dist/native/platform.txt
           swiftc scripts/native/coretext.swift -o dist/native/coretext-renderer
-          .venv/bin/python scripts/native_proof.py --renderer dist/native/coretext-renderer
+          "$PROOF_PYTHON" scripts/native_proof.py --fonts "$FONT_DIR" --renderer dist/native/coretext-renderer
       - name: DirectWrite (Windows SDK / Direct2D / WIC)
         if: runner.os == 'Windows'
         shell: pwsh
         run: |
           New-Item -ItemType Directory -Force dist/native | Out-Null
-          Get-ComputerInfo -Property WindowsProductName, WindowsVersion, OsBuildNumber | Out-File dist/native/platform.txt
+          (Get-ComputerInfo -Property WindowsProductName, WindowsVersion, OsBuildNumber | Out-String), "runner image: $env:ImageOS $env:ImageVersion", "fonts: $env:FONT_LABEL" | Tee-Object dist/native/platform.txt
           $vswhere = "${env:ProgramFiles(x86)}/Microsoft Visual Studio/Installer/vswhere.exe"
           $vs = & $vswhere -latest -products '*' -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath
           if (-not $vs) { throw 'MSVC tools not found' }
           $devcmd = Join-Path $vs 'Common7/Tools/VsDevCmd.bat'
           cmd /c "`"$devcmd`" -arch=x64 && cl /nologo /std:c++17 /EHsc /W4 /utf-8 scripts/native/directwrite.cpp /Fe:dist/native/directwrite.exe /Fo:dist/native/directwrite.obj /link dwrite.lib d2d1.lib windowscodecs.lib ole32.lib"
           if ($LASTEXITCODE -ne 0) { throw 'DirectWrite compiler failed' }
-          .venv/Scripts/python.exe scripts/native_proof.py --renderer dist/native/directwrite.exe
+          & $env:PROOF_PYTHON scripts/native_proof.py --fonts $env:FONT_DIR --renderer dist/native/directwrite.exe
           if ($LASTEXITCODE -ne 0) { throw 'DirectWrite proofs failed' }
       - name: Preserve fonts, glyph IDs, advances and images (including partial failures)
         if: always()
@@ -72,6 +112,7 @@ jobs:
           path: |
             dist/native/
             fonts/*.ttf
+            release-fonts/*.ttf
             OFL.txt
           if-no-files-found: error
           retention-days: 7
