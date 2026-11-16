@@ -16,7 +16,7 @@ python3 -m venv .venv
 
 `scripts/check.py` は、できたフォントを元のフォントと突き合わせます。欧字とその置き換え・合字・字形の候補（`aalt`）が BIZ UDP と同じか、分数（`frac`）が分数の数字だけを置き換え、数字と斜線の間が BIZ UDP の分数と同じか、作った上付きの数字の太さと高さが `¹ ² ³ ⁴` と同じくらいか、代表の和文の字と `hwid` の半角の字が BIZ UD と同じ形と字幅か、FreeType でヒンティングを動かして描いた字の画素が、欧字と欧文の中の記号は BIZ UDP と、代表の和文の字は BIZ UD と同じか（libfreetype が要ります。Debian・Ubuntu は libfreetype6）、欧文の中の記号が欧字の用字系の中でだけ BIZ UDP の字になるか、約物の詰め（`halt`・`vhal`）とプロポーショナル機能（`palt`・`vpal`）・`tnum`・数字の間のコロン・結合用の記号の付く位置・縦書きの機能・足した文字・名前が正しいか、行の上と下（`usWinAscent`・`usWinDescent`。Windows の GDI はその外を描きません）からのはみ出しが元のフォントより増えていないかを確かめます。また、HarfBuzz（Chromium・Firefox・Android などが使う、文字を並べる仕組み）で実際に組んで、字を変えていない文字が和文の中で BIZ UD と同じに、欧字と欧文の中の記号が英語の文の中で BIZ UDP と同じに組まれるか、BIZ UD の合字と異体字（IVS）が同じに組まれるか、見えない文字が隠れるか、結合用の記号が前の字に乗るかを確かめます。足した機能が元の振る舞いを変えてしまうこと（1.002 から結合用の記号が前の字に乗らず、1.003 から英語の文の中のソフトハイフンが隠れていませんでした）を見つけるためです。libharfbuzz と Unicode の文字のデータが要ります（Debian・Ubuntu は libharfbuzz0b と unicode-data）。はみ出す字（`‚` `„` と、明朝 Bold のギリシャ文字のアクセント付きの字。BIZ UD・BIZ UDP と同じ）は、`scripts/overflow_page.py` が `dist/overflow.html` に描きます。CI は push のたびに作って確かめ、`vX.Y.Z` のタグを付けるとリリースを作ります。タグ `vX.Y.Z` はフォントの版 `X.YYZ` です（`v1.0.0` は 1.000）。
 
-検査は `scripts/checks/` に、対象ごとのモジュールで置いてあります。`scripts/check.py` は、どの検査をどの順に実行するかだけを持つ入口です。
+検査は `scripts/checks/` に、対象ごとのモジュールで置いてあります。`scripts/check.py` はどの検査をどの順に実行するかだけを持つ入口です。
 
 | モジュール | 検査する内容 |
 | --- | --- |
@@ -28,7 +28,7 @@ python3 -m venv .venv
 | `kerning`・`styles`・`smalltype` | `kern`、`ss01`〜`ss03`、小さい字（ルビ・小さい数字） |
 | `shaping`・`references`・`woff2`・`native` | HarfBuzz で組んだ結果の比較、元のフォントに依らない基準、WOFF2、実環境の比較ツール |
 
-引数なしの `python scripts/check.py` が全検査で、CI とリリースはこれを実行します。`--list` でモジュールの名前と中身の検査を見られ、`--only kerning,vertical` のように指定すると、そのモジュールの検査だけを実行します（作業中の確認用です）。HarfBuzz で組む検査は、いくつかのモジュールに分かれています。`shaping` は元のフォントとの組み方の比較だけで、縦組や詰めなどの組み方の検査は、それぞれのモジュールにあります。
+引数なしの `python scripts/check.py` が全検査で、CI とリリースはこれを実行します。`--list` でモジュールの名前と中身の検査を見られ、`--only kerning,vertical` のように指定すると、そのモジュールの検査だけを実行します（作業中の確認用です）。HarfBuzz で組む検査は、いくつかのモジュールに分かれています。`shaping` は元のフォントとの組み方の比較だけで、縦組や詰めなどの組み方の検査はそれぞれのモジュールにあります。
 
 リリースは後から変えられません（GitHub の immutable releases）。公開したリリースのファイルとタグは差し替えも削除もできないので、同じ版のファイルはいつダウンロードしても同じです。各ファイルの SHA-256 はリリースのページに出ており、GitHub が作るリリースの証明（attestation）で確かめられます。
 
@@ -41,7 +41,7 @@ python3 -m venv .venv
 python3 -m http.server 8000
 ```
 
-`http://localhost:8000/dist/specimen.html` は機能を切り替える見本、`dist/proof.html` は１行32字分・行送り1.75の固定版面です。画面用12・14・16px、印刷用9〜12pt、縦横組、元の BIZ UD・BIZ UDP を比較できます。印刷・PDF保存は倍率100%で使います（縦組はA4横向き）。`dist/small-type.html` は数字のヒント有無を、FreeType の実寸・拡大画像で並べます。`scripts/ruby_proof.py` が作る `dist/ruby-trial.html` は、ルビ仮名の試作（`ss03`）を、通常・ヒントあり、通常・ヒントなし、試作・ヒントなし、試作・ヒントありの4つで6〜10ppem に並べ、gasp を守る・守らない環境と補強量の組も比べます（約40秒。見方は [docs/RUBY.md](RUBY.md)）。
+`http://localhost:8000/dist/specimen.html` は機能を切り替える見本、`dist/proof.html` は１行32字分・行送り1.75の固定版面です。画面用12・14・16px、印刷用9〜12pt、縦横組、元の BIZ UD・BIZ UDP を比較できます。印刷・PDF保存は倍率100%で使います（縦組はA4横向き）。`dist/small-type.html` は数字のヒント有無を、FreeType の実寸・拡大画像で並べます。`scripts/ruby_proof.py` が作る `dist/ruby-trial.html` はルビ仮名の試作（`ss03`）を、通常・ヒントあり、通常・ヒントなし、試作・ヒントなし、試作・ヒントありの4つで6〜10ppem に並べ、gasp を守る・守らない環境と補強量の組も比べます（約40秒。見方は [docs/RUBY.md](RUBY.md)）。
 
 `.venv/bin/python scripts/versions_page.py` は、公開した各版を同じ文で見比べる `dist/versions.html` を作ります（ファイルを直接開けます。各版のフォントはリリースから取得します）。README の画像は `scripts/readme_images.py` で `docs/images/` に作ります。
 
@@ -55,7 +55,13 @@ CI も見本を生成し、比較に必要なフォントと一緒に `DokushoUD
 
 欧字とピリオド・コンマのカーニングは `scripts/kerning.py` で書体別に定めます。句読点は ASCII の比例幅グリフだけを右クラスへ入れ、欧字同士とは別の lookup にします。同じ lookup の先にある Class Pair サブテーブルのゼロ値に遮られないようにするためです。`check.py` は追加ペアとアクセント付きの字も、宣言値・HarfBuzz の実効値・1% em以上の輪郭間隔で照合します。`hhea` と typo の行間は1024、ほかの行メトリクスと `fsSelection` は BIZ UD と一致することを検査します。
 
-`extra_glyphs.py` は「圭」の上部の土を平行移動し、「吉」の下部の口と組み合わせて `𠮷` を作ります。`〱 〲` は `〳/〴` と `〵` の接合辺を除いて輪郭をつなぎます。[Unicode §6.2](https://www.unicode.org/versions/Unicode17.0.0/core-spec/chapter-6/) の２セルの字という規定と、手元の Noto Serif CJK JP の横1 em・縦2 emのメトリクスを参考にしました。Noto の輪郭は使いません。横組の見本は半分の大きさで１セル内に収め、`vert`・`vrt2` では元の線の太さと2 emの送りを使い、`split_vertical_cells` が、最後に適用する複数の字への置き換えの lookup（`vert` 用と `vrt2` 用。ほかの lookup より後）を足して、その字（と `⸺` `⸻` の縦組の字）を、輪郭・縦送り・縦の原点が同じ字と空白の字に置き換えます。縦組の送りの決め方が環境で違うためです（HarfBuzz と DirectWrite は `vmtx`、CoreText と WebKitGTK は横の送り）。DirectWrite は `vert` だけを使い、1 つの文字から出た字の縦送りの最大を最後の字の送りにして、横の送り（`hmtx` と GPOS）の合計の半分だけ字を左にずらします。CoreText は `vrt2` だけを使い、`hmtx` を足します。WebKitGTK は `hmtx` と、GPOS の `curs`（DirectWrite は使いません）の横の送りを足します。そのため `vert` の空白は縦送り0・横の送り0にして、GPOS の `curs` で横の送り1 em を足し、`vrt2` の空白は縦送り0・横の送り1 em にします。複数の字への置き換えに対応しない環境は、1 段目で止まります。縦組専用字の上下は、ダッシュと同様に１行のクリップ枠ではなく２セルの縦枠で検査します。追加字にはヒントを付けません。非 BMP の `𠮷` は既存の割り当てを保った format 12 cmap に追加し、Unicode 範囲の Non-Plane 0（bit 57）は元の４書体すべてに設定済みなので、そのまま引き継ぎます。
+`extra_glyphs.py` は「圭」の上部の土を平行移動し、「吉」の下部の口と組み合わせて `𠮷` を作ります。`〱 〲` は `〳/〴` と `〵` の接合辺を除いて輪郭をつなぎます。[Unicode §6.2](https://www.unicode.org/versions/Unicode17.0.0/core-spec/chapter-6/) の２セルの字という規定と、手元の Noto Serif CJK JP の横1 em・縦2 emのメトリクスを参考にしました。Noto の輪郭は使いません。
+
+横組の見本は半分の大きさで１セル内に収め、`vert`・`vrt2` では元の線の太さと2 emの送りを使い、`split_vertical_cells` が最後に適用する複数の字への置き換えの lookup（`vert` 用と `vrt2` 用。ほかの lookup より後）を足して、その字（と `⸺` `⸻` の縦組の字）を、輪郭・縦送り・縦の原点が同じ字と空白の字に置き換えます。縦組の送りの決め方が環境で違うためです（HarfBuzz と DirectWrite は `vmtx`、CoreText と WebKitGTK は横の送り）。
+
+DirectWrite は `vert` だけを使い、1 つの文字から出た字の縦送りの最大を最後の字の送りにして、横の送り（`hmtx` と GPOS）の合計の半分だけ字を左にずらします。CoreText は `vrt2` だけを使い、`hmtx` を足します。WebKitGTK は `hmtx` と、GPOS の `curs`（DirectWrite は使いません）の横の送りを足します。そのため `vert` の空白は縦送り0・横の送り0にして、GPOS の `curs` で横の送り1 em を足し、`vrt2` の空白は縦送り0・横の送り1 em にします。複数の字への置き換えに対応しない環境は、1 段目で止まります。
+
+縦組専用字の上下はダッシュと同様に１行のクリップ枠ではなく２セルの縦枠で検査します。追加字にはヒントを付けません。非 BMP の `𠮷` は既存の割り当てを保った format 12 cmap に追加し、Unicode 範囲の Non-Plane 0（bit 57）は元の４書体すべてに設定済みなので、そのまま引き継ぎます。
 
 ```sh
 .venv/bin/python scripts/additions_proof.py  # dist/additions.html と dist/additions/*.png
@@ -73,6 +79,6 @@ CI も見本を生成し、比較に必要なフォントと一緒に `DokushoUD
 リリースは取り消せないので、公開前のフォントを実際の環境で試してから版を切ります。[AGENTS.md](../AGENTS.md) のリリースの手順の 1 番がこの節の内容で、推敲や `VERSION` を上げる前に済ませます。CI の成果物は既定で 1 日しか残らないため、手動実行のときだけ保存日数を延ばせます。
 
 1. GitHub の Actions で `Build` を手動実行し（`gh workflow run build.yml --ref <ブランチ> -f retention_days=14`）、保存日数に 14 などを指定します。既定は 1 日で、`push`・`pull_request`・`release.yml` からの呼び出しは変わりません。上限は 90 日です。
-2. 成果物 `DokushoUD`（フォント）と `DokushoUD-proof`（見本）を取り、フォントを Hayate Reader などで数日読んで試します。Reader の手順は [PROOFING.md](PROOFING.md#hayate-reader-で確かめる) にあります。成果物のフォントの版番号は、まだ公開済みの版のままです（`VERSION` はリリースの手順で上げます）。候補版のファイルは公開せず、配りません。公開するのはタグから作るリリースのファイルだけです。
+2. 成果物 `DokushoUD`（フォント）と `DokushoUD-proof`（見本）を取り、フォントを Hayate Reader などで数日読んで試します。Reader の手順は [PROOFING.md](PROOFING.md#hayate-reader-で確かめる) にあります。成果物のフォントの版番号はまだ公開済みの版のままです（`VERSION` はリリースの手順で上げます）。候補版のファイルは公開せず、配りません。公開するのはタグから作るリリースのファイルだけです。
 3. `.github/workflows/native-proof.yml` を手動実行し、CoreText と DirectWrite の結果を見ます（今は手動実行だけです）。
 4. 問題が無ければ、[AGENTS.md](../AGENTS.md) のリリースの手順の 2 番（推敲）へ進みます。問題があれば直し、1 からやり直します。
