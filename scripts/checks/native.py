@@ -35,25 +35,55 @@ def check_native_proof_tools() -> None:
                 folder = root / engine / name
                 folder.mkdir(parents=True)
                 for case in native_proof.CASES:
-                    advance = data["pairWidths"].get(case[0], 24)
+                    advance = data["expected"]["pairWidths"].get(case[0], 24)
+                    glyphs, advances = [1], [advance]
+                    expected = data["expected"]
+                    if case[0] in ("always-udp", "ja"):
+                        glyphs, advances = zip(*(expected["horizontal"][c] for c in case[-1]))
+                    elif case[0] in ("kern", "kern-off"):
+                        kern = expected["kernTotals"]
+                        advances = [kern["off"] if case[0] == "kern-off" and engine == "coretext" else kern["on"]]
+                    elif case[0].startswith("cell-"):
+                        glyphs = expected["vertical"][case[0][5:]][engine]
+                        advances = [24] * len(glyphs)
                     record = {"engine": engine, "sample": case[0], "emSize": 24, "vertical": case[2],
-                              "runs": [{"font": name, "glyphs": [1], "advances": [advance]}]}
+                              "runs": [{"font": name, "glyphs": list(glyphs), "advances": list(advances)}]}
                     (folder / (case[0] + ".json")).write_text(json.dumps(record))
                     (folder / (case[0] + ".png")).write_bytes(base64.b64decode(png(16, 16, bytes(range(256))).split(",")[1]))
             with contextlib.redirect_stdout(io.StringIO()):
                 native_proof.validate(root, engine)
+            check(native_proof.check_expectations(root, engine) == [], f"native expectations reject results computed from the font: {engine}")
+            for case, change in (("always-udp", lambda r: r["runs"][0]["advances"].__setitem__(2, 13)),
+                                 ("always-udp", lambda r: r["runs"][0]["glyphs"].__setitem__(5, 99)),
+                                 ("ja", lambda r: r["runs"][0]["glyphs"].__setitem__(25, 99)),
+                                 ("kern", lambda r: r["runs"][0]["advances"].__setitem__(0, 700)),
+                                 ("kern-off", lambda r: r["runs"][0]["advances"].__setitem__(0, 700)),
+                                 ("cell-3031", lambda r: r["runs"][0]["glyphs"].__setitem__(1, 99))):
+                path = root / engine / next(iter(manifest["fonts"])) / f"{case}.json"
+                original = path.read_text()
+                record = json.loads(original)
+                change(record)
+                path.write_text(json.dumps(record))
+                check(native_proof.check_expectations(root, engine), f"native expectations accept a changed {case}: {engine}")
+                path.write_text(original)
             native_proof.gallery(root, engine)
             check((root / "index.html").exists(), "native gallery missing")
             path = root / engine / next(iter(manifest["fonts"])) / "ja.json"
             record = json.loads(path.read_text())
-            for bad in ({"font": "fallback.ttf", "glyphs": [1], "advances": [24]},
-                        {"font": next(iter(manifest["fonts"])), "glyphs": [0], "advances": [24]},
-                        {"font": next(iter(manifest["fonts"])), "glyphs": [1], "advances": []}):
+            first = next(iter(manifest["fonts"]))
+            for bad, fails in (({"font": "fallback.ttf", "glyphs": [1], "advances": [24]}, "check"),
+                               ({"font": first, "glyphs": [0], "advances": [24]}, "check"),
+                               ({"font": first, "glyphs": [1], "advances": []}, "validate"),
+                               ({"font": first, "glyphs": [1], "advances": [float("inf")]}, "validate")):
                 path.write_text(json.dumps(record | {"runs": [bad]}))
-                try:
-                    native_proof.validate(root, engine)
-                except ValueError:
-                    pass
+                if fails == "validate":
+                    try:
+                        native_proof.validate(root, engine)
+                    except ValueError:
+                        pass
+                    else:
+                        check(False, f"native validator accepts malformed run: {bad}")
                 else:
-                    check(False, f"native validator accepts malformed run: {bad}")
+                    check(any("ja:" in line for line in native_proof.check_expectations(root, engine)),
+                          f"native checks accept a fallback or missing glyph: {bad}")
             path.write_text(json.dumps(record))
