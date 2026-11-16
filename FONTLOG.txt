@@ -22,6 +22,38 @@ with their substitutions, from BIZ UDP of the same design.
 ChangeLog
 ---------
 
+(unreleased) (hayatedayon) Dokusho UD next version
+- In vertical text, the two- and three-cell glyphs (〱 〲 ⸺ ⸻) are now
+  replaced in two steps by vert/vrt2. The first step is unchanged from
+  1.008: the cmap glyph becomes a glyph with a 2-em (3-em for ⸻) vertical
+  advance. Two new last GSUB lookups (multiple substitutions, one each for
+  vert and vrt2, applied after every other vert/vrt2 lookup) then replace it
+  with a glyph of the same outline, vertical advance and vertical origin,
+  followed by one blank glyph (two for ⸻). The ink still spans two (or three)
+  cells. Reason: engines decide the advance of upright vertical glyphs in
+  different ways, and in 1.008 the two-cell 〱 〲 overlapped the next
+  character in WebKitGTK (2.52.6, Hayate Reader on Linux) and in CoreText
+  (macOS 15), which advance each glyph 1 em from the horizontal advance
+  (hmtx) and ignore vmtx; with font-feature-settings "vert" 1 (which Reader
+  sets, as WebKitGTK does not apply vert by itself) ⸺ ⸻ also shrank to 1 em
+  in WebKitGTK. HarfBuzz and DirectWrite use vmtx. DirectWrite applies vert
+  only, takes the largest vertical advance of the glyphs of one character,
+  and shifts glyphs sideways by half of the summed horizontal advances
+  (hmtx and GPOS) of the cluster. CoreText applies vrt2 only and sums hmtx.
+  So the blank glyph of vert has vertical advance 0 and horizontal advance 0,
+  and a GPOS single adjustment under the feature curs (used by WebKitGTK but
+  not by DirectWrite) adds the 1 em horizontal advance; the blank glyph of
+  vrt2 has vertical advance 0 and horizontal advance 1 em. The total is 2 em
+  (3 em for ⸻) in HarfBuzz, DirectWrite, CoreText and WebKitGTK (checked in
+  all four; DirectWrite and CoreText with the supplementary CI), and the ink
+  is where it was in 1.008. An engine that does not support multiple
+  substitution stops after the first step and behaves as in 1.008. Horizontal
+  text, cmap, outlines and metrics of all existing glyphs and every other
+  feature are unchanged (six glyphs, two GSUB lookups, one GPOS lookup, the
+  curs feature, maxp, hmtx, vmtx, loca/glyf and vhea are added or updated).
+  Without vert, WebKitGTK still shows ⸺ ⸻ as horizontal lines in vertical
+  text, as in 1.008 (not checked: Chrome, Word).
+
 2026-11-10 (hayatedayon) Dokusho UD 1.008
 - Extended conservative Latin kerning to periods and commas after T, V, W,
   Y, P, F, r, y, v and w, including compatible accented forms. The values
