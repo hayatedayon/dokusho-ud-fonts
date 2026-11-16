@@ -27,6 +27,9 @@ CASES = [
 ]
 CASES += [(name + "-v", lang, True, kern, locl, text) for name, lang, _, kern, locl, text in CASES
           if name in ("ja", "en", "always-udp", "locl-off")]
+# 縦組の 2 セル・3 セルの字 (〱 〲 ⸺ ⸻)。字 → セルの数。前後に 1 セルずつの仮名を置き、送りの合計を見る
+VERTICAL_CELLS = {0x3031: 2, 0x3032: 2, 0x2E3A: 2, 0x2E3B: 3}
+CASES += [(f"cell-{code:04x}", "ja", True, -1, -1, f"あ{chr(code)}い") for code in VERTICAL_CELLS]
 CASES += [(f"pair-{ord(a):04x}-{ord(b):04x}", "en", False, 1, -1, a + b)
           for a in "TVWYPFryvwŤŢŶŴŕýŵ" for b in ".,"]
 
@@ -42,6 +45,7 @@ def prepare(output: Path):
     # Pair widths come from the declarative specification and unchanged cmap metrics,
     # independently of native shaping. Native IDs remain in the artifacts for comparison.
     from fontTools.ttLib import TTFont
+    from checks.fonttables import gsub_mapping, gsub_multiple
     import kerning
     font_data = {}
     for path in fonts:
@@ -58,8 +62,12 @@ def prepare(output: Path):
                 if text[0] in kerning.EXCLUDED_LEFT:
                     amount = 0
                 widths[name] = (sum(font["hmtx"][cmap[ord(c)]][0] for c in text) + amount) * 24 / em
+            # 縦組の 〱 〲 ⸺ ⸻ の、輪郭のある字 (vert の 2 段目の 1 つ目) の字形 ID。位置のずれを見るため
+            multiple = gsub_multiple(font, "vert")
+            cells = {f"{code:04x}": font.getGlyphID(multiple[gsub_mapping(font, "vert")[cmap[code]]][0])
+                     for code in VERTICAL_CELLS}
             font_data[path.stem] = {"file": path.name, "sha256": hashlib.sha256(path.read_bytes()).hexdigest(),
-                                    "pairWidths": widths}
+                                    "pairWidths": widths, "cellGlyphs": cells}
     manifest = {"emSize": 24, "cases": [c[0] for c in CASES], "fonts": font_data}
     (output / "manifest.json").write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
     return fonts
@@ -98,6 +106,33 @@ def validate(output: Path, engine: str):
     print(f"ok: {engine}: {len(manifest['fonts'])} fonts x {len(manifest['cases'])} cases (glyphs, advances, PNG)")
 
 
+def check_vertical_cells(output: Path, engine: str):
+    """縦組の 〱 〲 ⸺ ⸻ が、セルの数 × 24px (2 em・3 em) で送られ、輪郭のある字が左右にずれていないこと。
+    前後の仮名とあわせた全体の送りで見る。DirectWrite はレイアウトの縦の長さ (extent)、CoreText は最初と最後の
+    字の位置の差。補助の確認なので、外れても止めずに全部を調べてから、まとめて失敗にする"""
+    manifest = json.loads((output / "manifest.json").read_text(encoding="utf-8"))
+    problems = []
+    for font, data in manifest["fonts"].items():
+        for code, cells in VERTICAL_CELLS.items():
+            case = f"cell-{code:04x}"
+            record = json.loads((output / engine / font / f"{case}.json").read_text(encoding="utf-8"))
+            runs = record["runs"]
+            if engine == "directwrite":
+                total, want = record["extent"][1], (cells + 2) * 24
+                # 輪郭のある字は、左右にずらして置かない (ascenderOffset が 0)
+                cell = data["cellGlyphs"][f"{code:04x}"]
+                shifted = [o for r in runs for g, o in zip(r["glyphs"], r["offsets"]) if g == cell and abs(o[1]) > .01]
+            else:
+                positions = [p for r in runs for p in r["positions"]]
+                total, want = abs(positions[-1][1] - positions[0][1]) + 24, (cells + 2) * 24
+                shifted = []
+            if abs(total - want) > .5 or shifted:
+                problems.append(f"{engine} {font} U+{code:04X}: length {total:g}px, expected {want}px" + (", glyph shifted sideways" if shifted else ""))
+    if problems:
+        raise ValueError("vertical cells differ from the expected length:\n" + "\n".join(problems))
+    print(f"ok: {engine}: U+3031 U+3032 U+2E3A U+2E3B are {', '.join(str(c) for c in VERTICAL_CELLS.values())} em in vertical text")
+
+
 def gallery(output: Path, engine: str):
     manifest = json.loads((output / "manifest.json").read_text(encoding="utf-8"))
     rows = ["<!doctype html><meta charset=utf-8><title>Native shaping proofs</title>",
@@ -122,6 +157,7 @@ def main():
     args = parser.parse_args()
     if args.validate:
         validate(args.output, args.validate)
+        check_vertical_cells(args.output, args.validate)
         return 0
     fonts = prepare(args.output)
     if args.prepare:
@@ -138,6 +174,7 @@ def main():
                         str(target.resolve()), family, "Bold" if "Bold" in font.stem else "Regular"], check=True)
     validate(args.output, engine)
     gallery(args.output, engine)
+    check_vertical_cells(args.output, engine)
     return 0
 
 
