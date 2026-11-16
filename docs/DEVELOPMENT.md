@@ -66,3 +66,12 @@ CI も見本を生成し、比較に必要なフォントと一緒に `DokushoUD
 `.github/workflows/native-proof.yml` は既存の build・release と独立した、手動で実行する（`workflow_dispatch`）補助 CI です。macOS 15の CoreText（`scripts/native/coretext.swift`）、Windows 2025の DirectWrite（`scripts/native/directwrite.cpp`）が、同じ45条件×４書体を24pxで組みます。横縦の和英混植、句読点のペア、アクセント付きの字、追加字、17記号の `locl` 有効・無効を記録します。句読点の単独ペアは宣言した送りとも照合します。フォントはファイルから直接読み、別フォントへのフォールバックや欠落グリフを検出します。成果物 `DokushoUD-coretext`・`DokushoUD-directwrite` の `dist/native/index.html`、各 PNG・JSON（グリフ ID・送り・配置）、フォント SHA-256、OS情報を保存します。同じ SHA-256 の２成果物を比較し、`locl-off` の違いは後の cmap 変更の判断材料にします。`locl` 無効時も同じ字になることは合格条件にしません。CoreText と DirectWrite のどちらでも、`locl=0` を指定した結果は字形 ID と字幅が通常と同じで、`locl` が効かない環境の再現にはなりません。
 
 ローカルで各 OS を使う場合は、ワークフローのコンパイル手順を実行してから `scripts/native_proof.py --renderer <実行ファイル>` を実行します。Linux で実行できるのは `--prepare` までです。
+
+## 候補版を試してからリリースする
+
+リリースは取り消せないので、公開前のフォントを実際の環境で試してから版を切ります。[AGENTS.md](../AGENTS.md) のリリースの手順の 1 番がこの節の内容で、推敲や `VERSION` を上げる前に済ませます。CI の成果物は既定で 1 日しか残らないため、手動実行のときだけ保存日数を延ばせます。
+
+1. GitHub の Actions で `Build` を手動実行し（`gh workflow run build.yml --ref <ブランチ> -f retention_days=14`）、保存日数に 14 などを指定します。既定は 1 日で、`push`・`pull_request`・`release.yml` からの呼び出しは変わりません。上限は 90 日です。
+2. 成果物 `DokushoUD`（フォント）と `DokushoUD-proof`（見本）を取り、フォントを Hayate Reader などで数日読んで試します。Reader の手順は [PROOFING.md](PROOFING.md#hayate-reader-で確かめる) にあります。成果物のフォントの版番号は、まだ公開済みの版のままです（`VERSION` はリリースの手順で上げます）。候補版のファイルは公開せず、配りません。公開するのはタグから作るリリースのファイルだけです。
+3. `.github/workflows/native-proof.yml` を手動実行し、CoreText と DirectWrite の結果を見ます（今は手動実行だけです）。
+4. 問題が無ければ、[AGENTS.md](../AGENTS.md) のリリースの手順の 2 番（推敲）へ進みます。問題があれば直し、1 からやり直します。

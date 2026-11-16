@@ -5,7 +5,14 @@ on:
     branches:
       - main
   pull_request:
+  # 手動で実行するときだけ、成果物の保存日数を指定できる。公開前のフォントを数日かけて試す
+  # 候補版には 14 などを指定する (既定は 1 日。リポジトリの上限は 90 日)
   workflow_dispatch:
+    inputs:
+      retention_days:
+        description: 成果物 (DokushoUD・DokushoUD-proof) を残す日数
+        type: number
+        default: 1
   # release.yml は、リリースの前にこのワークフローで作って確かめ、できたフォントを受け取る
   workflow_call:
 
@@ -57,7 +64,9 @@ jobs:
 
       # 配るのはフォントだけ。著作権表示と使用許諾の全文は、フォントの中 (name の 0 と 13) にある。
       # 残すのは 1 日だけ。プルリクエストで作ったフォントを手元で確かめるには足り、release.yml は
-      # 同じ実行の中ですぐに受け取る (配るのはリリースで、成果物ではない)
+      # 同じ実行の中ですぐに受け取る (配るのはリリースで、成果物ではない)。手動実行だけは
+      # retention_days で延ばせる。それ以外 (push・pull_request・workflow_call) の inputs は
+      # 空なので || で 1 日になる
       - name: Upload the fonts
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
@@ -66,7 +75,7 @@ jobs:
             fonts/*.ttf
             fonts/*.woff2
           if-no-files-found: error
-          retention-days: 1
+          retention-days: ${{ inputs.retention_days || 1 }}
 
       # 校正用の補助ページの失敗で、検証・保存済みフォントのリリースを止めない。
       - name: Generate reading proofs
@@ -95,4 +104,4 @@ jobs:
             sources/*.ttf
             OFL.txt
           if-no-files-found: error
-          retention-days: 1
+          retention-days: ${{ inputs.retention_days || 1 }}
