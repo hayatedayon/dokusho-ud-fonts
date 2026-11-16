@@ -1,10 +1,14 @@
 """足した文字 (見えない文字・空白・ダッシュ・和文 3 字)・行のメトリクス・行からのはみ出し。"""
 
+import tempfile
+from pathlib import Path
+
 import freetype_render
 import harfbuzz_shape
+from fontTools.ttLib import TTFont
 
 from .common import FONTS, FontContext, check, problems
-from .fonttables import gpos_values, gsub_alternates, gsub_mapping, outline
+from .fonttables import gpos_values, gsub_alternates, gsub_mapping, gsub_multiple, lookup_type, outline
 from .geometry import glyph_bounds, overflow
 
 
@@ -64,6 +68,141 @@ def check_extra(ctx: FontContext) -> None:
             want = [(x, y - em * k) for k in range(count) for x, y in outline(font, upright)[0]]
             check(list(map(tuple, c[0])) == want and font["vmtx"][vertical][0] == em * count,
                   f"{label}: the vertical form of U+{code:04X} is not {count} vertical ― in a column")
+
+
+# 縦組で 2 セル・3 セルになる字 → セルの数 (縦組の 1 段目は 2 em・3 em の 1 字、2 段目は輪郭のある字 1 つと空白の字)
+VERTICAL_CELLS = {0x3031: 2, 0x3032: 2, 0x2E3A: 2, 0x2E3B: 3}
+# 組み方を変える機能の組み合わせ。縦組の字の並びは、どれでも同じになる
+VERTICAL_FEATURES = [(), ("ss01",), ("ss02",), ("ss03",), ("palt",), ("vpal",), ("halt",), ("vhal",), ("aalt",),
+                     ("palt", "vpal", "halt", "vhal"), ("kern=0",), ("vert=0", "vrt2"), ("vert", "vrt2=0")]
+SPACING_FEATURE = "curs"  # 空白の字の横の送りを足す GPOS の機能 (extra_glyphs.SPACING_FEATURE)
+
+
+def check_vertical_cells(ctx: FontContext) -> None:
+    """縦組の 2 セル・3 セルの字 (〱 〲 ⸺ ⸻) の、2 段の置き換え。1 段目は今までどおり cmap の字 → 縦の送りが
+    セルの数 × 1 em の 1 字。2 段目 (vert と vrt2 に 1 つずつの、最後の 2 つの lookup) は、その字 → [輪郭が同じ字,
+    空白の字 …] (縦の送りに vmtx を使わない環境のため)。環境ごとの送りの決め方 (HarfBuzz・DirectWrite は縦の送り、
+    CoreText は横の送りの合計、WebKitGTK は横の送りと GPOS curs の横の送りの合計) のどれでも、合計がセルの数 ×
+    1 em になること。DirectWrite は、1 つの文字から出た字の横の送り (hmtx と GPOS の送り) の合計で字を左右に
+    ずらして置くので、vert の並びで横の送りを持つのは輪郭のある字だけ (空白は 0。足りない分は curs の GPOS)。
+    2 段目を処理できない環境 (最後の 2 つの lookup を除いた機能) は、1 段目だけを適用して、1 字・セルの数 × 1 em
+    になること。"""
+    label = ctx.label
+    font = ctx.font
+    shaper = ctx.shaper
+    cmap, em, order = font.getBestCmap(), font["head"].unitsPerEm, font.getGlyphOrder()
+    gsub = font["GSUB"].table
+    lookups = gsub.LookupList.Lookup
+    last = len(lookups) - 1
+    check([i for i in range(len(lookups)) if lookup_type(gsub, i) == 2] == [last - 1, last],
+          f"{label}: the only multiple substitutions must be the last two GSUB lookups")
+    # 並び (vert は横の送りが 0 の空白、vrt2 は横の送りが 1 em の空白)。後の lookup が先に適用されないよう、番号の
+    # 順 (適用の順) でも最後であること
+    blanks = {}  # 機能 → 空白の字 (読み直したフォントには字の名前が残らないので、並びから読む)
+    own = {"vert": last - 1, "vrt2": last}
+    stage_one = {}
+    for tag in ("vert", "vrt2"):
+        records = [r for r in gsub.FeatureList.FeatureRecord if r.FeatureTag == tag]
+        check(all(r.Feature.LookupListIndex.count(own[tag]) == 1 and r.Feature.LookupListIndex[-1] == own[tag]
+                  and max(r.Feature.LookupListIndex) == own[tag] and r.Feature.LookupListIndex.count(own[{"vert": "vrt2", "vrt2": "vert"}[tag]]) == 0
+                  for r in records), f"{label}: {tag} does not end with its own lookup that splits the cells")
+        multiple = gsub_multiple(font, tag)
+        wide = {code: gsub_mapping(font, tag).get(cmap[code]) for code in VERTICAL_CELLS}
+        check(None not in wide.values() and set(multiple) == set(wide.values()),
+              f"{label}: {tag} splits glyphs other than the vertical forms of 〱 〲 ⸺ ⸻")
+        stage_one[tag] = wide
+        for code, cells in VERTICAL_CELLS.items():
+            name = f"U+{code:04X}"
+            if wide[code] is None:
+                continue
+            form, sequence = wide[code], multiple.get(wide[code], [])
+            check(font["vmtx"][form][0] == cells * em and font["hmtx"][form][0] == em,
+                  f"{label}: {tag} first stage of {name} is not one glyph of {cells} cells")
+            check(len(sequence) == cells and len(set(sequence[1:])) == 1 and sequence[0] not in (form, sequence[-1]),
+                  f"{label}: {tag} second stage of {name} is not one glyph and {cells - 1} blank(s)")
+            if len(sequence) != cells:
+                continue
+            head, blank = sequence[0], sequence[-1]
+            check(blanks.setdefault(tag, blank) == blank, f"{label}: {tag} uses more than one blank glyph")
+            check(outline(font, head) == outline(font, form) and font["hmtx"][head] == font["hmtx"][form],
+                  f"{label}: {tag} first glyph of {name} does not keep the outline of the {cells}-cell glyph")
+            check(font["vmtx"][head] == font["vmtx"][form] and font["glyf"][head].yMax == font["glyf"][form].yMax,
+                  f"{label}: {tag} first glyph of {name} does not keep the vertical advance and origin of the {cells}-cell glyph")
+            check(font["glyf"][blank].numberOfContours == 0 and font["vmtx"][blank] == (0, 0)
+                  and font["hmtx"][blank][0] == (em if tag == "vrt2" else 0),
+                  f"{label}: {tag} blank of {name} has ink, advances vertically or has a wrong horizontal advance")
+            box = glyph_bounds(font, head)
+            origin = font["glyf"][head].yMax + font["vmtx"][head][1]
+            check(box and 0 <= box[0] < box[2] <= em and origin - cells * em <= box[1] < box[3] <= origin,
+                  f"{label}: {tag} first glyph of {name} exceeds its {cells}-cell frame")
+            # 環境ごとの送りの決め方。縦の送り (HarfBuzz) と最大 (DirectWrite) は 2 セルの字のもの、横の送りの合計 (CoreText は
+            # vrt2、WebKitGTK は vert の GPOS の送りも足す) もセルの数 × 1 em
+            extra = gpos_values(font, SPACING_FEATURE).get(blank, (0, 0, 0, 0))[2] if tag == "vert" else 0
+            check(sum(font["vmtx"][g][0] for g in sequence) == cells * em
+                  and max(font["vmtx"][g][0] for g in sequence) == cells * em
+                  and sum(font["hmtx"][g][0] for g in sequence) + extra * (cells - 1) == cells * em,
+                  f"{label}: {tag} advances of the glyphs of {name} do not add up to {cells} cells (vertical, or horizontal as CoreText and WebKitGTK use)")
+            if tag == "vert":
+                check(sum(font["hmtx"][g][0] for g in sequence) == em,
+                      f"{label}: only the first glyph of {name} has a horizontal advance in vert (DirectWrite would shift it sideways)")
+    check(stage_one["vert"] == stage_one["vrt2"], f"{label}: vert and vrt2 have different vertical forms of 〱 〲 ⸺ ⸻")
+    # 空白の字の横の送りを足す GPOS は、機能 curs のその 1 つの調整だけ。ほかの機能 (kern・vert・vkrn など) には入れない
+    # (DirectWrite は kern・dist・vert の GPOS の横の送りも使って字を左右にずらす)
+    gpos = font["GPOS"].table
+    adds = gpos_values(font, SPACING_FEATURE)
+    blank_zero = blanks.get("vert")
+    check(blank_zero != blanks.get("vrt2") and adds == {blank_zero: (0, 0, em, 0)},
+          f"{label}: {SPACING_FEATURE} does not hold only the 1 em horizontal advance of the blank of vert")
+    others = {i for r in gpos.FeatureList.FeatureRecord if r.FeatureTag != SPACING_FEATURE for i in r.Feature.LookupListIndex}
+    check(not any(blank_zero in getattr(getattr(st, "ExtSubTable", st), "Coverage", None).glyphs
+                  for i in others for st in gpos.LookupList.Lookup[i].SubTable
+                  if getattr(getattr(st, "ExtSubTable", st), "Coverage", None) is not None),
+          f"{label}: the blank of vert is adjusted by a feature other than {SPACING_FEATURE}")
+    multiple = gsub_multiple(font, "vert")
+    # 組んだ結果 (HarfBuzz は縦の送りを使う)。どの機能でも、あ〱い・〱〲 のように前後の字や並びがあっても同じ
+    for code, cells in VERTICAL_CELLS.items():
+        char = chr(code)
+        form = stage_one["vert"][code]
+        if form is None or form not in multiple:
+            continue
+        for features in VERTICAL_FEATURES:
+            # vert=0 だけは vrt2 の並び (どちらも輪郭のある字 1 つと空白の字。空白は横の送りだけ違う)
+            sequence = gsub_multiple(font, "vrt2" if "vert=0" in features else "vert")[form]
+            for text in (char, f"あ{char}い", char + char, f"あ{char}い{char}"):
+                shaped = shaper.shape(text, "ja", True, features)
+                # その字から出た字 (クラスターは UTF-8 のバイトの位置。前後の仮名は、機能で変わってもよい)
+                clusters = [len(text[:i].encode()) for i, c in enumerate(text) if c == char]
+                for cluster in clusters:
+                    part = [g for g in shaped if g[1] == cluster]
+                    check([order[g[0]] for g in part] == sequence and [-g[3] for g in part] == [cells * em] + [0] * (cells - 1),
+                          f"{label}: {text} does not shape one {cells}-cell glyph and {cells - 1} blank(s) for U+{code:04X} in vertical text with {features}")
+                    check(sum(-g[3] for g in part) == cells * em,
+                          f"{label}: {text} is not {cells} em for U+{code:04X} in vertical text with {features}")
+                check(len(shaped) == len(text) - len(clusters) + cells * len(clusters),
+                      f"{label}: {text} has a different number of glyphs in vertical text with {features}")
+        # 横組は変わらない (cmap の字 1 つ。送りは 〱 〲 が 1 em、⸺ ⸻ が 2 em・3 em)
+        for features in ((), ("ss01",), ("palt",), ("halt",), ("kern=0",), (SPACING_FEATURE,)):
+            shaped = shaper.shape(char, "ja", False, features)
+            check(len(shaped) == 1 and order[shaped[0][0]] == cmap[code] and shaped[0][2] == font["hmtx"][cmap[code]][0],
+                  f"{label}: U+{code:04X} horizontal shaping changed with {features}")
+    # 2 段目を処理できない環境。最後の 2 つの lookup を vert・vrt2 から外した複製で、今までどおり 1 字・セルの数 × 1 em
+    with tempfile.TemporaryDirectory() as folder:
+        stripped = TTFont(FONTS / label, lazy=False)
+        for record in stripped["GSUB"].table.FeatureList.FeatureRecord:
+            if record.FeatureTag in ("vert", "vrt2"):
+                record.Feature.LookupListIndex = [i for i in record.Feature.LookupListIndex if i not in (last - 1, last)]
+                record.Feature.LookupCount = len(record.Feature.LookupListIndex)
+        path = Path(folder) / label
+        stripped.save(path)
+        first_stage = harfbuzz_shape.Shaper(path)
+        for code, cells in VERTICAL_CELLS.items():
+            for features in ((), ("vert=0", "vrt2")):
+                shaped = first_stage.shape(f"あ{chr(code)}い", "ja", True, features)
+                check([g[0] for g in shaped] == [font.getGlyphID(cmap[0x3042]), font.getGlyphID(stage_one["vert"][code]),
+                                                 font.getGlyphID(cmap[0x3044])]
+                      and shaped[1][3] == -cells * em,
+                      f"{label}: U+{code:04X} does not keep the {cells}-cell vertical form when the cells are not split")
+        first_stage.close()
 
 
 def check_line_metrics(ctx: FontContext) -> None:
@@ -146,9 +285,7 @@ def check_japanese_additions(ctx: FontContext) -> None:
                   f"{label}: repeat mark does not retain the source halves' points")
             check(len(outline(font, vertical)[1]) == len(outline(ud, source[top_code])[1]),
                   f"{label}: repeat halves have an unjoined seam")
-            shaped = shaper.shape(chr(code), "ja", True, features)
-            check(len(shaped) == 1 and shaped[0][0] == font.getGlyphID(vertical) and shaped[0][3] == -2 * em,
-                  f"{label}: {tag} does not shape one two-cell repeat glyph")
+            # 縦組の組み方 (1 セルずつの字に分ける 2 段目) は check_vertical_cells が検査する。ここは 1 段目まで
         check(outline(font, name) != outline(ud, source[top_code]), f"{label}: repeat mark is only its upper half")
     check(outline(font, cmap[0x3031]) != outline(font, cmap[0x3032]), f"{label}: voiced repeat mark lacks dakuten")
     for features in ((), ("vert=0", "vrt2")):
@@ -178,6 +315,8 @@ def check_overflow(ctx: FontContext) -> None:
     cmap = font.getBestCmap()
     # ２セルのくの字点も専用の縦組枠で check_japanese_additions が上下を検査する。
     vertical_dashes = {gsub_mapping(font, "vert").get(cmap.get(code)) for code in (0x2E3A, 0x2E3B, 0x3031, 0x3032)}
+    # 2 段目の、1 つ目の字 (輪郭は 2 セル・3 セルの字のまま)。check_vertical_cells が枠を検査する
+    vertical_dashes |= {values[0] for values in gsub_multiple(font, "vert").values()}
     copies = {}
     for source in (ud, udp):
         for name in source.getGlyphOrder():

@@ -11,14 +11,18 @@
   ヒントは small_type.hint_marks が付ける。縦組では 〟 の縦組の字にする
 - 𠮷 (U+20BB7): 圭の上部の土と、吉の下部の口を組み合わせる。元の線の太さを保つ (ヒントなし)
 - 〱・〲 (U+3031・3032): 〳/〴 と 〵 をつなぎ、縦組では２セルの１字にする (ヒントなし)
+- 縦組の 2 セル・3 セルの字 (〱 〲 ⸺ ⸻): vert・vrt2 の 2 段目で、輪郭のある字 1 つと空白の字に置き換える
+  (split_vertical_cells。縦の送りに vmtx を使わない環境のため)
 """
 
+import copy
 from array import array
 
 from fontTools.pens.reverseContourPen import ReverseContourPen
 from fontTools.pens.transformPen import TransformPen
 from fontTools.pens.ttGlyphPen import TTGlyphPen
 from fontTools.ttLib import TTFont
+from fontTools.ttLib.tables import otTables
 from fontTools.ttLib.tables._c_m_a_p import CmapSubtable
 from fontTools.ttLib.tables._g_l_y_f import Glyph, GlyphComponent, GlyphCoordinates
 
@@ -44,6 +48,11 @@ SPACES = {
 NON_BREAKING_HYPHEN = 0x2011
 DASHES = {0x2E3A: 2, 0x2E3B: 3}  # ⸺ ⸻ → ― の数
 HORIZONTAL_BAR = 0x2015
+REPEAT_MARKS = (0x3031, 0x3032)  # 〱 〲
+VERTICAL_CELL_CODES = (*REPEAT_MARKS, *DASHES)  # 縦組で 2 セル以上の字 (split_vertical_cells が 1 セルずつの字に分ける)
+BLANK_CELL = "vertical.blank"  # 縦組の 2 セル以上の字の、2 つ目からの空白の字 (横の送りが 1 em。vrt2 用)
+BLANK_ZERO = "vertical.blank0"  # 同じ、横の送りが 0 の空白の字 (vert 用。GPOS で横の送りを足す)
+SPACING_FEATURE = "curs"  # 上の GPOS を入れる機能 (DirectWrite が使わず、WebKitGTK が使うもの)
 DOUBLE_PRIME_QUOTE, LOW_DOUBLE_PRIME_QUOTE, REVERSED_DOUBLE_PRIME_QUOTE = 0x301E, 0x301F, 0x301D
 
 
@@ -230,3 +239,94 @@ def add(font: TTFont) -> dict[str, int]:
         next(build.subtables(gsub, index, "mapping")).mapping[name] = low_form
     _japanese_additions(font, vertical_lookups)
     return {"invisible": len(INVISIBLE), "spaces": len(SPACES), "dashes": len(DASHES), "japanese": 3}
+
+
+def _add_feature(table, tag: str, lookup_index: int) -> None:
+    """GSUB / GPOS の table に、lookup_index だけを使う tag の機能を足し、すべての文字体系・言語系に入れる
+    (機能の記録は tag の順に並べ直す)"""
+    feature = otTables.Feature()
+    feature.FeatureParams, feature.LookupListIndex, feature.LookupCount = None, [lookup_index], 1
+    record = otTables.FeatureRecord()
+    record.FeatureTag, record.Feature = tag, feature
+    records = [*table.FeatureList.FeatureRecord, record]
+    order = sorted(range(len(records)), key=lambda i: (records[i].FeatureTag, i))
+    remap = {old: new for new, old in enumerate(order)}
+    table.FeatureList.FeatureRecord = [records[i] for i in order]
+    table.FeatureList.FeatureCount = len(records)
+    for script in table.ScriptList.ScriptRecord:
+        systems = [script.Script.DefaultLangSys] if script.Script.DefaultLangSys else []
+        systems += [r.LangSys for r in script.Script.LangSysRecord]
+        for system in systems:
+            system.FeatureIndex = sorted([remap[i] for i in system.FeatureIndex] + [remap[len(records) - 1]])
+            system.FeatureCount = len(system.FeatureIndex)
+
+
+def split_vertical_cells(font: TTFont, codes=VERTICAL_CELL_CODES) -> dict[str, dict[str, list[str]]]:
+    """縦組で 2 セル (以上) の字を、輪郭のある字 1 つと空白の字の並びに置き換える。build.py が、vert・vrt2 の
+    lookup を足し終えた後 (どの lookup よりも後に適用する lookup を足すため) に呼ぶ。
+
+    縦組の字の送りは、環境で決め方が違う。HarfBuzz (Chrome・Firefox) と DirectWrite は縦の送り (vmtx) を使い、
+    WebKitGTK は 1 em ずつ (縦の送りは使わず、横の送り hmtx と GPOS の横の送りを足したもの) 、CoreText は
+    横の送り (hmtx) を足したものを使う。1 段目 (今までどおり) は cmap の字 → 2 セルの字 (縦の送り 2 em)。
+    2 段目は、その 2 セルの字 → [輪郭が同じで縦の送りも 2 em の字, 空白の字 (縦の送り 0) …] (3 セルなら空白が 2 つ)。
+    空白の字は環境ごとに変える。vert (HarfBuzz・DirectWrite・WebKitGTK) では横の送りが 0 の空白 (BLANK_ZERO) に、
+    GPOS の curs で横の送りを 1 em 足す。DirectWrite は、1 つの文字から出た字の横の送りの合計で、字を左右に
+    ずらして置く (横の送りが 0 でないと 1 つ目の字が半 em 左にずれる)。curs の GPOS は DirectWrite が使わない。
+    WebKitGTK は使う (vert の GPOS や kern は、DirectWrite が使うか、WebKitGTK が使わない)。vrt2 (CoreText) では
+    横の送りが 1 em の空白 (BLANK_CELL)。CoreText は GPOS の横の送りを使わず、hmtx を足す。
+    どの環境でも、合計は 2 em (3 セルなら 3 em) になり、輪郭は 1 つ目の字だけが持つ。複数の字への置き換え
+    (GSUB の型 2) を使えない環境は、2 段目を飛ばして 1 段目の字 (縦の送り 2 em) をそのまま使う。"""
+    import build
+    gsub, gpos = font["GSUB"].table, font["GPOS"].table
+    cmap, em = font.getBestCmap(), font["head"].unitsPerEm
+    mappings: dict[str, dict[str, list[str]]] = {"vert": {}, "vrt2": {}}
+    for code in codes:
+        name = cmap[code]
+        wide = build.single_mapping(gsub, "vert", {name}).get(name)
+        if wide is None or build.single_mapping(gsub, "vrt2", {name}).get(name) != wide:
+            raise SystemExit(f"U+{code:04X} has no common vertical form in vert and vrt2")
+        advance, bearing = font["vmtx"][wide]
+        if advance % em or advance // em < 2:
+            raise SystemExit(f"{wide} does not advance a whole number of cells (at least 2) in vertical text")
+        if wide in mappings["vert"]:
+            raise SystemExit(f"{wide} is the vertical form of more than one character")
+        if font["hmtx"][wide][0] != em:
+            raise SystemExit(f"{wide} is not one cell wide")
+        glyph = copy.deepcopy(font["glyf"][wide])
+        glyph.expand(font["glyf"])
+        # 輪郭も、縦の原点 (yMax + 上側ベアリング) も縦の送りも 2 セルの字と同じ。2 セルの字そのものを使わないのは、
+        # vert と vrt2 の両方を使う環境で、2 段目が 2 度かからないようにするため
+        _add(font, f"{wide}.cell", glyph, em, (advance, bearing))
+        for blank, horizontal in ((BLANK_ZERO, 0), (BLANK_CELL, em)):
+            if blank not in font["hmtx"].metrics:
+                _add(font, blank, _empty(), horizontal, (0, 0))
+        mappings["vert"][wide] = [f"{wide}.cell"] + [BLANK_ZERO] * (advance // em - 1)
+        mappings["vrt2"][wide] = [f"{wide}.cell"] + [BLANK_CELL] * (advance // em - 1)
+    for tag, mapping in mappings.items():
+        subtable = otTables.MultipleSubst()
+        subtable.Format, subtable.mapping = 1, mapping
+        lookup = otTables.Lookup()
+        lookup.LookupType, lookup.LookupFlag, lookup.SubTable, lookup.SubTableCount = 2, 0, [subtable], 1
+        gsub.LookupList.Lookup.append(lookup)
+        gsub.LookupList.LookupCount = len(gsub.LookupList.Lookup)
+        index = len(gsub.LookupList.Lookup) - 1
+        seen = set()
+        for record in gsub.FeatureList.FeatureRecord:
+            if record.FeatureTag == tag and id(record.Feature) not in seen:
+                seen.add(id(record.Feature))
+                record.Feature.LookupListIndex = [*record.Feature.LookupListIndex, index]
+                record.Feature.LookupCount = len(record.Feature.LookupListIndex)
+    # 空白 (横の送りが 0) に、横の送りを 1 em 足す GPOS。WebKitGTK だけが、機能 curs のこの調整を使う
+    position = otTables.SinglePos()
+    position.Format = 1
+    position.Coverage = otTables.Coverage()
+    position.Coverage.glyphs = [BLANK_ZERO]
+    position.ValueFormat = 0x4  # XAdvance
+    position.Value = otTables.ValueRecord()
+    position.Value.XAdvance = em
+    lookup = otTables.Lookup()
+    lookup.LookupType, lookup.LookupFlag, lookup.SubTable, lookup.SubTableCount = 1, 0, [position], 1
+    gpos.LookupList.Lookup.append(lookup)
+    gpos.LookupList.LookupCount = len(gpos.LookupList.Lookup)
+    _add_feature(gpos, SPACING_FEATURE, len(gpos.LookupList.Lookup) - 1)
+    return mappings

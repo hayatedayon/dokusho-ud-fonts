@@ -43,6 +43,8 @@ def vertical_forms(font: TTFont) -> dict[str, str]:
         for index in record.Feature.LookupListIndex:
             for subtable in gsub.LookupList.Lookup[index].SubTable:
                 subtable = getattr(subtable, "ExtSubTable", subtable)
+                if type(subtable).__name__ == "MultipleSubst":
+                    continue  # 複数の字への置き換え (縦組の 2 セルの字を 1 セルずつに分ける) は、1 対 1 ではない
                 for key, value in getattr(subtable, "mapping", {}).items():
                     forms.setdefault(key, value)  # 先の lookup のものを取る
     return forms

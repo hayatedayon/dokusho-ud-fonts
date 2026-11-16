@@ -7,6 +7,30 @@ from fontTools.ttLib import TTFont
 import spec
 
 
+def singles(subtable) -> dict:
+    """1 対 1 の置き換え (GSUB の型 1) の {字: 置き換え先}。複数の字への置き換え (型 2) は含めない"""
+    return {} if type(subtable).__name__ == "MultipleSubst" else getattr(subtable, "mapping", {})
+
+
+def multiples(subtable) -> dict:
+    """複数の字への置き換え (GSUB の型 2) の {字: [置き換え先の字, ...]}"""
+    return getattr(subtable, "mapping", {}) if type(subtable).__name__ == "MultipleSubst" else {}
+
+
+def gsub_multiple(font: TTFont, tag: str) -> dict:
+    """tag の複数の字への置き換え (型 2) の {字: [置き換え先の字, ...]}。先の lookup のものを取る"""
+    gsub = font["GSUB"].table
+    result: dict = {}
+    for record in gsub.FeatureList.FeatureRecord:
+        if record.FeatureTag != tag:
+            continue
+        for index in record.Feature.LookupListIndex:
+            for subtable in gsub.LookupList.Lookup[index].SubTable:
+                for key, value in multiples(getattr(subtable, "ExtSubTable", subtable)).items():
+                    result.setdefault(key, list(value))
+    return result
+
+
 def outline(font: TTFont, name: str):
     coordinates, ends, flags = font["glyf"][name].getCoordinates(font["glyf"])
     return list(coordinates), list(ends), list(flags)
@@ -21,7 +45,7 @@ def gsub_mapping(font: TTFont, tag: str) -> dict:
         for index in record.Feature.LookupListIndex:
             for subtable in gsub.LookupList.Lookup[index].SubTable:
                 subtable = getattr(subtable, "ExtSubTable", subtable)
-                for key, value in getattr(subtable, "mapping", {}).items():
+                for key, value in singles(subtable).items():
                     mapping.setdefault(key, value)  # 先の lookup のものを取る
     return mapping
 
@@ -37,7 +61,7 @@ def gsub_alternates(font: TTFont, tag: str) -> dict:
             for subtable in gsub.LookupList.Lookup[index].SubTable:
                 subtable = getattr(subtable, "ExtSubTable", subtable)
                 # aalt の機能は用字系ごとにあり、同じ lookup を指すので、同じ候補は 1 つにする
-                for key, value in getattr(subtable, "mapping", {}).items():
+                for key, value in singles(subtable).items():
                     if value not in result.setdefault(key, []):
                         result[key].append(value)
                 for key, values in getattr(subtable, "alternates", {}).items():
@@ -131,7 +155,7 @@ def latin_symbol_mapping(font: TTFont, script: str, language: str | None, vertic
         for lookup_index in record.Feature.LookupListIndex:
             for subtable in gsub.LookupList.Lookup[lookup_index].SubTable:
                 subtable = getattr(subtable, "ExtSubTable", subtable)
-                for key, value in getattr(subtable, "mapping", {}).items():
+                for key, value in singles(subtable).items():
                     mapping.setdefault(key, value)  # 先の lookup のものを取る
     if not vertical:
         encoded = set(font.getBestCmap().values())
@@ -170,7 +194,8 @@ def outputs(font: TTFont, tags) -> set[str]:
             continue
         seen.add(index)
         for subtable in lookup_subtables(gsub, index):
-            result |= set(getattr(subtable, "mapping", {}).values()) | set(getattr(subtable, "Substitute", []))
+            result |= set(singles(subtable).values()) | set(getattr(subtable, "Substitute", []))
+            result |= {glyph for values in multiples(subtable).values() for glyph in values}
             pending += [record.LookupListIndex for record in getattr(subtable, "SubstLookupRecord", [])]
     return result
 
@@ -184,7 +209,7 @@ def apply_features(font: TTFont, glyphs: list[str], masks: list[set[str]]) -> li
 
     def single(index: int, glyph: str) -> str:
         for subtable in lookup_subtables(gsub, index):
-            if glyph in getattr(subtable, "mapping", {}):
+            if glyph in singles(subtable):
                 return subtable.mapping[glyph]
         return glyph
 

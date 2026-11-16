@@ -70,7 +70,8 @@ def subtables(gsub, index: int, kind: str):
     """lookup の、kind ("mapping" は 1 対 1、"ligatures" は合字、"alternates" は候補) のサブテーブル"""
     for subtable in gsub.LookupList.Lookup[index].SubTable:
         subtable = getattr(subtable, "ExtSubTable", subtable)
-        if hasattr(subtable, kind):
+        # 複数の字への置き換え (型 2) も mapping を持つが、値が字の並びなので、1 対 1 ("mapping") には数えない
+        if hasattr(subtable, kind) and not (kind == "mapping" and type(subtable).__name__ == "MultipleSubst"):
             yield subtable
 
 
@@ -456,6 +457,8 @@ def build(family: dict, weight: str) -> Path:
     spaced = spacing.add(ud, udp, marks["fea"] + kerning.feature(ud, family["key"]), ruby=ruby, minutes=symbols["minutes"]["sources"])
     combining_marks.dotless_i(ud, marks["dotless_above"], marks["fullwidth_dotless"])
     reading_styles.add(ud, symbols)
+    # vert・vrt2 の最後の lookup になるので、vert・vrt2 の lookup を足すものより後で呼ぶ
+    extra_glyphs.split_vertical_cells(ud)
 
     rename(ud, family, weight, versions)
     reading_styles.label(ud)

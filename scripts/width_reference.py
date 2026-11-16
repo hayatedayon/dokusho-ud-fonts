@@ -22,8 +22,11 @@ from harfbuzz_shape import Shaper
 ROOT = Path(__file__).resolve().parent.parent
 FIXTURE = ROOT / "tests" / "fixtures" / "widths-1.006.json"
 FILES = tuple(f"DokushoUD{family}-{weight}.ttf" for family in ("Mincho", "Gothic") for weight in ("Regular", "Bold"))
-# 1.007 で字形を意図して変えた字 (〞 の左右の向きと、縦組の “ ” ‘ ’ のミニュートの形)。ほかの字は compare が全字を比べる。
-INTENDED_CHANGES = {0x301E, 0x2018, 0x2019, 0x201C, 0x201D}
+# 字形を意図して変えた字。ほかの字は compare が全字を比べる。
+# 1.007: 〞 の左右の向きと、縦組の “ ” ‘ ’ のミニュートの形。
+# 次期版: 縦組の ⸺ ⸻ (vert・vrt2 で、2 em・3 em の 1 字を、1 em ずつの字に分ける)。縦組の送りの合計は変わらず、
+# 検査は checks/additions.py の check_vertical_cells が行う。
+INTENDED_CHANGES = {0x301E, 0x2018, 0x2019, 0x201C, 0x201D, 0x2E3A, 0x2E3B}
 
 
 def cases():

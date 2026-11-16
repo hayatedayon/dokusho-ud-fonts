@@ -39,6 +39,7 @@ STEPS = [
     additions.check_extra,
     additions.check_line_metrics,
     additions.check_japanese_additions,
+    additions.check_vertical_cells,
     spacing.check_proportional,
     vertical.check_proportional_vertical,
     digits.check_tabular,
