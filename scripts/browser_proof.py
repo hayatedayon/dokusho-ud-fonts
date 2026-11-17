@@ -30,7 +30,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 CELLS = {"〱": 2, "〲": 2, "⸺": 2, "⸻": 3}  # 縦組の 2 セル・3 セルの字 → 送り (em)
 HORIZONTAL_CELLS = {"〱": 1, "〲": 1, "⸺": 2, "⸻": 3}  # 横組の送り (em)
 ORIENTATIONS = ("mixed", "upright", "sideways")
-FEATURES = ("normal", '"vert" 1')
+FEATURES = ("normal", '"vert" 1', '"vrt2" 1')
+WRITING_MODES = ("vertical-rl", "vertical-lr")
 SYMBOLS = "‘’“”—−¼½¾⅓⅔⅕°‼⁇⁈⁉"  # ALWAYS_UDP。native_proof の always-udp の確認文と同じ
 KERN_TEXT = "T. V, W. Y, P. F, r. y, v. w,"
 SIZE = 64  # px。小さいと字の送りの丸めが目立つので大きく測る
@@ -103,7 +104,7 @@ async function run() {
   result.faceStatus = faces;
   CONFIG.fonts.forEach((font, index) => {
     const visible = index === CONFIG.visibleIndex, out = {};
-    const fam = font.family, row = (cls, text, style, label) => make(stage, cls, fam, text, style, {visible, text: cls === 'v' ? label : `${font.name} ${label}`});
+    const fam = font.family, row = (cls, text, style, label, show = true) => make(stage, cls, fam, text, style, {visible: visible && show, text: cls === 'v' ? label : `${font.name} ${label}`});
     // 横組: 2 セル・3 セルの字の送り
     out.horizontalCells = rects(row('h', 'あ' + Object.keys(CONFIG.cells).join('') + 'い', '', 'horizontal あ〱〲⸺⸻い'));
     // 横組: 17 字の字幅 (lang=ja。locl の後の BIZ UDP の字幅)
@@ -113,15 +114,16 @@ async function run() {
     const kernOn = row('h', CONFIG.kernText, '', 'kerning (default)');
     const kernOff = row('h', CONFIG.kernText, 'font-kerning: none', 'kerning: none');
     out.kern = {on: widthOf(kernOn), off: widthOf(kernOff)};
-    // 縦組: 向き × font-feature-settings × 字
+    // 縦組: writing-mode × 向き × font-feature-settings × 字。一覧の画像は vertical-rl だけ
     out.vertical = [];
-    for (const orientation of CONFIG.orientations) for (const feature of CONFIG.features) for (const ch of Object.keys(CONFIG.cells)) {
-      const node = row('v', 'あ' + ch + 'い', `text-orientation: ${orientation}; font-feature-settings: ${feature}`, `${orientation} ${feature} あ${ch}い`);
+    for (const writingMode of CONFIG.writingModes) for (const orientation of CONFIG.orientations) for (const feature of CONFIG.features) for (const ch of Object.keys(CONFIG.cells)) {
+      const style = `writing-mode: ${writingMode}; text-orientation: ${orientation}; font-feature-settings: ${feature}`;
+      const node = row('v', 'あ' + ch + 'い', style, `${orientation} ${feature} あ${ch}い`, writingMode === 'vertical-rl');
       // Safari は縦組の Range の位置が崩れる (3 字目が 0) ので、全体の長さも測る: 縮める箱 (inline-block) の高さ
       const probe = document.createElement('div'); probe.className = 'vp hidden'; probe.lang = 'ja';
-      probe.style.cssText = `font-family: "${fam}", serif; text-orientation: ${orientation}; font-feature-settings: ${feature}`;
+      probe.style.cssText = `font-family: "${fam}", serif; ${style}`;
       probe.textContent = 'あ' + ch + 'い'; stage.appendChild(probe);
-      out.vertical.push({orientation, feature, char: ch, rects: rects(node), extent: probe.getBoundingClientRect().height});
+      out.vertical.push({writingMode, orientation, feature, char: ch, rects: rects(node), extent: probe.getBoundingClientRect().height});
     }
     // 追加字 𠮷: 自分の字形が出ているか (𠮷 を持たない面 = 代わりのフォントの輪郭の範囲との違い)
     const probe = CONFIG.fonts[index].noGlyphFamily;
@@ -162,7 +164,7 @@ def build_site(fonts: Path, site: Path, visible: str = "DokushoUDMincho-Regular"
         entries.append({"name": path.stem, "family": family, "noGlyphFamily": empty})
     config = {"fonts": entries, "visibleIndex": next(i for i, e in enumerate(entries) if e["name"] == visible),
               "cells": CELLS, "symbols": SYMBOLS, "kernText": KERN_TEXT, "size": SIZE,
-              "orientations": ORIENTATIONS, "features": FEATURES}
+              "writingModes": WRITING_MODES, "orientations": ORIENTATIONS, "features": FEATURES}
     (site / "index.html").write_text(PAGE % {"faces": "\n".join(faces), "size": SIZE,
                                              "config": json.dumps(config, ensure_ascii=False), "script": SCRIPT}, encoding="utf-8")
     return config
@@ -316,11 +318,12 @@ def check_result(result: dict, expected: dict) -> list[str]:
         if abs(data["kichi"]["width"] / size - 1) > .03 or (strict and not data["kichi"]["differsFromFallback"]):
             problems.append(f"{name} U+20BB7: width {data['kichi']['width'] / size:.3f} em, own glyph drawn: {data['kichi']['differsFromFallback']}")
         for item in data["vertical"]:
-            if item["orientation"] == "mixed" and item["feature"] == "normal":
+            if item["orientation"] in ("mixed", "upright") and item["feature"] in FEATURES:
                 char, unit = item["char"], size * 28 / 64  # 縦組の見本は 28px
                 length = item["extent"] / unit  # あ + 字 + い の長さ。前後の仮名 1 em ずつと字の送り
                 if abs(length - (CELLS[char] + 2)) > .08:
-                    problems.append(f"{name} vertical (mixed) U+{ord(char):04X}: あ+字+い is {length:.3f} em long, expected {CELLS[char] + 2} em")
+                    problems.append(f"{name} {item.get('writingMode', 'vertical-rl')} ({item['orientation']}, {item['feature']}) U+{ord(char):04X}: "
+                                    f"あ+字+い is {length:.3f} em long, expected {CELLS[char] + 2} em")
     return problems
 
 
@@ -334,9 +337,9 @@ def summary(result: dict) -> dict:
             "symbols": [round(r["width"] / size, 3) for r in data["symbols"][1:-1]],
             "kernDelta": round((data["kern"]["off"] - data["kern"]["on"]) / size, 3),
             "kichi": {"width": round(data["kichi"]["width"] / size, 3), "ownGlyph": data["kichi"]["differsFromFallback"]},
-            "vertical (あ+字+い の長さ em)": {f"{v['orientation']} {v['feature']} あ{v['char']}い": round(v["extent"] / vertical_unit, 3)
+            "vertical (あ+字+い の長さ em)": {f"{v.get('writingMode', 'vertical-rl')} {v['orientation']} {v['feature']} あ{v['char']}い": round(v["extent"] / vertical_unit, 3)
                                         for v in data["vertical"]},
-            "vertical (Range の位置から見た字の送り em)": {f"{v['orientation']} {v['feature']} あ{v['char']}い": round((v["rects"][2]["top"] - v["rects"][1]["top"]) / vertical_unit, 3)
+            "vertical (Range の位置から見た字の送り em)": {f"{v.get('writingMode', 'vertical-rl')} {v['orientation']} {v['feature']} あ{v['char']}い": round((v["rects"][2]["top"] - v["rects"][1]["top"]) / vertical_unit, 3)
                                              for v in data["vertical"]},
         }
     return out
@@ -352,8 +355,9 @@ def validate() -> int:
     for name, exp in expected.items():
         symbols = [{"width": w * size} for w in exp["symbols"].values()]
         cells = [{"width": size}] + [{"width": w * size} for w in HORIZONTAL_CELLS.values()] + [{"width": size}]
-        vertical = [{"orientation": "mixed", "feature": "normal", "char": c,
-                     "rects": [{"top": 0}, {"top": 28}, {"top": 28 * (1 + n)}], "extent": 28 * (n + 2)} for c, n in CELLS.items()]
+        vertical = [{"writingMode": mode, "orientation": orientation, "feature": feature, "char": c,
+                     "rects": [{"top": 0}, {"top": 28}, {"top": 28 * (1 + n)}], "extent": 28 * (n + 2)}
+                    for mode in WRITING_MODES for orientation in ORIENTATIONS for feature in FEATURES for c, n in CELLS.items()]
         result["fonts"][name] = {"horizontalCells": cells, "symbols": [{"width": size}] + symbols + [{"width": size}],
                                  "kern": {"on": 100, "off": 100 + exp["kernDelta"] * size},
                                  "kichi": {"width": size, "differsFromFallback": True}, "vertical": vertical}
@@ -371,6 +375,16 @@ def validate() -> int:
     if len(check_result(broken, expected)) != 5:
         print("the browser checks missed a changed value")
         return 1
+    # mixed の指定なしだけの検査に戻ると、Safari の不具合の範囲を見落とす。
+    for mode, orientation, feature in (("vertical-rl", "mixed", '"vert" 1'),
+                                       ("vertical-lr", "upright", '"vrt2" 1')):
+        broken = json.loads(json.dumps(result))
+        row = next(v for v in next(iter(broken["fonts"].values()))["vertical"]
+                   if (v["writingMode"], v["orientation"], v["feature"]) == (mode, orientation, feature))
+        row["extent"] = 28 * 3
+        if len(check_result(broken, expected)) != 1:
+            print(f"the browser checks missed {mode}, {orientation}, {feature}")
+            return 1
     with tempfile.TemporaryDirectory(prefix="dokusho-browser-") as temporary:
         config = build_site(fonts, Path(temporary))
         if not (Path(temporary) / "index.html").exists() or len(config["fonts"]) != 4:
