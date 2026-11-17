@@ -249,6 +249,10 @@ def drive(browser: str, url: str, output: Path) -> dict:
         client.start(capabilities)
         info = {"browserName": client.capabilities.get("browserName"), "browserVersion": client.capabilities.get("browserVersion"),
                 "platformName": client.capabilities.get("platformName")}
+        try:  # 縦組の一覧が全部入る大きさ。変えられないブラウザでは今の大きさのまま
+            client.call("POST", client.s("/window/rect"), {"width": 1400, "height": 1300})
+        except Exception as error:
+            print(f"window size not changed: {error}")
         client.call("POST", client.s("/url"), {"url": url})
         for _ in range(100):
             title = client.call("GET", client.s("/title"))
