@@ -109,7 +109,8 @@ python3 scripts/glyph_reference.py record NotoSerifCJK-Regular.ttc NotoSansCJK-R
 | Kobo | EPUBのフォント埋め込み、横縦組、設定の行送り・サイズ、新字・記号のフォールバック | 未実施 |
 | Kindle | 実機とプレビュー、配信／変換後の埋め込み、横縦組、新字・17記号・くの字点の送り | 未実施 |
 | Apple Books（macOS／iOS） | EPUBの横縦組、引用符・17記号、くの字点、サイズと行送りの変更 | 未実施 |
-| Safari（macOS／iOS） | 縦組の `〱 〲 ⸺ ⸻` の送り、横縦組、`ss03` | 未実施 |
+| Safari（macOS／iOS） | 縦組の `〱 〲 ⸺ ⸻` の送り、横縦組、`ss03` | 一部実施、縦組の送りは不合格（2026-11-17。補助 CI の Safari 27.2、macOS。縦組で `〱 〲 ⸺ ⸻` の送りが 1 em で次の字に重なる。横組・17字の字幅・カーニングは期待どおり。iOS と `ss03` は未実施。測った値は表の下） |
+| Edge（Windows。WebView2 と同じ Chromium、補助 CI） | 縦組・横組の送り、17字の字幅、カーニング、`𠮷` の収録 | 合格（2026-11-17。補助 CI の Edge 156.0.4314.58、ヘッドレス、3 回とも同じ値。WebView2 のランタイムそのものではない。測った値は表の下） |
 | Chrome（Windows）、縦組の `〱 〲 ⸺ ⸻` の2段の置き換え | 縦組・横組の送り、字形の位置、選択とコピー、`ss03` のルビ（8〜10ppem）。版を上げる前の 1.009 の候補版（TTF・WOFF2）と 1.008 の比較 | 合格（2026-11-15。Orca 内蔵の Chromium 150.0.7871.250、Win32。わかったことは表の下） |
 | Chrome（Windows）、確認用ページの自動の確認 | 行送り、字幅、カーニング、`𠮷` の収録、縦組の引用符 | 1.009 では未実施（1.008 のフォントでは 2026-11-10 に合格。[proofing-records/1.008.md](proofing-records/1.008.md)） |
 | WebKitGTK（Reader の CSS を通さない最小の HTML） | 縦組の `vert` を指定したときの `〱 〲 ⸺ ⸻` の送りと、重なり | 合格（2026-11-15。版を上げる前の 1.009 の候補版。わかったことは表の下） |
@@ -118,7 +119,7 @@ python3 scripts/glyph_reference.py record NotoSerifCJK-Regular.ttc NotoSansCJK-R
 | Hayate Reader の WebView（macOS、WKWebView） | 縦組・横組、`locl`（`lang="ja"` と言語を書かない場合。Reader は言語を書いていない章に本の書誌の言語を補う）、カーニング、行送り、追加字（𠮷・〱・〲）、縦組の引用符 | 未実施 |
 | PDF | Word／InDesign／ブラウザから書き出し、フォント埋め込み・文字抽出、別ビューアでのクリップ・行送り・縦組の保持 | 1.009 では未実施（Chrome から保存した PDF は、1.008 のフォントでは 2026-11-10 に合格。Word／InDesign と別ビューアは未実施） |
 | 紙への印刷 | 100%・9〜12pt、４書体・横縦組、追加字の線・接合・濁点、本文の濃さと行のアキ | 未実施 |
-| CoreText／DirectWrite CI | OSのコンパイル・実行、画像とJSON、フォールバック、ペア宣言値、縦組の `〱 〲 ⸺ ⸻` の送りの合否 | 合格（2026-11-16、run 43869094974。コミット `7b4797c`、`release-prep` ブランチ。版を上げる前の 1.009 の候補版。CoreText・DirectWrite の両方） |
+| CoreText／DirectWrite CI | OSのコンパイル・実行、画像とJSON、フォールバック、ペア宣言値、縦組の `〱 〲 ⸺ ⸻` の送りの合否 | 合格（2026-11-16、run 43869094974。コミット `7b4797c`、`release-prep` ブランチ。版を上げる前の 1.009 の候補版。CoreText・DirectWrite の両方）。合否の検査を広げた後（17字の字幅、カーニング、追加字、縦組の字形の並び、フォールバック）も、1.009 のビルドで合格（2026-11-17、作業ブランチ `work/native-checks` の run 44015659016。macOS 15.8.2、Windows Server 2025） |
 | HarfBuzz・FreeType（自動検証） | `scripts/check.py` 全体（４書体の TTF・WOFF2。縦組の `〱 〲 ⸺ ⸻` の置き換え、`ss03` のヒントの命令を含む） | 合格（2026-11-16、版を 1.009 にした後のフォント。HarfBuzz 12.3.2、FreeType 2.14.2。`ok: 4 fonts`） |
 
 Hayate Reader 本体での候補版の確認（2026-11-16）でわかったことは次のとおりです。
@@ -172,6 +173,62 @@ Windows の Chrome での確認（2026-11-15）の結果は次のとおりです
 - 実環境の画面の確認は Chromium の画面のスクリーンショット（CSS px）です。DirectWrite の画素そのものではなく、DPR 1.5 から縮めた画像です。
 
 `ALWAYS_UDP` の17字は、名前とは別に、現在も cmap の BIZ UD グリフから `locl` で BIZ UDP グリフへ置き換わります。`locl` が効かない環境では元の幅・形が出る可能性があります。各アプリで OpenType の無効化、可能なら `locl=0`、または置き換え前後の幅・形（—の長さ、35°のアキ、½・‼の幅、引用符）を見て、実際に置き換わるか記録してください。指定できないアプリは「機能設定不可／効果未確認」と残し、成功と扱いません。この結果を集めてから、別の変更として cmap 直結の可否を判断します。1.009 では cmap の既存の割り当てを変えていません。
+
+### 補助 CI の合否の検査と、ブラウザの確認（2026-11-17）
+
+補助 CI（`native-proof.yml`）の `scripts/native_proof.py` は、CoreText・DirectWrite の結果を、フォントの `hmtx`・`cmap`・GSUB・GPOS から求めた期待値と比べます。外れた項目は、確認文・字・期待・実際の形でログと成果物の `checks-<engine>.json` に出ます。1.009 のビルドは、macOS 15.8.2 の CoreText と Windows Server 2025 の DirectWrite（run 44015659016）で、次の項目がすべて合格しました。
+
+| 確認 | 期待の決め方 | CoreText | DirectWrite |
+| --- | --- | --- | --- |
+| 17字の字幅と字形 ID（横組） | `locl` の後の字（BIZ UDP）の `hmtx`・GSUB | 合格 | 合格 |
+| カーニング（`T. V, W. Y, P. F, r. y, v. w,`） | GPOS の `kern` の実効値の合計 | 合格 | 合格 |
+| `kern=0` の指定 | CoreText は詰めが外れる（`hmtx` の合計）。DirectWrite は外れず、`kern` と同じ幅 | 合格 | 合格 |
+| `𠮷 〱 〲` と `ja` の文のすべての字（横組） | `cmap` の字形 ID と `hmtx` の送り | 合格 | 合格 |
+| 縦組の `〱 〲 ⸺ ⸻` の字形の並び | CoreText は `vrt2`、DirectWrite は `vert`（`〱 〲`）と cmap の字（`⸺ ⸻`）の字形 ID | 合格 | 合格 |
+| フォールバックと欠落グリフ | run のフォントが別でない（DirectWrite は大文字のファイル名も同じフォント）、字形 ID が 0 でない | 合格 | 合格 |
+
+句読点の単独ペアの幅も、宣言値ではなく GPOS の実効値と照合します（宣言値との一致は `check.py` が見ます）。測った値は 24px で、`ALWAYS_UDP` の17字は両エンジンとも `“ ”` `‘ ’` 0.5 em、`—` 1 em、`−` 0.84 em、`¼ ½ ¾ ⅓ ⅔ ⅕` 0.94 em、`°` 0.37 em（明朝）、`‼` 0.88 em、`⁇` 1 em、`⁈ ⁉` 0.95 em でした。BIZ UDP の字幅で、フォントの意図と合っています。
+
+意図と合わないので、合格と固定せず、既知の違いとして記録にとどめたものは次のとおりです。
+
+- 縦組の `ALWAYS_UDP` は、環境で違います。CoreText は縦組の字（`“ ”` など）を、横組と別の字形 ID（縦組の字）で、字の幅 1 em で組みます。DirectWrite は `“ ” ‘ ’` を横組の半角の字形（0.5 em）のまま 90 度回して送ります。`locl=0` を指定しても結果は変わりません。
+- DirectWrite は `kern=0`（`SetPairKerning(false)`）を指定しても詰めたままです。
+- DirectWrite は縦組の `⸺ ⸻` に `vert` を使わず、cmap の字（横線）を回した run として送ります。長さは 2 em・3 em で、期待どおりです。
+- `locl=0` を指定した `locl-off` の結果は、CoreText・DirectWrite とも通常と同じです（`locl` が効かない環境の再現にはなりません）。
+
+検査が効くことは、次のとおり確かめました。手元で、実環境の結果の JSON を 1 つずつ書き換えて（引用符の送り +1px、`−` の送り −2px、`—` の字形 ID、`𠮷` の字形 ID、`kern` の幅、DirectWrite の `kern-off` の幅、`〱` と `⸻` の字形の並び）、検査が失敗することを確かめました（すべて失敗）。CI では、1.008 のフォントを `fonts=release`・`release_tag=v1.0.8` で確かめました（run 44064184682、macOS 26.7.2 の CoreText）。縦組の `〱 〲 ⸺` が 72px（期待は 96px）、`⸻` が 72px（期待は 120px）で、4 書体・16 件が外れとして報告されました。DirectWrite（Windows Server 2025）は 1.008 でも `〱 〲` が2 em なので合格でした。
+
+定期実行（`schedule`）は `macos-latest`・`windows-latest` で動きます。2026-11-17 に、`macos-latest` は macOS 26.7.2（イメージ `macos26 20261112.0504.1`）でした。手動実行の固定（`macos-15`）は macOS 15.8.2 です。`windows-2025` と `windows-latest` は、どちらも `win25-vs2026 20261103.298.1` でした。
+
+Safari と Edge は、`browser-proof` ジョブが `scripts/browser_proof.py`（標準ライブラリだけで W3C WebDriver を話す）で、ランナーの `safaridriver`（`sudo safaridriver --enable` が要ります）と `msedgedriver` を動かして測ります。ページは手元の 127.0.0.1 から配り、`Range.getBoundingClientRect()` と、縮めた箱（`inline-block`）の高さを読みます。明朝 Regular で、横組は 64px、縦組は 28px で測りました（run 44063607855、生の値は成果物 `DokushoUD-safari`・`DokushoUD-edge` の `result.json`）。
+
+| 項目 | Safari 27.2（macOS） | Edge 156.0.4314.58（Windows、ヘッドレス） | 期待 |
+| --- | --- | --- | --- |
+| 横組 `〱 〲 ⸺ ⸻` の送り | 1・1・2・3 em | 1・1・2・3 em | 1・1・2・3 em |
+| 縦組（`text-orientation: mixed`、指定なし）の `あ` + 字 + `い` の長さ | 3・3・3・3 em | 4・4・4・5 em | 4・4・4・5 em（字の送りは 2・2・2・3 em） |
+| 縦組（`"vert" 1`、`upright`） | 3・3・3・3 em | 4・4・4・5 em | 同上 |
+| 17字の字幅 | 期待との差は最大 0.029 em（丸め。4書体の全部） | 期待と一致（差 0） | `locl` の後の字幅 |
+| カーニングで詰まる幅 | 0.555 em | 0.555 em | 0.555 em |
+| `𠮷` | 幅 1 em。自分の字形かどうかは、輪郭の範囲では代わりのフォントと見分けられず未確認（画像では `𠮷` の字形が出ている） | 幅 1 em、自分の字形 | 1 em |
+
+Safari 27.2 の縦組は、`〱 〲 ⸺ ⸻` の送りが 1 em で、次の字（`い`）が重なります（`work/native-checks` の run 44062025421 のスクリーンショットで確認。`vert` の指定、`upright` でも同じ）。`sideways` の `⸺ ⸻` だけ、長さが 4・5 em です。同じ macOS の CoreText（補助 CI の `coretext.swift`、`vrt2` を使う）では 2 em で、Safari の縦組と食い違います。フォントは変えていません。原因（Safari が `vrt2` の 2 段の置き換えを使わないこと）は、確かめていません。Edge は 1.008 のフォントでも同じ長さでした（run 44064184682）。
+
+縦組の `⸺`（U+2E3A）・`⸻`（U+2E3B）の向きは、`vert`/`vrt2` の置換を持つ 1.009 と、この 2 字の置換だけを外した一時のフォント（配らない）を、並べて測りました（明朝 Regular。手元の WebKitGTK 2.52.6・Ubuntu 26.04、Orca 内蔵の Chromium 150.0.7871.250・Windows の Win32・DPR 1.5。画像は scratchpad の記録にあり、リポジトリには置いていません）。送りは、どの環境・指定でも 2 em・3 em で、置換を外しても変わりませんでした（`hmtx` が 2 em・3 em なため）。字形の向きは次のとおりです。
+
+| 環境 | 指定 | 1.009（置換あり） | 置換を外したもの |
+| --- | --- | --- | --- |
+| WebKitGTK | `mixed`、指定なし | 横線のまま正立 | 縦線（回る） |
+| WebKitGTK | `mixed`、`"vert" 1` | 縦線 | 縦線 |
+| WebKitGTK | `upright`、指定なし | 横線 | 横線 |
+| WebKitGTK | `upright`、`"vert" 1` | 縦線 | 横線（縦線の字形が無い） |
+| WebKitGTK | `sideways`、どちらも | 縦線（回る） | 縦線（回る） |
+| Chrome（Windows） | `mixed`、指定なし | 縦線 | 縦線（回る） |
+| Chrome（Windows） | `mixed`、`"vert" 1` | 横線（縦線の字形が回る） | 縦線 |
+| Chrome（Windows） | `upright`、どちらも | 縦線 | 横線（縦線の字形が無い） |
+| Chrome（Windows） | `sideways`、指定なし | 縦線 | 縦線 |
+| Chrome（Windows） | `sideways`、`"vert" 1` | 横線 | 縦線 |
+
+Edge（ヘッドレス）の 1.009 は、Chrome と同じ向きでした（画像で確認）。Safari の 1.009 は、`mixed` の指定なし・`"vert" 1` で縦線（回る）、`upright` では指定なし・`"vert" 1` とも横線でした（画像で確認）。置換を外したフォントを Safari・Edge・CoreText・DirectWrite では測っていません。元の BIZ UD と BIZ UDP は、U+2E3A・U+2E3B が cmap にありません（読書 UD が足した字です）。Noto Serif CJK JP は cmap に持ちますが、この 2 字に `vert`・`vrt2` の置換がありません（`〱 〲` にもありません）。
 
 ### Hayate Reader で確かめる
 

@@ -70,7 +70,31 @@ DirectWrite は `vert` だけを使い、1 つの文字から出た字の縦送�
 
 追加字のページは４書体の12・14・16pxの FreeType 実寸・４倍画像と96px画像を保存します。既存の上下部品と並べて接合・太さ・２セルの送りを見比べられます。
 
-`.github/workflows/native-proof.yml` は既存の build・release と独立した、手動で実行する（`workflow_dispatch`）補助 CI です。macOS 15の CoreText（`scripts/native/coretext.swift`）、Windows 2025の DirectWrite（`scripts/native/directwrite.cpp`）が、同じ45条件×４書体を24pxで組みます。横縦の和英混植、句読点のペア、アクセント付きの字、追加字、17記号の `locl` 有効・無効を記録します。句読点の単独ペアは宣言した送りとも照合します。フォントはファイルから直接読み、別フォントへのフォールバックや欠落グリフを検出します。成果物 `DokushoUD-coretext`・`DokushoUD-directwrite` の `dist/native/index.html`、各 PNG・JSON（グリフ ID・送り・配置）、フォント SHA-256、OS情報を保存します。同じ SHA-256 の２成果物を比較し、`locl-off` の違いは後の cmap 変更の判断材料にします。`locl` 無効時も同じ字になることは合格条件にしません。CoreText と DirectWrite のどちらでも、`locl=0` を指定した結果は字形 ID と字幅が通常と同じで、`locl` が効かない環境の再現にはなりません。
+`.github/workflows/native-proof.yml` は既存の build・release・pages と独立した補助 CI です（`release.yml` は `build.yml` だけを呼び、これには依存しません）。macOS の CoreText（`scripts/native/coretext.swift`）、Windows の DirectWrite（`scripts/native/directwrite.cpp`）が、同じ49条件×４書体を24pxで組みます。横縦の和英混植、句読点のペア、アクセント付きの字、追加字、17記号の `locl` 有効・無効を記録します。フォントはファイルから直接読みます。成果物 `DokushoUD-coretext`・`DokushoUD-directwrite` の `dist/native/index.html`、各 PNG・JSON（グリフ ID・送り・配置）、`checks-<engine>.json`（検査の結果）、フォント SHA-256、OS情報（`platform.txt`）を保存します。同じ SHA-256 の２成果物を比較し、`locl-off` の違いは後の cmap 変更の判断材料にします。`locl` 無効時も同じ字になることは合格条件にしません。CoreText と DirectWrite のどちらでも、`locl=0` を指定した結果は字形 ID と字幅が通常と同じで、`locl` が効かない環境の再現にはなりません。
+
+実行の仕方は次の 2 つです。
+
+| 実行 | 確かめるフォント | OS | 検査が外れたとき |
+| --- | --- | --- | --- |
+| 手動実行（`workflow_dispatch`） | 既定はそのブランチでビルドしたフォント。入力 `fonts=release`（と `release_tag`。空なら最新）で公開済みのリリースの TTF | 固定（`macos-15`・`windows-2025`） | advisory（ジョブは失敗しますが、実行全体は成功） |
+| 定期実行（`schedule`。毎週日曜 19:17 UTC = 月曜 04:17 JST。`main` でだけ動く） | 公開中の最新のリリースの TTF（`gh release download --pattern '*.ttf'`） | `macos-latest`・`windows-latest`（最新の OS で崩れを早く見つけるため） | ジョブと実行が失敗になり、GitHub が失敗をメールで知らせる |
+
+定期実行は、「公開中のフォントが、今の OS でまだ正しく組まれるか」を見るものなので、`main` をビルドせず、リリースのフォントを使います。実行した OS の版とフォントの出所（リリースのタグ、またはコミット）は、ジョブのログと成果物の `platform.txt` に残ります。`permissions` は `contents: read` のままで、Issue の作成や外部への通知はしません。
+
+合否を見る検査（`scripts/native_proof.py`。期待値は、フォントの `hmtx`・`cmap`・GSUB・GPOS から求めます）は次のとおりです。
+
+- 縦組の `〱 〲 ⸺ ⸻` の送りが、2・2・2・3 em であること。
+- 17字（`ALWAYS_UDP`）の字形 ID と字幅が、横組で `locl` の後の字（BIZ UDP）と同じであること。
+- カーニング（`T. V, W. Y, P. F, r. y, v. w,`）の幅と、句読点の単独ペアの幅が、GPOS の実効値と同じであること。CoreText は `kern=0` で詰めが外れ、DirectWrite は外れない（`kern` と同じ幅）ことも、環境の期待として明示しています。
+- `𠮷 〱 〲` と `ja` の文の字が、cmap の字形 ID・`hmtx` の送りで出ること。
+- 縦組の `〱 〲 ⸺ ⸻` の字形の並びが、CoreText は `vrt2`、DirectWrite は `vert`（`〱 〲`）と cmap の字（`⸺ ⸻`）と同じであること。
+- 確認文のすべての字がこのフォントにあり、別のフォントへのフォールバックと欠落グリフ（字形 ID 0）が無いこと。
+
+検査はギャラリー（画像と JSON）を出した後に、外れた項目をすべて集めてから失敗にします。外れた項目は、確認文・書体・字（コードポイント）・期待・実際の形で、ジョブのログ（`::error::` の注釈と、末尾の件数）と、成果物の `checks-<engine>.json` に出ます。環境で違うと分かっている縦組の `ALWAYS_UDP`（DirectWrite は `“ ”` を横組の半角の字形のまま回す）などは、合否にせず [PROOFING.md](PROOFING.md) に記録しています。
+
+GitHub は、公開リポジトリで 60 日間アクティビティ（コミットなど）が無いと、定期実行を自動で止めます（GitHub のドキュメントによる）。止まったときは実行が来なくなるだけで、メールなどで知らされることはありません。気づくには、Actions の画面で最後の定期実行の日付を見るしかありません。この対策は入れていません。
+
+Safari と Microsoft Edge は、同じワークフローの `browser-proof` ジョブ（advisory。定期実行でも失敗にしません）が測ります。`scripts/browser_proof.py` が、標準ライブラリだけで W3C WebDriver（HTTP + JSON）を話し、ランナーに入っている `safaridriver`（`sudo safaridriver --enable` が要ります）と `msedgedriver`（ヘッドレス）を動かします。確認用のページは手元の 127.0.0.1 から配り、`Range.getBoundingClientRect()` と縮めた箱の高さで、縦組・横組の送り、17字の字幅、カーニング、`𠮷` の収録を測ります。成果物 `DokushoUD-safari`・`DokushoUD-edge` に、測った値（`result.json`・`summary.json`）、スクリーンショット、WebDriver のログを保存します。手元では `scripts/browser_proof.py --validate`（ブラウザ無しで道具の整合を確かめる）と、`--serve`（ページを配るだけ。手や WebKitGTK で開く）が使えます。
 
 ローカルで各 OS を使う場合は、ワークフローのコンパイル手順を実行してから `scripts/native_proof.py --renderer <実行ファイル>` を実行します。Linux で実行できるのは `--prepare` までです。
 
@@ -80,5 +104,5 @@ DirectWrite は `vert` だけを使い、1 つの文字から出た字の縦送�
 
 1. GitHub の Actions で `Build` を手動実行し（`gh workflow run build.yml --ref <ブランチ> -f retention_days=14`）、保存日数に 14 などを指定します。既定は 1 日で、`push`・`pull_request`・`release.yml` からの呼び出しは変わりません。上限は 90 日です。
 2. 成果物 `DokushoUD`（フォント）と `DokushoUD-proof`（見本）を取り、フォントを Hayate Reader などで数日読んで試します。Reader の手順は [PROOFING.md](PROOFING.md#hayate-reader-で確かめる) にあります。成果物のフォントの版番号はまだ公開済みの版のままです（`VERSION` はリリースの手順で上げます）。候補版のファイルは公開せず、配りません。公開するのはタグから作るリリースのファイルだけです。
-3. `.github/workflows/native-proof.yml` を手動実行し、CoreText と DirectWrite の結果を見ます（今は手動実行だけです）。
+3. `.github/workflows/native-proof.yml` を手動実行し、CoreText と DirectWrite の結果（合否の検査とギャラリー）と、Safari・Edge の測定値を見ます。定期実行もありますが、`main` でしか動かず、公開済みのフォントを確かめるものなので、候補版では手動実行します。
 4. 問題が無ければ、[AGENTS.md](../AGENTS.md) のリリースの手順の 2 番（推敲）へ進みます。問題があれば直し、1 からやり直します。

@@ -174,12 +174,12 @@ ENGINE_BEHAVIOR = {"coretext": {"kernOffApplies": True}, "directwrite": {"kernOf
 
 
 def flatten(record: dict) -> list:
-    """run をまたいで、字ごとの (字形 ID, 送りの px)。CoreText の送りは [横, 縦] なので、向きに合う方を取る"""
+    """run をまたいで、字ごとの (字形 ID, 送りの px)。CoreText の送りは [幅, 高さ] で、幅 (横組の送り) を取る"""
     items = []
     for run in record["runs"]:
         for glyph, advance in zip(run["glyphs"], run["advances"]):
             if isinstance(advance, list):
-                advance = advance[1] if record["vertical"] else advance[0]
+                advance = advance[0]
             items.append((glyph, advance))
     return items
 
