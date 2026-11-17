@@ -106,3 +106,22 @@ Safari と Microsoft Edge は、同じワークフローの `browser-proof` ジ�
 2. 成果物 `DokushoUD`（フォント）と `DokushoUD-proof`（見本）を取り、フォントを Hayate Reader などで数日読んで試します。Reader の手順は [PROOFING.md](PROOFING.md#hayate-reader-で確かめる) にあります。成果物のフォントの版番号はまだ公開済みの版のままです（`VERSION` はリリースの手順で上げます）。候補版のファイルは公開せず、配りません。公開するのはタグから作るリリースのファイルだけです。
 3. `.github/workflows/native-proof.yml` を手動実行し、CoreText と DirectWrite の結果（合否の検査とギャラリー）と、Safari・Edge の測定値を見ます。定期実行もありますが、`main` でしか動かず、公開済みのフォントを確かめるものなので、候補版では手動実行します。
 4. 問題が無ければ、[AGENTS.md](../AGENTS.md) のリリースの手順の 2 番（推敲）へ進みます。問題があれば直し、1 からやり直します。
+
+## 依存の更新
+
+依存は `requirements.txt` の 2 つ（`fonttools`、`brotli`）と、ワークフローが使う GitHub Actions（コミットの SHA で固定し、コメントに版）です。月に 1 度、Dependabot（`.github/dependabot.yml`）が更新のプルリクエストを開きます。`pip` は `fonttools` と `brotli` を 1 つに、Actions も 1 つにまとめます。公開から 7 日たった版だけを対象にします（セキュリティの更新はこの待ちの対象外です）。月に 1 度にしたのは、フォントを配るのがリリースのときだけで、早く取り込んでも利用者には届かないためです。`fonttools` 4.68 は `brotli` 1.2.1 以上を要求するので、2 つは組で上げます。
+
+`fonttools` の更新は、できるフォントのバイトを変えうるので、取り込む前に必ず前後で比べます。
+
+- **プルリクエストごと** `.github/workflows/font-diff.yml` が、変更の前（`main`）と後を、同じ `SOURCE_DATE_EPOCH` でそれぞれの `requirements.txt` からビルドし、4 書体の TTF と WOFF2 を比べます。違いはテーブルごとに、ジョブの要約に出ます（`scripts/compare_fonts.py`。中身が同じでバイトだけ違う（並びや圧縮だけの違い）のか、中身が違うのかも分けます）。`requirements.txt` と `.github` のほかに変更の無いプルリクエスト（依存の更新だけ）でフォントが変わると、**ジョブを失敗にします**。次のリリースのフォントが変わるので、違いを読んで人が決めます。作るスクリプトを変えるプルリクエスト（フォントの改良）では、違いは意図した変更なので、注意（notice）と要約に出すだけで、失敗にしません。権限は `contents: read` だけです。手動実行（`gh workflow run font-diff.yml --ref <ブランチ>`、`-f base=<比べる前>`）もできます。
+- **手元** `.venv/bin/python scripts/deps_update.py` が、PyPI の最新を調べ、一時フォルダに前の版と最新の版の venv とリポジトリの写しを作り、同じ日時でビルドして比べ、最新の版で全検査（`scripts/check.py`）を回し、`requirements.txt` の案を出します。`--no-check` で全検査を飛ばし、`--write` で、フォントが同じで検査が通ったときだけ書き換えます。リポジトリの `.venv`・`fonts/`・`dist/` には触りません。
+
+更新を取り込む手順です。
+
+1. 比べた結果を読みます。フォントが同じなら、2 へ進みます。変わっていれば、どのテーブルのどこかを読み、フォントとしての意味が変わる違い（輪郭、メトリクス、GSUB・GPOS の中身）は、更新を入れず、利用者が決めます。WOFF2 の圧縮や並びだけの違いなら、そのことを記録して取り込めます。
+2. 各パッケージの CHANGELOG（[fontTools の NEWS](https://github.com/fonttools/fonttools/blob/main/NEWS.rst)）で、このリポジトリが使う機能（`glyf` の組み立て、`feaLib`・`otTables` による GSUB・GPOS、WOFF2 の圧縮、`subset`、`ttLib`）に関わる変更を読みます。
+3. 全検査と、見本の生成（`specimen_page.py`、`proof_page.py`、`ruby_proof.py`、`additions_proof.py`、`overflow_page.py`）、`native_proof.py --prepare` が動くことを、最新の版の venv で確かめます。
+4. Actions の更新は、Dependabot のプルリクエストで、SHA とコメントの版が一緒に変わることと、リリースノートの入力や既定の動きの変更を確かめます。
+5. 手元の `.venv` は、`.venv/bin/pip install -r requirements.txt` で上書きします（作り直しは要りません。CI は毎回 `requirements.txt` から作ります）。
+
+FreeType・HarfBuzz・unicode-data（検査が使う、CI では apt で入れる外部のライブラリ）は、版を固定していません。更新のたびに、CI の `dpkg-query` の出力の版を見ます。
