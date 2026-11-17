@@ -270,7 +270,8 @@ def split_vertical_cells(font: TTFont, codes=VERTICAL_CELL_CODES) -> dict[str, d
     横の送り (hmtx) を足したものを使う。1 段目 (今までどおり) は cmap の字 → 2 セルの字 (縦の送り 2 em)。
     2 段目は、その 2 セルの字 → [輪郭が同じで縦の送りも 2 em の字, 空白の字 (縦の送り 0) …] (3 セルなら空白が 2 つ)。
     空白の字は環境ごとに変える。vert (HarfBuzz・DirectWrite・WebKitGTK) では横の送りが 0 の空白 (BLANK_ZERO) に、
-    GPOS の curs で横の送りを 1 em 足す。DirectWrite は、1 つの文字から出た字の横の送りの合計で、字を左右に
+    GPOS の curs で横の送りを 1 em 足す。Safari 用に、1 段目の縦字形にも余分なセル数ぶんの XAdvance を curs で加える。
+    DirectWrite は、1 つの文字から出た字の横の送りの合計で、字を左右に
     ずらして置く (横の送りが 0 でないと 1 つ目の字が半 em 左にずれる)。curs の GPOS は DirectWrite が使わない。
     WebKitGTK は使う (vert の GPOS や kern は、DirectWrite が使うか、WebKitGTK が使わない)。vrt2 (CoreText) では
     横の送りが 1 em の空白 (BLANK_CELL)。CoreText は GPOS の横の送りを使わず、hmtx を足す。

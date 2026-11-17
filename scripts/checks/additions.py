@@ -75,7 +75,7 @@ VERTICAL_CELLS = {0x3031: 2, 0x3032: 2, 0x2E3A: 2, 0x2E3B: 3}
 # 組み方を変える機能の組み合わせ。縦組の字の並びは、どれでも同じになる
 VERTICAL_FEATURES = [(), ("ss01",), ("ss02",), ("ss03",), ("palt",), ("vpal",), ("halt",), ("vhal",), ("aalt",),
                      ("palt", "vpal", "halt", "vhal"), ("kern=0",), ("vert=0", "vrt2"), ("vert", "vrt2=0")]
-SPACING_FEATURE = "curs"  # 空白の字の横の送りを足す GPOS の機能 (extra_glyphs.SPACING_FEATURE)
+SPACING_FEATURE = "curs"  # 空白と1段目の縦字形の横送りを足す GPOS の機能 (extra_glyphs.SPACING_FEATURE)
 
 
 def check_vertical_cells(ctx: FontContext) -> None:
@@ -146,7 +146,7 @@ def check_vertical_cells(ctx: FontContext) -> None:
                 check(sum(font["hmtx"][g][0] for g in sequence) == em,
                       f"{label}: only the first glyph of {name} has a horizontal advance in vert (DirectWrite would shift it sideways)")
     check(stage_one["vert"] == stage_one["vrt2"], f"{label}: vert and vrt2 have different vertical forms of 〱 〲 ⸺ ⸻")
-    # 空白の字の横の送りを足す GPOS は、機能 curs のその 1 つの調整だけ。ほかの機能 (kern・vert・vkrn など) には入れない
+    # 空白と1段目の縦字形を調整するのは curs だけ。ほかの機能 (kern・vert・vkrn など) には入れない
     # (DirectWrite は kern・dist・vert の GPOS の横の送りも使って字を左右にずらす)
     gpos = font["GPOS"].table
     adds = gpos_values(font, SPACING_FEATURE)

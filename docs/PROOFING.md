@@ -109,7 +109,7 @@ python3 scripts/glyph_reference.py record NotoSerifCJK-Regular.ttc NotoSansCJK-R
 | Kobo | EPUBのフォント埋め込み、横縦組、設定の行送り・サイズ、新字・記号のフォールバック | 未実施 |
 | Kindle | 実機とプレビュー、配信／変換後の埋め込み、横縦組、新字・17記号・くの字点の送り | 未実施 |
 | Apple Books（macOS／iOS） | EPUBの横縦組、引用符・17記号、くの字点、サイズと行送りの変更 | 未実施 |
-| Safari（macOS／iOS） | 縦組の `〱 〲 ⸺ ⸻` の送り、横縦組、`ss03` | 一部実施、縦組の送りは不合格（2026-11-17。補助 CI の Safari 27.2、macOS。縦組で `〱 〲 ⸺ ⸻` の送りが 1 em で次の字に重なる。横組・17字の字幅・カーニングは期待どおり。iOS と `ss03` は未実施。測った値は表の下） |
+| Safari（macOS／iOS） | 縦組の `〱 〲 ⸺ ⸻` の送り、横縦組、`ss03` | 1.009 は mixed 縦組で不合格。次期候補 run 44199462703 では mixed が合格（全4書体、2・2・2・3 em）。upright の `⸺`・`⸻` は3 emのまま（1.009と同じ）。iOS と `ss03` は未実施。詳細は下 |
 | Edge（Windows。WebView2 と同じ Chromium、補助 CI） | 縦組・横組の送り、17字の字幅、カーニング、`𠮷` の収録 | 合格（2026-11-17。補助 CI の Edge 156.0.4314.58、ヘッドレス、3 回とも同じ値。WebView2 のランタイムそのものではない。測った値は表の下） |
 | Chrome（Windows）、縦組の `〱 〲 ⸺ ⸻` の2段の置き換え | 縦組・横組の送り、字形の位置、選択とコピー、`ss03` のルビ（8〜10ppem）。版を上げる前の 1.009 の候補版（TTF・WOFF2）と 1.008 の比較 | 合格（2026-11-15。Orca 内蔵の Chromium 150.0.7871.250、Win32。わかったことは表の下） |
 | Chrome（Windows）、確認用ページの自動の確認 | 行送り、字幅、カーニング、`𠮷` の収録、縦組の引用符 | 1.009 では未実施（1.008 のフォントでは 2026-11-10 に合格。[proofing-records/1.008.md](proofing-records/1.008.md)） |
@@ -121,6 +121,19 @@ python3 scripts/glyph_reference.py record NotoSerifCJK-Regular.ttc NotoSansCJK-R
 | 紙への印刷 | 100%・9〜12pt、４書体・横縦組、追加字の線・接合・濁点、本文の濃さと行のアキ | 未実施 |
 | CoreText／DirectWrite CI | OSのコンパイル・実行、画像とJSON、フォールバック、ペア宣言値、縦組の `〱 〲 ⸺ ⸻` の送りの合否 | 合格（2026-11-16、run 43869094974。コミット `7b4797c`、`release-prep` ブランチ。版を上げる前の 1.009 の候補版。CoreText・DirectWrite の両方）。合否の検査を広げた後（17字の字幅、カーニング、追加字、縦組の字形の並び、フォールバック）も、1.009 のビルドで合格（2026-11-17、作業ブランチ `work/native-checks` の run 44015659016。macOS 15.8.2、Windows Server 2025） |
 | HarfBuzz・FreeType（自動検証） | `scripts/check.py` 全体（４書体の TTF・WOFF2。縦組の `〱 〲 ⸺ ⸻` の置き換え、`ss03` のヒントの命令を含む） | 合格（2026-11-16、版を 1.009 にした後のフォント。HarfBuzz 12.3.2、FreeType 2.14.2。`ok: 4 fonts`） |
+
+次期候補の `wide_cursX` 実装（commit `7895043`）は、`SOURCE_DATE_EPOCH=1794919244` でビルドし、run 44199462703 で4書体を検証しました。1.009（run 44195381228）の標準結果と比較すると、Safari 27.2 の mixed vertical-rl / vertical-lr、`normal`・`"vert" 1`・`"vrt2" 1` は、候補が全4書体で `あ+字+い` の合計4・4・4・5 em（1.009 は3・3・3・3 em）でした。Safari の `text-orientation: upright` は `〱`・`〲` が4 em、`⸺`・`⸻` が3 emで、後者は1.009と同じ未解決です。sideways も測定しましたが、1.009 の標準成果物に同条件の行がないため、その向きの差分比較には含めていません。Safari の測定は送りの長さと文字範囲を測ったもので、OS標準のフォント描画 API によるピクセル単位のインク比較ではありません。
+
+| 環境 | 1.009 → 次期候補の結果 | 位置・輪郭 |
+| --- | --- | --- |
+| CoreText（macOS 15.8.2） | 標準検査合格。各字の送り 2・2・2・3 em | 4書体×4字の JSON と PNG、各16ファイルが1.009とバイト一致 |
+| DirectWrite（Windows Server 2025） | 標準検査合格。各字の送り 2・2・2・3 em | 4書体×4字の JSON と PNG、各16ファイルが1.009とバイト一致 |
+| Edge 156.0.4314.58 | 標準検査合格。mixed/upright は2・2・2・3 em | browser-proof の4書体×72条件、問題0 |
+| HarfBuzz 12.3.2 | 2・2・2・3 em | 1.009と候補で glyph IDs・offsets・インク範囲が一致 |
+| WebKitGTK 2.52.6 | `vert` ありは2・2・2・3 em。なしの `〱`・`〲` は1.009と同じ1 em | 4書体×72条件の実測で、送り・文字範囲の差0 |
+| Safari 27.2（macOS） | mixed は候補で4・4・4・5 em。upright の `⸺`・`⸻` は3 emのまま | mixed で1.009から改善。iOS未確認 |
+
+この候補は採用します。1.009 のビルドと比べた TTF は4書体とも `GPOS` のみ意味が変わり、`head` のチェックサムが追随して変化しました。`curs` の XAdvance を1段目の縦字形に追加し、既存の空白字の値は維持しています。glyph order、`glyf`、`cmap`、`hmtx`、`vmtx` は一致し、他の OpenType 機能も不変です。`scripts/check.py` は `ok: 4 fonts` でした。補助 CI run 44199462703 は総合 success（Edge / CoreText / DirectWrite success、Safari advisory failure）。Safari の残る upright ダッシュの不具合は次期候補でも残ります。
 
 Hayate Reader 本体での候補版の確認（2026-11-16）でわかったことは次のとおりです。
 
