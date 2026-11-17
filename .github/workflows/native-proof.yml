@@ -116,3 +116,80 @@ jobs:
             OFL.txt
           if-no-files-found: error
           retention-days: 7
+
+  # Safari (macOS。WebKit + CoreText) と Microsoft Edge (Windows。WebView2 と同じ Chromium + HarfBuzz) を、ランナーに入っている
+  # safaridriver・msedgedriver から W3C WebDriver で動かし、確認用のページを測る (scripts/browser_proof.py。標準ライブラリだけ)。
+  # 今は advisory (結果の保存だけ。schedule でも失敗にしない)。2 回以上同じ値が出た項目だけを、あとで合否にする
+  browser-proof:
+    name: ${{ matrix.browser }} (advisory)
+    continue-on-error: true
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-15
+            latest: macos-latest
+            browser: safari
+          - os: windows-2025
+            latest: windows-latest
+            browser: edge
+    runs-on: ${{ github.event_name == 'schedule' && matrix.latest || matrix.os }}
+    env:
+      FONT_SOURCE: ${{ github.event_name == 'schedule' && 'release' || inputs.fonts || 'build' }}
+      RELEASE_TAG: ${{ inputs.release_tag }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Install dependencies
+        shell: bash
+        run: |
+          if [ "$RUNNER_OS" = Windows ]; then
+            python -m venv .venv
+            proof_python=.venv/Scripts/python.exe
+          else
+            python3 -m venv .venv
+            proof_python=.venv/bin/python
+          fi
+          "$proof_python" -m pip install -r requirements.txt
+          echo "PROOF_PYTHON=$proof_python" >> "$GITHUB_ENV"
+      - name: Fonts (built or the published release)
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if [ "$FONT_SOURCE" = build ]; then
+            "$PROOF_PYTHON" scripts/fetch_sources.py
+            export SOURCE_DATE_EPOCH="$(git log -1 --format=%ct)"
+            "$PROOF_PYTHON" scripts/build.py
+            echo "FONT_DIR=fonts" >> "$GITHUB_ENV"
+            echo "FONT_LABEL=built from $GITHUB_SHA ($GITHUB_REF_NAME)" >> "$GITHUB_ENV"
+          else
+            mkdir -p release-fonts
+            gh release download ${RELEASE_TAG:+"$RELEASE_TAG"} --repo "$GITHUB_REPOSITORY" --pattern '*.ttf' --dir release-fonts --clobber
+            tag="${RELEASE_TAG:-$(gh release view --repo "$GITHUB_REPOSITORY" --json tagName --jq .tagName)}"
+            echo "FONT_DIR=release-fonts" >> "$GITHUB_ENV"
+            echo "FONT_LABEL=release $tag" >> "$GITHUB_ENV"
+          fi
+      - name: Enable safaridriver
+        if: matrix.browser == 'safari'
+        run: sudo safaridriver --enable
+      - name: Measure in the browser
+        shell: bash
+        run: |
+          mkdir -p dist/browser
+          { echo "runner image: $ImageOS $ImageVersion"; echo "fonts: $FONT_LABEL"; } | tee dist/browser/platform.txt
+          "$PROOF_PYTHON" scripts/browser_proof.py --browser ${{ matrix.browser }} --fonts "$FONT_DIR" --output dist/browser
+      - name: Preserve results and screenshots (including partial failures)
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: DokushoUD-${{ matrix.browser }}
+          path: |
+            dist/browser/*.json
+            dist/browser/*.png
+            dist/browser/*.txt
+            dist/browser/*.log
+          if-no-files-found: error
+          retention-days: 7
