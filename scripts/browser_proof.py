@@ -48,6 +48,7 @@ body { margin: 8px; font: 14px sans-serif; background: #fff; color: #000; }
 #vgrid { display: flex; flex-wrap: wrap; }
 .h { font-size: %(size)spx; white-space: nowrap; line-height: 1.5; }
 .hidden { position: absolute; left: 0; top: 0; visibility: hidden; }
+.vp { writing-mode: vertical-rl; display: inline-block; font-size: 28px; line-height: 1.5; white-space: nowrap; }
 small { display: block; font: 11px monospace; }
 </style>
 <body>
@@ -116,7 +117,11 @@ async function run() {
     out.vertical = [];
     for (const orientation of CONFIG.orientations) for (const feature of CONFIG.features) for (const ch of Object.keys(CONFIG.cells)) {
       const node = row('v', 'あ' + ch + 'い', `text-orientation: ${orientation}; font-feature-settings: ${feature}`, `${orientation} ${feature} あ${ch}い`);
-      out.vertical.push({orientation, feature, char: ch, rects: rects(node)});
+      // Safari は縦組の Range の位置が崩れる (3 字目が 0) ので、全体の長さも測る: 縮める箱 (inline-block) の高さ
+      const probe = document.createElement('div'); probe.className = 'vp hidden'; probe.lang = 'ja';
+      probe.style.cssText = `font-family: "${fam}", serif; text-orientation: ${orientation}; font-feature-settings: ${feature}`;
+      probe.textContent = 'あ' + ch + 'い'; stage.appendChild(probe);
+      out.vertical.push({orientation, feature, char: ch, rects: rects(node), extent: probe.getBoundingClientRect().height});
     }
     // 追加字 𠮷: 自分の字形が出ているか (𠮷 を持たない面 = 代わりのフォントの輪郭の範囲との違い)
     const probe = CONFIG.fonts[index].noGlyphFamily;
@@ -306,16 +311,16 @@ def check_result(result: dict, expected: dict) -> list[str]:
         delta = (data["kern"]["off"] - data["kern"]["on"]) / size
         if abs(delta - expected[name]["kernDelta"]) > .06:
             problems.append(f"{name} kerning: {delta:.3f} em tighter than font-kerning: none, expected {expected[name]['kernDelta']:.3f} em")
-        if not data["kichi"]["differsFromFallback"] or abs(data["kichi"]["width"] / size - 1) > .03:
+        # 輪郭の範囲で代わりのフォントと見分ける方法は、Safari では効かなかった (同じ値になる)。Chromium 系だけで見る
+        strict = "Chrome/" in result["userAgent"]
+        if abs(data["kichi"]["width"] / size - 1) > .03 or (strict and not data["kichi"]["differsFromFallback"]):
             problems.append(f"{name} U+20BB7: width {data['kichi']['width'] / size:.3f} em, own glyph drawn: {data['kichi']['differsFromFallback']}")
         for item in data["vertical"]:
             if item["orientation"] == "mixed" and item["feature"] == "normal":
-                char = item["char"]
-                first, glyph, last = item["rects"]
-                unit = size * 28 / 64  # 縦組の見本は 28px
-                advance = (last["top"] - glyph["top"]) / unit
-                if abs(advance - CELLS[char]) > .08:
-                    problems.append(f"{name} vertical (mixed) U+{ord(char):04X}: next character starts {advance:.3f} em after it, expected {CELLS[char]} em")
+                char, unit = item["char"], size * 28 / 64  # 縦組の見本は 28px
+                length = item["extent"] / unit  # あ + 字 + い の長さ。前後の仮名 1 em ずつと字の送り
+                if abs(length - (CELLS[char] + 2)) > .08:
+                    problems.append(f"{name} vertical (mixed) U+{ord(char):04X}: あ+字+い is {length:.3f} em long, expected {CELLS[char] + 2} em")
     return problems
 
 
@@ -329,8 +334,10 @@ def summary(result: dict) -> dict:
             "symbols": [round(r["width"] / size, 3) for r in data["symbols"][1:-1]],
             "kernDelta": round((data["kern"]["off"] - data["kern"]["on"]) / size, 3),
             "kichi": {"width": round(data["kichi"]["width"] / size, 3), "ownGlyph": data["kichi"]["differsFromFallback"]},
-            "vertical": {f"{v['orientation']} {v['feature']} あ{v['char']}い": round((v["rects"][2]["top"] - v["rects"][1]["top"]) / vertical_unit, 3)
-                         for v in data["vertical"]},
+            "vertical (あ+字+い の長さ em)": {f"{v['orientation']} {v['feature']} あ{v['char']}い": round(v["extent"] / vertical_unit, 3)
+                                        for v in data["vertical"]},
+            "vertical (Range の位置から見た字の送り em)": {f"{v['orientation']} {v['feature']} あ{v['char']}い": round((v["rects"][2]["top"] - v["rects"][1]["top"]) / vertical_unit, 3)
+                                             for v in data["vertical"]},
         }
     return out
 
@@ -341,12 +348,12 @@ def validate() -> int:
     fonts = ROOT / "fonts"
     expected = compute_expected(fonts)
     size = SIZE
-    result = {"size": size, "userAgent": "synthetic", "faceStatus": {}, "fonts": {}}
+    result = {"size": size, "userAgent": "Chrome/synthetic", "faceStatus": {}, "fonts": {}}
     for name, exp in expected.items():
         symbols = [{"width": w * size} for w in exp["symbols"].values()]
         cells = [{"width": size}] + [{"width": w * size} for w in HORIZONTAL_CELLS.values()] + [{"width": size}]
         vertical = [{"orientation": "mixed", "feature": "normal", "char": c,
-                     "rects": [{"top": 0}, {"top": 28}, {"top": 28 * (1 + n)}]} for c, n in CELLS.items()]
+                     "rects": [{"top": 0}, {"top": 28}, {"top": 28 * (1 + n)}], "extent": 28 * (n + 2)} for c, n in CELLS.items()]
         result["fonts"][name] = {"horizontalCells": cells, "symbols": [{"width": size}] + symbols + [{"width": size}],
                                  "kern": {"on": 100, "off": 100 + exp["kernDelta"] * size},
                                  "kichi": {"width": size, "differsFromFallback": True}, "vertical": vertical}
@@ -356,7 +363,7 @@ def validate() -> int:
         return 1
     broken = json.loads(json.dumps(result))
     first = next(iter(broken["fonts"].values()))
-    first["vertical"][0]["rects"][2]["top"] = 28 * 2
+    first["vertical"][0]["extent"] = 28 * 3
     first["symbols"][2]["width"] += size * .2
     first["kern"]["off"] = first["kern"]["on"]
     first["kichi"]["differsFromFallback"] = False
