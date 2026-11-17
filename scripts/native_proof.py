@@ -52,7 +52,7 @@ def expectations(font) -> dict:
     CoreText = vrt2、DirectWrite = vert として明示する。DirectWrite は ⸺ ⸻ を回さずに cmap の字を横倒しで送る"""
     import spec
     from checks.fonttables import gsub_mapping, gsub_multiple, latin_symbol_mapping
-    from checks.kerning import kerning_pairs
+    from checks.fonttables import kerning_pairs
     em, cmap = font["head"].unitsPerEm, font.getBestCmap()
     pairs = kerning_pairs(font)
     locl = latin_symbol_mapping(font, "kana", None)

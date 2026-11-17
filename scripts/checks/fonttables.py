@@ -278,3 +278,50 @@ def semi_voiced_kana_ligatures(font: TTFont, udp: TTFont) -> list[tuple[str, str
             if target is not None and other is not None:
                 result.append((chr(base) + chr(mark), target, other))
     return result
+
+
+def kerning_pairs(font: TTFont) -> dict[tuple[str, str], int]:
+    """できた GPOS の実効 kern ペアを展開する。生成用のクラス・文字範囲には依存しない。
+
+    同じ lookup の先に一致したゼロ値も後のサブテーブルを遮る。Format 2 は Coverage に
+    入った左の字について、クラス0を含むすべての右の字に一致する。返すのは実効値が非ゼロのペア。
+    """
+    table = font["GPOS"].table
+    indexes = sorted({i for r in table.FeatureList.FeatureRecord if r.FeatureTag == "kern"
+                      for i in r.Feature.LookupListIndex})
+    result = {}
+    for index in indexes:
+        pairs = {}
+        covered_left = set()
+        for raw in table.LookupList.Lookup[index].SubTable:
+            sub = getattr(raw, "ExtSubTable", raw)
+            if not (sub.ValueFormat1 in (0, 4) and sub.ValueFormat2 == 0):
+                raise ValueError("kern collision check requires XAdvance-only pair positioning")
+            if sub.Format == 1:
+                for first, pair_set in zip(sub.Coverage.glyphs, sub.PairSet):
+                    if first in covered_left:
+                        continue
+                    for record in pair_set.PairValueRecord:
+                        pairs.setdefault((first, record.SecondGlyph), getattr(record.Value1, "XAdvance", 0))
+            elif sub.Format == 2:
+                classes = {}
+                for glyph in font.getGlyphOrder():
+                    classes.setdefault(sub.ClassDef2.classDefs.get(glyph, 0), []).append(glyph)
+                for first in sub.Coverage.glyphs:
+                    if first in covered_left:
+                        continue
+                    row = sub.Class1Record[sub.ClassDef1.classDefs.get(first, 0)]
+                    for cls, record in enumerate(row.Class2Record):
+                        amount = getattr(record.Value1, "XAdvance", 0)
+                        # クラス0の巨大なゼロ行は展開せず covered_left で表現する。
+                        # 明示クラスのゼロ値と、先行する Format 1 のゼロ値は pairs に残す。
+                        if amount or cls != 0:
+                            for second in classes.get(cls, ()):
+                                pairs.setdefault((first, second), amount)
+                    covered_left.add(first)
+            else:
+                raise ValueError(f"unsupported kern pair format: {sub.Format}")
+        for pair, amount in pairs.items():
+            if amount:
+                result[pair] = result.get(pair, 0) + amount
+    return {pair: amount for pair, amount in result.items() if amount}
