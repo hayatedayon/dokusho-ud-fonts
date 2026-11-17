@@ -211,7 +211,11 @@ Safari と Edge は、`browser-proof` ジョブが `scripts/browser_proof.py`（
 | カーニングで詰まる幅 | 0.555 em | 0.555 em | 0.555 em |
 | `𠮷` | 幅 1 em。自分の字形かどうかは、輪郭の範囲では代わりのフォントと見分けられず未確認（画像では `𠮷` の字形が出ている） | 幅 1 em、自分の字形 | 1 em |
 
-Safari 27.2 の縦組は、`〱 〲 ⸺ ⸻` の送りが 1 em で、次の字（`い`）が重なります（`work/native-checks` の run 44062025421 のスクリーンショットで確認。`vert` の指定、`upright` でも同じ）。`sideways` の `⸺ ⸻` だけ、長さが 4・5 em です。同じ macOS の CoreText（補助 CI の `coretext.swift`、`vrt2` を使う）では 2 em で、Safari の縦組と食い違います。フォントは変えていません。原因（Safari が `vrt2` の 2 段の置き換えを使わないこと）は、確かめていません。Edge は 1.008 のフォントでも同じ長さでした（run 44064184682）。
+Safari 27.2 の縦組は、`〱 〲 ⸺ ⸻` の送りが 1 em で、次の字（`い`）が重なります（run 44062025421 のスクリーンショットで確認。`vert` の指定、`upright` でも同じ）。`sideways` の `⸺ ⸻` だけ、長さが 4・5 em です。同じ macOS の CoreText（補助 CI の `coretext.swift`、`vrt2` を使う）では 2 em で、Safari の縦組と食い違います。
+
+原因調査（2026-11-17、補助 CI run 44195381228、実験用フォントは明朝 Regular）では、`wide_cursX`（1段目の縦字形に GPOS `curs` の XAdvance を足す案）が Safari 27.2 で `あ+字+い` を 4・4・4・5 em にしました。指定なし・`vert`・`vrt2` と mixed / upright で測定しました。ところが同じ `wide_cursX` は CoreText の Framesetter 試験では 1.009 と同じ（2・2・2・3 em）で、悪化はありませんが、期待した差の解消もありません。調査用 `CTFontGetVerticalGlyphsForCharacters` → `CTFontGetAdvancesForGlyphs` → `CTFontShapeGlyphs` の API 再現では、`curs` が1段目の送りを2 emにしますが、その後の2段目 GSUB は Safari の結果を再現せず、実際の Safari 経路と同じとは確認できませんでした。WebKit の公開ソースでは `GlyphPageCoreText.cpp` が CoreText から縦字形を取得し、`FontCoreText.cpp` の単純組版が `CTFontShapeGlyphs`、複雑組版が `ComplexTextControllerCoreText.mm` の CTLine / CTRun を使います。ソースは [WebKit の調査コミット](https://github.com/WebKit/WebKit/tree/265863121458764b7b077e91ddc8abe2ce3e8d78) のこれらのファイルを参照しました。これは経路の構造で、Safari 27.2 の実際の呼び出し経路を直接トレースした事実ではありません。
+
+この候補は採用しませんでした。run 44195381228 の DirectWrite 変種出力では実フォントではなく Windows の `YUGOTHM.TTC` が使われており、有効な DirectWrite 比較になっていません。Edge の変種データも回収できず、すべての対象環境で「1.009と同じか良い」と確かめられませんでした。フォントは1.009のままで、WebKitGTK は Hayate Reader の `"vert" 1` ありでは2・2・2・3 em、指定なしの `〱 〲` は1 em（1.009からの既知の制約）です。原因と採用できる共通修正は未確定です。
 
 縦組の `⸺`（U+2E3A）・`⸻`（U+2E3B）の向きは、`vert`/`vrt2` の置換を持つ 1.009 と、この 2 字の置換だけを外した一時のフォント（配らない）を、並べて測りました（明朝 Regular。手元の WebKitGTK 2.52.6・Ubuntu 26.04、Orca 内蔵の Chromium 150.0.7871.250・Windows の Win32・DPR 1.5。画像は scratchpad の記録にあり、リポジトリには置いていません）。送りは、どの環境・指定でも 2 em・3 em で、置換を外しても変わりませんでした（`hmtx` が 2 em・3 em なため）。字形の向きは次のとおりです。
 
