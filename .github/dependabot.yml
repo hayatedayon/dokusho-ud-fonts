@@ -1,0 +1,31 @@
+version: 2
+updates:
+  # fonttools と brotli は組で上げる (fonttools 4.68 は brotli 1.2.1 以上を要求する) ので 1 つのプルリクエストにまとめる。
+  # fonttools の更新は、配るフォントのバイトを変えうる。プルリクエストごとに font-diff.yml が前と後のフォントを
+  # 同じ日時で作って比べ、変わっていれば失敗にする (違いを読んでから取り込む)。
+  # 間隔は月 1 回。fonttools は月に 1〜2 回出るが、フォントのリリースはそれより少なく、早く取り込んでも
+  # 利用者に届くのはリリースのときだけなので、週 1 回にして確認を増やす理由が無い。
+  # セキュリティの更新は、この間隔とクールダウンでは遅らせない (cooldown は version updates だけに効く)。
+  - package-ecosystem: pip
+    directory: /
+    schedule:
+      interval: monthly
+    cooldown:
+      default-days: 7
+    open-pull-requests-limit: 2
+    groups:
+      python:
+        patterns:
+          - '*'
+
+  # Actions はコミットの SHA で固定してあり (コメントに版)、Dependabot が SHA とコメントの版を一緒に更新する。
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: monthly
+    cooldown:
+      default-days: 7
+    groups:
+      github-actions:
+        patterns:
+          - '*'

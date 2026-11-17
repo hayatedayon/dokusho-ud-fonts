@@ -1,0 +1,105 @@
+name: Font diff
+
+# 変更の前 (main) と後 (プルリクエスト) で、同じ日時 (SOURCE_DATE_EPOCH) でフォントを作り、バイトが変わるかを比べる。
+# 目的は、fonttools などの依存の更新や、作るスクリプトの変更が、配るフォントを変えるのに気づくこと。
+# 違いはテーブルごとにジョブの要約へ出す (scripts/compare_fonts.py)。
+#
+# 失敗にするのは、依存の更新だけのプルリクエスト (requirements.txt と .github 以外に違いが無い) で
+# フォントが変わったときだけ。フォントの改良のプルリクエストでは、違いは意図したものなので要約に出すだけにする。
+# 手動実行では、base (既定は main) と、選んだブランチを比べる。
+on:
+  pull_request:
+    paths:
+      - requirements.txt
+      - scripts/**
+      - OFL.txt
+      - .github/workflows/font-diff.yml
+  workflow_dispatch:
+    inputs:
+      base:
+        description: 比べる前のコミット・ブランチ・タグ
+        type: string
+        default: main
+
+permissions:
+  contents: read
+
+concurrency:
+  group: font-diff-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  compare:
+    name: Build before and after, compare the fonts
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Checkout the change
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          path: after
+          persist-credentials: false
+
+      - name: Checkout the base
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.pull_request.base.sha || inputs.base || 'main' }}
+          path: before
+          persist-credentials: false
+
+      # どちらも自分の requirements.txt から作る。ランナーの Python は外からパッケージを入れられない (PEP 668) ので、venv に入れる
+      - name: Install fontTools (before and after)
+        run: |
+          for side in before after; do
+            python3 -m venv "$side/.venv"
+            "$side/.venv/bin/pip" install -r "$side/requirements.txt"
+          done
+          for side in before after; do "$side/.venv/bin/pip" list --format=freeze | grep -i -E '^(fonttools|brotli)=='; echo "($side)"; done
+
+      - name: Fetch the original fonts
+        run: |
+          for side in before after; do (cd "$side" && .venv/bin/python scripts/fetch_sources.py); done
+
+      # 日時は、前後で同じにする (変更の側のコミットの日時)。違うと head の日時だけでバイトが違ってしまう
+      - name: Build
+        run: |
+          export SOURCE_DATE_EPOCH="$(git -C after log -1 --format=%ct)"
+          for side in before after; do (cd "$side" && .venv/bin/python scripts/build.py > /dev/null); done
+          sha256sum before/fonts/* after/fonts/*
+
+      - name: Compare
+        id: compare
+        run: |
+          set +e
+          after/.venv/bin/python after/scripts/compare_fonts.py before/fonts after/fonts > report.md
+          status=$?
+          set -e
+          {
+            echo "## Font diff"
+            echo
+            cat report.md
+          } >> "$GITHUB_STEP_SUMMARY"
+          cat report.md
+          echo "status=$status" >> "$GITHUB_OUTPUT"
+          [ "$status" -le 1 ] || exit "$status"
+
+          # requirements.txt と .github 以外に違いがあるか (あれば、フォントが変わるのは意図した変更かもしれない)
+          if diff -rq --exclude=.git --exclude=.venv --exclude=__pycache__ --exclude=fonts --exclude=sources \
+              --exclude=requirements.txt --exclude=.github before after > /dev/null; then
+            echo "dependency_only=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "dependency_only=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      # 依存の更新だけでフォントが変わるのは、次のリリースのフォントが変わるということ。
+      # 取り込む前に、違いを読んで人が決める
+      - name: Fail when a dependency-only change alters the fonts
+        if: steps.compare.outputs.status == '1' && steps.compare.outputs.dependency_only == 'true'
+        run: |
+          echo "::error title=The fonts changed::The dependency update changes the built fonts (see the job summary). Read the difference before merging."
+          exit 1
+
+      - name: Note a font change in a non-dependency pull request
+        if: steps.compare.outputs.status == '1' && steps.compare.outputs.dependency_only == 'false'
+        run: echo "::notice title=The fonts changed::The built fonts differ from the base (see the job summary). Check that this is intended."
