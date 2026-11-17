@@ -106,7 +106,9 @@ def prepare(output: Path, fonts_dir: Path = ROOT / "fonts"):
             em, cmap = font["head"].unitsPerEm, font.getBestCmap()
             # 縦組の 〱 〲 ⸺ ⸻ の、輪郭のある字 (vert の 2 段目の 1 つ目) の字形 ID。位置のずれを見るため
             multiple = gsub_multiple(font, "vert")
-            cells = {f"{code:04x}": font.getGlyphID(multiple[gsub_mapping(font, "vert")[cmap[code]]][0])
+            # 2 段の置き換えを持たない版 (1.008 など) では、置き換えた 1 字の ID。長さの検査が外れとして報告する
+            vert = gsub_mapping(font, "vert")
+            cells = {f"{code:04x}": font.getGlyphID(multiple.get(vert.get(cmap[code], cmap[code]), [vert.get(cmap[code], cmap[code])])[0])
                      for code in VERTICAL_CELLS}
             font_data[path.stem] = {"file": path.name, "sha256": hashlib.sha256(path.read_bytes()).hexdigest(),
                                     "cellGlyphs": cells, "expected": expectations(font)}

@@ -75,19 +75,21 @@ function rects(node) {
   return out;
 }
 function make(parent, cls, family, text, style, label) {
-  const box = document.createElement('div'); box.className = (cls === 'v' ? 'cell' : 'row') + (label.visible ? '' : ' hidden');
+  const show = label.visible && (cls === 'v' || location.hash !== '#grid');  // #grid: 縦組の一覧だけを見せる
+  const box = document.createElement('div'); box.className = (cls === 'v' ? 'cell' : 'row') + (show ? '' : ' hidden');
   if (cls === 'v') parent = document.getElementById('vgrid');
   const el = document.createElement('div'); el.className = cls; el.lang = 'ja';
   el.style.fontFamily = `"${family}", serif`; el.style.cssText += style;
   el.textContent = text; box.appendChild(el);
-  if (label.visible) { const s = document.createElement('small'); s.textContent = label.text; box.appendChild(s); }
+  if (show) { const s = document.createElement('small'); s.textContent = label.text; box.appendChild(s); }
   parent.appendChild(box); return el.firstChild;
 }
-function inkSignature(family, ch, fallback) {
-  const canvas = document.createElement('canvas'); canvas.width = 96; canvas.height = 96;
-  const g = canvas.getContext('2d'); g.fillStyle = '#fff'; g.fillRect(0, 0, 96, 96); g.fillStyle = '#000';
-  g.font = `64px "${family}", ${fallback}`; g.textBaseline = 'alphabetic'; g.fillText(ch, 8, 72);
-  return Array.from(g.getImageData(0, 0, 96, 96).data).filter((v, i) => i % 4 === 0);
+function inkBox(family, ch, fallback) {
+  // 字の輪郭の範囲。getImageData は Safari の指紋対策で使えないので、measureText の範囲で比べる
+  const g = document.createElement('canvas').getContext('2d');
+  g.font = `64px "${family}", ${fallback}`;
+  const m = g.measureText(ch);
+  return [m.actualBoundingBoxLeft, m.actualBoundingBoxRight, m.actualBoundingBoxAscent, m.actualBoundingBoxDescent];
 }
 async function run() {
   const stage = document.getElementById('stage');
@@ -116,11 +118,10 @@ async function run() {
       const node = row('v', 'あ' + ch + 'い', `text-orientation: ${orientation}; font-feature-settings: ${feature}`, `${orientation} ${feature} あ${ch}い`);
       out.vertical.push({orientation, feature, char: ch, rects: rects(node)});
     }
-    // 追加字 𠮷: 自分の字形が出ているか (表に無い字を持たない同じ名前の面との、描画の違い)
+    // 追加字 𠮷: 自分の字形が出ているか (𠮷 を持たない面 = 代わりのフォントの輪郭の範囲との違い)
     const probe = CONFIG.fonts[index].noGlyphFamily;
-    const own = inkSignature(fam, '𠮷', 'serif'), other = inkSignature(probe, '𠮷', 'serif');
-    out.kichi = {width: rects(row('h', '𠮷', '', '𠮷 (horizontal)'))[0].width, differsFromFallback: own.some((v, i) => v !== other[i]),
-                 ink: own.filter(v => v < 128).length};
+    const own = inkBox(fam, '𠮷', 'serif'), other = inkBox(probe, '𠮷', 'serif');
+    out.kichi = {width: rects(row('h', '𠮷', '', '𠮷 (horizontal)'))[0].width, differsFromFallback: own.some((v, i) => Math.abs(v - other[i]) > 0.5), box: own, fallbackBox: other};
     result.fonts[font.name] = out;
   });
   result.faces = {};
@@ -395,9 +396,10 @@ def main() -> int:
     expected = compute_expected(args.fonts)
     problems = check_result(result, expected)
     (args.output / "result.json").write_text(json.dumps(result, indent=1, ensure_ascii=False), encoding="utf-8")
-    (args.output / "summary.json").write_text(json.dumps({"webdriver": result.get("webdriver"), "userAgent": result["userAgent"],
-                                                          "problems": problems, "measured": summary(result)}, indent=1, ensure_ascii=False), encoding="utf-8")
-    print(json.dumps({"webdriver": result.get("webdriver"), "userAgent": result["userAgent"]}, ensure_ascii=False))
+    (args.output / "summary.json").write_text(json.dumps({"webdriver": result.get("webdriver"), "userAgent": result.get("userAgent"),
+                                                          "problems": problems, "measured": None if "error" in result else summary(result)},
+                                                         indent=1, ensure_ascii=False), encoding="utf-8")
+    print(json.dumps({"webdriver": result.get("webdriver"), "userAgent": result.get("userAgent")}, ensure_ascii=False))
     for line in problems:
         print(f"::error::{line}" if os.environ.get("GITHUB_ACTIONS") else f"FAIL {line}")
     print(f"{len(problems)} browser check(s) failed" if problems else f"ok: {args.browser}: browser checks")
