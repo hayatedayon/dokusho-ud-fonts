@@ -151,13 +151,17 @@ def check_vertical_cells(ctx: FontContext) -> None:
     gpos = font["GPOS"].table
     adds = gpos_values(font, SPACING_FEATURE)
     blank_zero = blanks.get("vert")
-    check(blank_zero != blanks.get("vrt2") and adds == {blank_zero: (0, 0, em, 0)},
-          f"{label}: {SPACING_FEATURE} does not hold only the 1 em horizontal advance of the blank of vert")
+    want_adds = {blank_zero: (0, 0, em, 0)}
+    want_adds.update({form: (0, 0, (VERTICAL_CELLS[code] - 1) * em, 0)
+                      for code, form in stage_one["vert"].items() if form is not None})
+    check(blank_zero != blanks.get("vrt2") and adds == want_adds,
+          f"{label}: {SPACING_FEATURE} does not hold the blank and first-stage horizontal advances")
     others = {i for r in gpos.FeatureList.FeatureRecord if r.FeatureTag != SPACING_FEATURE for i in r.Feature.LookupListIndex}
-    check(not any(blank_zero in getattr(getattr(st, "ExtSubTable", st), "Coverage", None).glyphs
+    check(not any(any(glyph in getattr(getattr(st, "ExtSubTable", st), "Coverage", None).glyphs
+                          for glyph in want_adds)
                   for i in others for st in gpos.LookupList.Lookup[i].SubTable
                   if getattr(getattr(st, "ExtSubTable", st), "Coverage", None) is not None),
-          f"{label}: the blank of vert is adjusted by a feature other than {SPACING_FEATURE}")
+          f"{label}: a vertical-cell spacing glyph is adjusted by a feature other than {SPACING_FEATURE}")
     multiple = gsub_multiple(font, "vert")
     # 組んだ結果 (HarfBuzz は縦の送りを使う)。どの機能でも、あ〱い・〱〲 のように前後の字や並びがあっても同じ
     for code, cells in VERTICAL_CELLS.items():

@@ -316,14 +316,21 @@ def split_vertical_cells(font: TTFont, codes=VERTICAL_CELL_CODES) -> dict[str, d
                 seen.add(id(record.Feature))
                 record.Feature.LookupListIndex = [*record.Feature.LookupListIndex, index]
                 record.Feature.LookupCount = len(record.Feature.LookupListIndex)
-    # 空白 (横の送りが 0) に、横の送りを 1 em 足す GPOS。WebKitGTK だけが、機能 curs のこの調整を使う
+    # 1 段目の字にセル数ぶんの横の送りを持たせる GPOS。Safari は複数置換後の空白ではなく、この字の curs を使う。
+    # BLANK_ZERO にも従来どおり 1 em を足す (WebKitGTK が複数置換後の並びで使う)。
     position = otTables.SinglePos()
     position.Format = 1
     position.Coverage = otTables.Coverage()
-    position.Coverage.glyphs = [BLANK_ZERO]
+    spacing = {BLANK_ZERO: em}
+    spacing.update({wide: (font["vmtx"][wide][0] // em - 1) * em for wide in mappings["vert"]})
+    position.Coverage.glyphs = sorted(spacing, key=font.getGlyphID)
     position.ValueFormat = 0x4  # XAdvance
-    position.Value = otTables.ValueRecord()
-    position.Value.XAdvance = em
+    # 単一調整の複数値形式にして、空白は 1 em、1 段目は余分なセル数ぶんを指定。
+    position.Format = 2
+    position.Value = [otTables.ValueRecord() for _ in position.Coverage.glyphs]
+    for glyph, value in zip(position.Coverage.glyphs, position.Value):
+        value.XAdvance = spacing[glyph]
+    position.ValueCount = len(position.Value)
     lookup = otTables.Lookup()
     lookup.LookupType, lookup.LookupFlag, lookup.SubTable, lookup.SubTableCount = 1, 0, [position], 1
     gpos.LookupList.Lookup.append(lookup)
