@@ -147,7 +147,7 @@ python3 scripts/scan_secrets.py --all-history
 
 ## ワークフローの検査
 
-`workflow-lint.yml` は `.github/`・道具の入手スクリプトが変わった push・プルリクエストと、週1回に actionlint 1.7.12（ShellCheck 0.11.0 も使用）と zizmor 1.32.0 を実行します。全ワークフローと Dependabot の設定を検査します。Action は完全なコミット SHA と版のコメントで固定し、Dependabot が両方を更新できる書き方を保ちます。更新後の Action を検査から外す設定はありません。
+`workflow-lint.yml` は `.github/`・道具の入手スクリプトが変わった push・プルリクエストと、週1回の定期実行で actionlint 1.7.12（ShellCheck 0.11.0 も使用）と zizmor 1.32.0 を実行します。全ワークフローと Dependabot の設定を検査します。Action は完全なコミット SHA と版のコメントで固定し、Dependabot が両方を更新できる書き方を保ちます。更新後の Action を検査から外す設定はありません。
 
 ```sh
 python3 scripts/install_supply_chain_tools.py actionlint shellcheck zizmor \
