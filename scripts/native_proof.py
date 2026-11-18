@@ -16,22 +16,26 @@ import os
 import unicodedata
 
 ROOT = Path(__file__).resolve().parent.parent
-# id, language, vertical, kern (-1=default), locl (-1=default), text
+# id, language, vertical, kern (-1=default), locl (-1=default), ss03 (-1=default), text
 CASES = [
-    ("ja", "ja", False, -1, -1, "読書の記号— “本” ‘声’ − 35° ½ ‼ 𠮷野のくの字点〱〲。"),
-    ("en", "en", False, -1, -1, "The reader—“Hello,” ‘yes’ − 35° ½ ‼ It’s fine."),
-    ("kern", "en", False, 1, -1, "T. T, V. V, W. W, Y. Y, P. P, F. F, r. r, y. y, v. v, w. w,"),
-    ("kern-off", "en", False, 0, -1, "T. T, V. V, W. W, Y. Y, P. P, F. F, r. r, y. y, v. v, w. w,"),
-    ("accents", "en", False, 1, -1, "Ť. Ť, Ţ. Ţ, Ŷ. Ŷ, Ŵ. Ŵ, ŕ. ŕ, ý. ý, ŵ. ŵ, ÁV Tó"),
-    ("always-udp", "ja", False, -1, -1, "文‘’“”—−¼½¾⅓⅔⅕°‼⁇⁈⁉文"),
-    ("locl-off", "ja", False, -1, 0, "文‘’“”—−¼½¾⅓⅔⅕°‼⁇⁈⁉文"),
+    ("ja", "ja", False, -1, -1, -1, "読書の記号— “本” ‘声’ − 35° ½ ‼ 𠮷野のくの字点〱〲。"),
+    ("en", "en", False, -1, -1, -1, "The reader—“Hello,” ‘yes’ − 35° ½ ‼ It’s fine."),
+    ("kern", "en", False, 1, -1, -1, "T. T, V. V, W. W, Y. Y, P. P, F. F, r. r, y. y, v. v, w. w,"),
+    ("kern-off", "en", False, 0, -1, -1, "T. T, V. V, W. W, Y. Y, P. P, F. F, r. r, y. y, v. v, w. w,"),
+    ("accents", "en", False, 1, -1, -1, "Ť. Ť, Ţ. Ţ, Ŷ. Ŷ, Ŵ. Ŵ, ŕ. ŕ, ý. ý, ŵ. ŵ, ÁV Tó"),
+    ("always-udp", "ja", False, -1, -1, -1, "文‘’“”—−¼½¾⅓⅔⅕°‼⁇⁈⁉文"),
+    ("locl-off", "ja", False, -1, 0, -1, "文‘’“”—−¼½¾⅓⅔⅕°‼⁇⁈⁉文"),
 ]
-CASES += [(name + "-v", lang, True, kern, locl, text) for name, lang, _, kern, locl, text in CASES
+CASES += [(name + "-v", lang, True, kern, locl, ss03, text) for name, lang, _, kern, locl, ss03, text in CASES
           if name in ("ja", "en", "always-udp", "locl-off")]
 # 縦組の 2 セル・3 セルの字 (〱 〲 ⸺ ⸻)。字 → セルの数。前後に 1 セルずつの仮名を置き、送りの合計を見る
 VERTICAL_CELLS = {0x3031: 2, 0x3032: 2, 0x2E3A: 2, 0x2E3B: 3}
-CASES += [(f"cell-{code:04x}", "ja", True, -1, -1, f"あ{chr(code)}い") for code in VERTICAL_CELLS]
-CASES += [(f"pair-{ord(a):04x}-{ord(b):04x}", "en", False, 1, -1, a + b)
+CASES += [(f"cell-{code:04x}", "ja", True, -1, -1, -1, f"あ{chr(code)}い") for code in VERTICAL_CELLS]
+# ss03 (ルビ仮名の試作) を指定して、対象の 194 字を横組・縦組で組む。ss03 を指定しない同じ文字列は、通常の字形の対照
+KANA = "".join(chr(c) for start, stop in ((0x3041, 0x3097), (0x30A0, 0x30FC), (0x31F0, 0x3200)) for c in range(start, stop))
+CASES += [("ss03", "ja", False, -1, -1, 1, KANA), ("ss03-v", "ja", True, -1, -1, 1, KANA),
+          ("ss03-off", "ja", False, -1, -1, 0, KANA), ("ss03-off-v", "ja", True, -1, -1, 0, KANA)]
+CASES += [(f"pair-{ord(a):04x}-{ord(b):04x}", "en", False, 1, -1, -1, a + b)
           for a in "TVWYPFryvwŤŢŶŴŕýŵ" for b in ".,"]
 
 
@@ -79,11 +83,23 @@ def expectations(font) -> dict:
                                        else [gid(cmap[code])]) + kana[1:],
         }
     kern_text = next(c[-1] for c in CASES if c[0] == "kern")
+    # ss03: 横組は cmap の字から ss03 の置き換え先へ、縦組は vert (DirectWrite)・vrt2 (CoreText) の後に ss03。送りは原字と同じ
+    ss03 = gsub_mapping(font, "ss03")
+    ss03_horizontal = [[gid(ss03[cmap[ord(c)]]), font["hmtx"][cmap[ord(c)]][0] * 24 / em] for c in KANA]
+
+    def ss03_vertical(mapping):
+        names = [mapping.get(cmap[ord(c)], cmap[ord(c)]) for c in KANA]
+        return [gid(ss03.get(n, n)) for n in names]
+
     return {
         "horizontal": {char: horizontal(char) for case in CASES if case[0] in ("ja", "always-udp") for char in case[-1]},
         "kernTotals": {"on": kern_total(font, pairs, kern_text, True), "off": kern_total(font, pairs, kern_text, False)},
-        "pairWidths": {name: kern_total(font, pairs, text, True) for name, _, _, _, _, text in CASES if name.startswith("pair-")},
+        "pairWidths": {name: kern_total(font, pairs, text, True) for name, _, _, _, _, _, text in CASES if name.startswith("pair-")},
         "vertical": vertical,
+        "ss03": {"horizontal": ss03_horizontal, "default": [gid(cmap[ord(c)]) for c in KANA],
+                 "vertical": {"coretext": ss03_vertical(vrt2), "directwrite": ss03_vertical(vert)},
+                 "defaultVertical": {"coretext": [gid(vrt2.get(cmap[ord(c)], cmap[ord(c)])) for c in KANA],
+                                     "directwrite": [gid(vert.get(cmap[ord(c)], cmap[ord(c)])) for c in KANA]}},
         "uncovered": sorted({f"{ord(c):04X}" for case in CASES for c in case[-1] if ord(c) not in cmap}),
     }
 
@@ -91,8 +107,8 @@ def expectations(font) -> dict:
 def prepare(output: Path, fonts_dir: Path = ROOT / "fonts"):
     output.mkdir(parents=True, exist_ok=True)
     (output / "cases.tsv").write_text("".join(
-        f"{name}\t{lang}\t{int(vertical)}\t{kern}\t{locl}\t{text}\n"
-        for name, lang, vertical, kern, locl, text in CASES), encoding="utf-8")
+        f"{name}\t{lang}\t{int(vertical)}\t{kern}\t{locl}\t{ss03}\t{text}\n"
+        for name, lang, vertical, kern, locl, ss03, text in CASES), encoding="utf-8")
     fonts = sorted(fonts_dir.glob("*.ttf"))
     if len(fonts) != 4:
         raise ValueError("build all four fonts before preparing native proofs")
@@ -242,6 +258,24 @@ def check_expectations(output: Path, engine: str) -> list[str]:
             actual = [g for g, _ in flatten(record(font, f"cell-{code:04x}"))]
             if actual != want:
                 problems.append(f"{label} cell-{code:04x}: glyphs {actual}, expected {want}")
+        # ss03: 194 字すべてが試作字形になり、送りは原字と同じ。ss03=0 の対照は通常の字形のまま (縦組は字形だけ見る)
+        want = expected["ss03"]
+        for case, vertical, trial in (("ss03", False, True), ("ss03-off", False, False), ("ss03-v", True, True), ("ss03-off-v", True, False)):
+            actual = flatten(record(font, case))
+            if len(actual) != len(KANA):
+                problems.append(f"{label} {case}: {len(actual)} glyphs for {len(KANA)} characters")
+                continue
+            if vertical:
+                wanted = want["vertical"][engine] if trial else want["defaultVertical"][engine]
+            else:
+                wanted = [g for g, _ in want["horizontal"]] if trial else want["default"]
+            bad = [(char, got, glyph) for char, (got, _), glyph in zip(KANA, actual, wanted) if got != glyph]
+            if bad:
+                problems.append(f"{label} {case}: {len(bad)} of {len(KANA)} kana differ, e.g. U+{ord(bad[0][0]):04X} glyph {bad[0][1]}, expected {bad[0][2]}")
+            if not vertical and trial:
+                moved = [char for char, (_, advance), (_, width) in zip(KANA, actual, want["horizontal"]) if abs(advance - width) > .02]
+                if moved:
+                    problems.append(f"{label} {case}: advance differs from the original kana for {len(moved)} kana, e.g. U+{ord(moved[0]):04X}")
     return problems
 
 
@@ -253,7 +287,7 @@ def report(output: Path, engine: str, problems: list[str]):
     if problems:
         print(f"{len(problems)} native check(s) failed ({engine}); see checks-{engine}.json")
     else:
-        print(f"ok: {engine}: expectations (17 symbols, kerning, added characters, vertical glyphs, coverage)")
+        print(f"ok: {engine}: expectations (17 symbols, kerning, added characters, vertical glyphs, ss03, coverage)")
     return not problems
 
 
@@ -264,7 +298,7 @@ def gallery(output: Path, engine: str):
             f"<h1>{engine}</h1><p>24px. Compare kern / kern-off and always-udp / locl-off, then compare the two OS artifacts with matching font SHA-256. JSON preserves glyph IDs and advances; locl-off is a diagnostic, not a passing requirement.</p>"]
     for font, data in manifest["fonts"].items():
         rows += [f"<h2>{font}</h2><p>SHA-256 {data['sha256']}</p>"]
-        for name, lang, vertical, kern, locl, text in CASES:
+        for name, lang, vertical, kern, locl, ss03, text in CASES:
             prefix = f"{engine}/{font}/{name}"
             rows += [f"<h3>{name} ({lang}, {'vertical' if vertical else 'horizontal'})</h3>",
                      f"<p>{html.escape(text)} <a href='{prefix}.json'>glyphs / advances</a></p>",

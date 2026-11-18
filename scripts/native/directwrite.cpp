@@ -106,9 +106,9 @@ static void run(wchar_t** argv) {
         if (!line.empty() && line.back() == '\r') line.pop_back();
         std::istringstream row(line); std::vector<std::string> fields; std::string field;
         while (std::getline(row, field, '\t')) fields.push_back(field);
-        if (fields.size() != 6) throw std::runtime_error("bad cases.tsv row");
+        if (fields.size() != 7) throw std::runtime_error("bad cases.tsv row");
         const bool vertical = fields[2] == "1";
-        auto text = wide(fields[5]), locale = wide(fields[1]);
+        auto text = wide(fields[6]), locale = wide(fields[1]);
         ComPtr<IDWriteTextFormat> format;
         ok(factory->CreateTextFormat(argv[4], collection.Get(), std::wstring(argv[5]) == L"Bold" ? DWRITE_FONT_WEIGHT_BOLD : DWRITE_FONT_WEIGHT_NORMAL,
             DWRITE_FONT_STYLE_NORMAL, DWRITE_FONT_STRETCH_NORMAL, 24, locale.c_str(), &format));
@@ -118,9 +118,12 @@ static void run(wchar_t** argv) {
         DWRITE_TEXT_RANGE all{0, static_cast<UINT32>(text.size())};
         // DirectWrite needs an explicit pair-kerning request; preserve the off control.
         ok(layout2->SetPairKerning(fields[3] != "0", all));
-        if (fields[4] != "-1") {
+        if (fields[4] != "-1" || fields[5] != "-1") {
             ComPtr<IDWriteTypography> typography; ok(factory->CreateTypography(&typography));
-            ok(typography->AddFontFeature({DWRITE_FONT_FEATURE_TAG_LOCALIZED_FORMS, static_cast<UINT32>(std::stoi(fields[4]))}));
+            if (fields[4] != "-1")
+                ok(typography->AddFontFeature({DWRITE_FONT_FEATURE_TAG_LOCALIZED_FORMS, static_cast<UINT32>(std::stoi(fields[4]))}));
+            if (fields[5] != "-1")
+                ok(typography->AddFontFeature({DWRITE_FONT_FEATURE_TAG_STYLISTIC_SET_3, static_cast<UINT32>(std::stoi(fields[5]))}));
             ok(layout->SetTypography(typography.Get(), all));
         }
         if (vertical) {

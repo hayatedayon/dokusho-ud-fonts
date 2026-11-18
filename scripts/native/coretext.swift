@@ -19,10 +19,10 @@ func render() throws {
     let contents = try String(contentsOfFile: args[2], encoding: .utf8)
     for line in contents.split(separator: "\n") {
         let columns = line.split(separator: "\t", omittingEmptySubsequences: false).map(String.init)
-        try require(columns.count == 6, "bad cases.tsv row")
+        try require(columns.count == 7, "bad cases.tsv row")
         let id = columns[0], vertical = columns[2] == "1"
         var features: [[String: Any]] = []
-        for (index, tag) in [(3, "kern"), (4, "locl")] where columns[index] != "-1" {
+        for (index, tag) in [(3, "kern"), (4, "locl"), (5, "ss03")] where columns[index] != "-1" {
             features.append([kCTFontOpenTypeFeatureTag as String: tag, kCTFontOpenTypeFeatureValue as String: Int(columns[index])!])
         }
         let descriptor = CTFontDescriptorCreateWithAttributes([kCTFontFeatureSettingsAttribute as String: features] as CFDictionary)
@@ -34,7 +34,7 @@ func render() throws {
         ]
         // CoreText's zero kern attribute explicitly disables kerning; absence uses font defaults.
         if columns[3] == "0" { attributes[NSAttributedString.Key(kCTKernAttributeName as String)] = 0 }
-        let text = NSAttributedString(string: columns[5], attributes: attributes)
+        let text = NSAttributedString(string: columns[6], attributes: attributes)
         let setter = CTFramesetterCreateWithAttributedString(text as CFAttributedString)
         let path = CGPath(rect: CGRect(x: 40, y: 40, width: 1520, height: 820), transform: nil)
         let options = [kCTFrameProgressionAttributeName as String: vertical ? CTFrameProgression.rightToLeft.rawValue : CTFrameProgression.topToBottom.rawValue]
