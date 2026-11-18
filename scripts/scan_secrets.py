@@ -18,7 +18,8 @@ def main() -> None:
     common = ["--config", str(ROOT / ".betterleaks.toml"), "--redact=100", "--no-banner",
               "--ignore-gitleaks-allow"]
     # No live credential validation: findings never go to third-party APIs.
-    subprocess.run(["betterleaks", "dir", str(ROOT), *common], check=True, cwd=ROOT)
+    # Relative paths give the same finding attributes as Git history scanning.
+    subprocess.run(["betterleaks", "dir", ".", *common], check=True, cwd=ROOT)
     log_opts = "--all --full-history"
     if not args.all_history and os.environ.get("GITHUB_EVENT_PATH"):
         event = json.loads(Path(os.environ["GITHUB_EVENT_PATH"]).read_text())
