@@ -57,7 +57,7 @@ ChangeLog
   amount plus 2 units): Mincho Regular そ ぞ む; Mincho Bold こ ご ゆ and
   the vertical ォ; Gothic Regular す ず そ ぞ ゑ; Gothic Bold そ て で ゑ.
   Those sharp corners exceeded the former limit by 0.1 to 7.9 units but
-  retained the correct point correspondence. Compared with work/ruby, only
+  retained the correct point correspondence. Compared with the 194-kana build before these hints, only
   their glyf instructions, loca and head checksum change. FreeType v35/v40,
   8–10 ppem: hinted/unhinted differences total 2159 grayscale pixels
   (density difference 295.1) and 431 mono pixels; ink ratios are
