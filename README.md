@@ -6,7 +6,7 @@
 [![License: OFL-1.1](https://img.shields.io/badge/license-OFL--1.1-blue)](OFL.txt)
 <br>
 ![Format](https://img.shields.io/badge/format-TrueType-555)
-[![Built with fontTools](https://img.shields.io/badge/built%20with-fontTools%204.61-3776AB?logo=python&logoColor=white)](https://github.com/fonttools/fonttools)
+[![Built with fontTools](https://img.shields.io/badge/built%20with-fontTools%204.68.0-3776AB?logo=python&logoColor=white)](https://github.com/fonttools/fonttools)
 
 [English](README.en.md)
 
