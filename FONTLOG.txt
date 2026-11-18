@@ -28,9 +28,14 @@ ChangeLog
   Safari 27.2 uses this adjustment for the glyph before the multiple
   substitution, fixing the measured advance in mixed-orientation vertical
   text. Safari still measures the upright ⸺ and ⸻ as 1 em inside あ…い;
-  this matches the 1.009 result and remains unresolved. CoreText,
+  this matches 1.009 and is retained as a known limitation. On macOS
+  15.8.2, upright vertical-rl/lr gives both dashes a 1-em advance and
+  overlaps the next character (all four fonts, normal/vert/vrt2).
+  The candidate with text-orientation: mixed gives 2/3 em and avoids
+  this overlap, with a different orientation. iOS Safari is untested.
+  CoreText,
   DirectWrite, HarfBuzz, Edge and WebKitGTK do not regress in the checks.
-  The only semantic font change is these `curs` XAdvance values: glyph
+  For this adjustment, only the `curs` XAdvance values change: glyph
   outlines, cmap, hmtx, vmtx and other OpenType features are unchanged.
 - The optional ss03 (Ruby kana, trial) now covers all 194 kana instead of
   20: hiragana U+3041-3096, katakana U+30A0-30FB (including the double

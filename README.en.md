@@ -76,6 +76,12 @@ body {
 
 Greek and Cyrillic letters are full width, and few of the extended Latin letters are included. For Greek, Russian and similar text, combine these fonts with another Latin typeface.
 
+## Known limitations
+
+In Safari 27.2 on macOS 15.8.2, `writing-mode: vertical-rl` or `vertical-lr` with `text-orientation: upright` gives the vertical `⸺` (U+2E3A) and `⸻` (U+2E3B) an advance of 1 em, overlapping the next character. The whole strings `あ⸺い` and `あ⸻い` measure 3 em instead of 4 em and 5 em. This affects all four fonts with normal `font-feature-settings`, `"vert" 1` and `"vrt2" 1` (supplementary CI runs 44199462703 and 44211421561). It is unchanged from 1.009 and remains a known limitation in the next version.
+
+In the next-version candidate, `text-orientation: mixed` gives these two characters advances of 2 em and 3 em and avoids overlap with the next character in the same measured environment. It also changes their orientation, so choose it to suit the text. iOS Safari is untested.
+
 ## License
 
 [SIL Open Font License 1.1](OFL.txt). Free for personal and commercial use, and free to bundle with apps and documents; the fonts may not be sold by themselves. The copyright notices of the original fonts are in OFL.txt.
