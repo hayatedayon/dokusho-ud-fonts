@@ -138,7 +138,7 @@
 - 補強量の既定値を変えるか（見本の比較の結果を、どう判断するか）
 - `aalt` の候補に試作字形を入れるか、`ss03` が `hwid`・`aalt` より先に働くようにするか
 - 点の対応の条件（補強量の1.5倍＋2ユニット）を少し超えてヒントなしになった16グリフに、条件を緩めてヒントを付けるか
-- 実環境（Windows・macOS・Hayate Reader の WebView）で、gasp を守る描き方になるかの確認と、`ss03` が194字すべてに効くことの確認
+- 実環境（Windows・macOS・Hayate Reader の WebView）で、gasp を守る描き方になるかの確認と、`ss03` が194字すべてに効くことの確認（補助 CI の CoreText と DirectWrite は、194字すべてに効くことを確かめました。Safari・Edge と実機のアプリは未確認です）
 - 公開する版
 
 関連: [docs/PROOFING.md](PROOFING.md)（見本と確認の手順）、[docs/DEVELOPMENT.md](DEVELOPMENT.md)（作り方と検査）、[docs/FEATURES.md](FEATURES.md)（機能の一覧）。

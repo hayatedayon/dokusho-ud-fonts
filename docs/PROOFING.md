@@ -120,7 +120,8 @@ python3 scripts/glyph_reference.py record NotoSerifCJK-Regular.ttc NotoSansCJK-R
 | PDF | Word／InDesign／ブラウザから書き出し、フォント埋め込み・文字抽出、別ビューアでのクリップ・行送り・縦組の保持 | 1.009 では未実施（Chrome から保存した PDF は、1.008 のフォントでは 2026-11-10 に合格。Word／InDesign と別ビューアは未実施） |
 | 紙への印刷 | 100%・9〜12pt、４書体・横縦組、追加字の線・接合・濁点、本文の濃さと行のアキ | 未実施 |
 | CoreText／DirectWrite CI | OSのコンパイル・実行、画像とJSON、フォールバック、ペア宣言値、縦組の `〱 〲 ⸺ ⸻` の送りの合否 | 合格（2026-11-16、run 43869094974。コミット `7b4797c`、`release-prep` ブランチ。版を上げる前の 1.009 の候補版。CoreText・DirectWrite の両方）。合否の検査を広げた後（17字の字幅、カーニング、追加字、縦組の字形の並び、フォールバック）も、1.009 のビルドで合格（2026-11-17、作業ブランチ `work/native-checks` の run 44015659016。macOS 15.8.2、Windows Server 2025） |
-| HarfBuzz・FreeType（自動検証） | `scripts/check.py` 全体（４書体の TTF・WOFF2。縦組の `〱 〲 ⸺ ⸻` の置き換え、`ss03` のヒントの命令を含む） | 合格（2026-11-16、版を 1.009 にした後のフォント。HarfBuzz 12.3.2、FreeType 2.14.2。`ok: 4 fonts`） |
+| CoreText／DirectWrite CI（`ss03` を194字に広げた後） | `ss03` を指定した仮名194字（横組・縦組）と、`ss03=0` の対照を組み、フォントの `ss03` の置き換えどおりの字形か、横組の送りが原字と同じか | 合格（2026-11-18、run 44211421561。コミット `5fad4b4`、`work/ruby` ブランチ。macOS 15 の CoreText と Windows 2025 の DirectWrite、4書体。どちらも194字すべてが `ss03=0` と違う字形で、期待値と一致）。同じ run の Safari 27.2 は、upright の `⸺`・`⸻` が3 emのまま（1.009 と同じ。`ss03` は測っていない）、Edge 156 は合格 |
+| HarfBuzz・FreeType（自動検証） | `scripts/check.py` 全体（４書体の TTF・WOFF2。縦組の `〱 〲 ⸺ ⸻` の置き換え、`ss03` のヒントの命令を含む） | 合格（2026-11-16、版を 1.009 にした後のフォント。HarfBuzz 12.3.2、FreeType 2.14.2。`ok: 4 fonts`）。`ss03` を194字に広げた後も合格（2026-11-18、`work/ruby`。`ok: 4 fonts`。ライブラリの版は記録していない） |
 
 次期候補の `wide_cursX` 実装（commit `7895043`）は、`SOURCE_DATE_EPOCH=1794919244` でビルドし、run 44199462703 で4書体を検証しました。1.009（run 44195381228）の標準結果と比較すると、Safari 27.2 の mixed vertical-rl / vertical-lr、`normal`・`"vert" 1`・`"vrt2" 1` は、候補が全4書体で `あ+字+い` の合計4・4・4・5 em（1.009 は3・3・3・3 em）でした。Safari の `text-orientation: upright` は `〱`・`〲` が4 em、`⸺`・`⸻` が3 emで、後者は1.009と同じ未解決です。sideways も測定しましたが、1.009 の標準成果物に同条件の行がないため、その向きの差分比較には含めていません。Safari の測定は送りの長さと文字範囲を測ったもので、OS標準のフォント描画 API によるピクセル単位のインク比較ではありません。
 

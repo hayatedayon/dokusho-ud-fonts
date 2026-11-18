@@ -66,8 +66,10 @@ ChangeLog
   identical. The TrueType files grow by 34 to 80 KB each (Mincho Regular
   6264152 to 6323652 bytes, Mincho Bold 7220352 to 7300556, Gothic Regular
   4761220 to 4795796, Gothic Bold 4731840 to 4766124). Checked with
-  FreeType and HarfBuzz; not checked yet with CoreText, DirectWrite, Safari
-  or Edge.
+  FreeType and HarfBuzz, and with the supplementary CI: CoreText (macOS 15)
+  and DirectWrite (Windows 2025) apply ss03 to all 194 kana, in horizontal
+  and vertical text; not checked with Safari, Edge or a real Windows or
+  macOS application.
 
 2026-11-16 (hayatedayon) Dokusho UD 1.009
 - In vertical text, the two- and three-cell glyphs (〱 〲 ⸺ ⸻) are now
