@@ -7,6 +7,7 @@ python3 scripts/ruby_proof.py
 実機描画とは別である。数値は stdout にも出す。
 """
 
+import build
 import hashlib
 import html
 import sys
@@ -29,8 +30,26 @@ OUTPUT = ROOT / "dist"
 PPEMS = (6, 7, 8, 9, 10)
 INTERPRETERS = (("v40", 40), ("v35", 35))
 ENVIRONMENTS = (("gasp を守らない環境", False), ("gasp を守る環境", True))
-SAMPLES = (("平仮名", "あめぬれゃゅょっがぱ"), ("片仮名", "アメヌレャュョッガパ"))
+# ss03 の対象 194 字を、平仮名・片仮名・小書きの片仮名拡張の順に、1 行 24 字までに分ける
+CHUNK = 24
+
+
+def _samples() -> tuple:
+    groups = (("平仮名", range(0x3041, 0x3097)), ("片仮名", range(0x30A0, 0x30FC)), ("小書きの片仮名拡張", range(0x31F0, 0x3200)))
+    samples = []
+    for label, codes in groups:
+        text = "".join(map(chr, codes))
+        for start in range(0, len(text), CHUNK):
+            samples.append((f"{label} {text[start]}〜{text[min(start + CHUNK, len(text)) - 1]}", text[start:start + CHUNK]))
+    return tuple(samples)
+
+
+SAMPLES = _samples()
+assert "".join(text for _label, text in SAMPLES) == small_type.RUBY_KANA
 LARGE_TEXT, LARGE_PPEM = "あぬれゃっが", 64
+# 全字の一覧 (配るフォントのまま。通常字・試作字形・縦組の字形) の大きさ
+LIST_PPEM, LIST_COLUMNS = 40, 16
+BLUR_PPEMS = (8, 9, 10)
 
 # (見出し, 現在の補強量 s に掛ける (横, 縦))。embolden の ex は横に、ey は縦に太らせる
 # (縦線の太さは ex、横線の太さは ey で変わる)。None の行は通常字そのもの。
@@ -114,6 +133,8 @@ def hinting_section(path: Path, counter: Counter, summary: list) -> str:
         for environment, respect in ENVIRONMENTS:
             hinted = freetype_render.Renderer(path, interpreter, 0, respect_gasp=respect)
             parts.append(f"<h4>FreeType {interpreter_label}・{environment}</h4>")
+            if not (interpreter_label == "v40" and not respect):
+                parts.append("<p>画像は FreeType v40・gasp を守らない環境だけに並べます（ほかは画素の差の数値だけ。数値のまとめにあります）。</p>")
             for ppem in PPEMS:
                 totals = {"hint": [0, 0.0], "embolden": [0, 0.0], "all": [0, 0.0], "unhinted_trial": [0, 0.0], "trial_hint": [0, 0.0],
                           "ink_hinted": 0.0, "ink_plain": 0.0, "ink_trial_plain": 0.0, "ink_trial": 0.0}
@@ -130,10 +151,11 @@ def hinting_section(path: Path, counter: Counter, summary: list) -> str:
                     totals["ink_plain"] += ink(b)
                     totals["ink_trial_plain"] += ink(c_plain)
                     totals["ink_trial"] += ink(c)
-                    cells = "".join(
-                        figure_html(*canvas, text, ppem, figure_id=counter.next("r"), caption=caption)
-                        for caption, canvas in (("通常・ヒントあり", a), ("通常・ヒントなし", b), ("試作・ヒントなし", c_plain), ("試作・ヒントあり", c)))
-                    parts.append(f"<p>{ppem} ppem（本文{ppem * 2}px のルビ）・{script}</p><div class=pair>{cells}</div>")
+                    if interpreter_label == "v40" and not respect:
+                        cells = "".join(
+                            figure_html(*canvas, text, ppem, figure_id=counter.next("r"), caption=caption)
+                            for caption, canvas in (("通常・ヒントあり", a), ("通常・ヒントなし", b), ("試作・ヒントなし", c_plain), ("試作・ヒントあり", c)))
+                        parts.append(f"<p>{ppem} ppem（本文{ppem * 2}px のルビ）・{html.escape(script)}</p><div class=pair>{cells}</div>")
                 summary.append((path.name, interpreter_label, environment, ppem, totals))
             if not respect:
                 parts.append(f"<p>{LARGE_PPEM}px の拡大（画像は等倍）</p><div class=pair>")
@@ -146,6 +168,99 @@ def hinting_section(path: Path, counter: Counter, summary: list) -> str:
             hinted.close()
         plain.close()
     shaper.close()
+    font.close()
+    return "".join(parts)
+
+
+def trial_labels(font) -> list[tuple[str, str, str]]:
+    """ss03 の (字の表示, 元の字形, 試作字形)。横組の 194 字のあとに、縦組で別の字形になる字を付ける。"""
+    trial = gsub_mapping(font, "ss03")
+    cmap, gsub = font.getBestCmap(), font["GSUB"].table
+    rows, vertical = [], []
+    for char in small_type.RUBY_KANA:
+        base = cmap[ord(char)]
+        rows.append((char, base, trial[base]))
+        forms = set()
+        for tag in ("vert", "vrt2"):
+            forms.update(build.single_mapping(gsub, tag, {base}).values())
+        vertical.extend((char + "(縦)", form, trial[form]) for form in sorted(forms - {base}))
+    return rows + vertical
+
+
+def pixels_of(renderer, gid: int, ppem: int, em: int | None = None) -> dict:
+    left, top, _advance, cols, rows, bitmap = renderer.render(gid, ppem)
+    stride = len(bitmap) // rows if rows else 0
+    return {(left + x, y - top): bitmap[y * stride + x] for y in range(rows) for x in range(cols) if bitmap[y * stride + x]}
+
+
+def boundary(pixels: dict) -> float:
+    """境界のにじみ (中間の濃さの画素の量)。濃さ v (0〜255) の画素ごとに min(v, 255 - v) を足し、インク 1 画素分を単位にする。"""
+    return sum(min(v, 255 - v) for v in pixels.values()) / 255
+
+
+def blur_rows(paths: list) -> list:
+    """試作字形ごとの、FreeType v40 グレースケール・8〜10ppem・4 書体の合計の、境界のにじみ (ヒントあり・なし)。
+
+    ヒントなしは、同じ試作字形を FreeType でヒンティングを動かさずに描いたもの。(字の表示, ヒントなし, ヒントあり, 命令の無い書体の数) を返す。"""
+    totals: dict[str, list] = {}
+    for path in paths:
+        font = TTFont(path)
+        hinted = freetype_render.Renderer(path, 40, 0)
+        plain = freetype_render.Renderer(path, 40, freetype_render.NO_HINTING)
+        for label, _source, target in trial_labels(font):
+            row = totals.setdefault(label, [0.0, 0.0, 0])
+            gid = font.getGlyphID(target)
+            for ppem in BLUR_PPEMS:
+                row[0] += boundary(pixels_of(plain, gid, ppem))
+                row[1] += boundary(pixels_of(hinted, gid, ppem))
+            row[2] += 0 if len(font["glyf"][target].program.getBytecode()) else 1
+        hinted.close()
+        plain.close()
+        font.close()
+    return [(label, *row) for label, row in totals.items()]
+
+
+def blur_section(rows: list) -> str:
+    worse = sorted((r for r in rows if r[2] > r[1]), key=lambda r: r[2] / r[1], reverse=True)
+    total = (sum(r[1] for r in rows), sum(r[2] for r in rows))
+    body = "".join(f"<tr><td>{html.escape(label)}</td><td>{plain:.1f}</td><td>{hinted:.1f}</td><td>{hinted / plain:.3f}</td><td>{missing}</td></tr>"
+                   for label, plain, hinted, missing in worse)
+    return (f"<h2 id=blur>ヒントでにじみが増える字</h2><p>FreeType v40・グレースケール・{BLUR_PPEMS[0]}〜{BLUR_PPEMS[-1]}ppem・4 書体の合計で、境界のにじみ"
+            f"（中間の濃さの画素の量。濃さ v の画素ごとに min(v, 255 − v) を足し、インク 1 画素分を単位にする）が、試作字形のヒントなしよりヒントありで多い字は、"
+            f"{len(rows)} グリフのうち {len(worse)} です。全グリフの合計は、ヒントなし {total[0]:.1f}、ヒントあり {total[1]:.1f} です。"
+            f"最後の列は、その字がヒントを持たない書体の数です（ヒントを持たない書体は、ヒントあり・なしが同じ画素になります）。</p>"
+            f"<table><thead><tr><th>字</th><th>ヒントなし</th><th>ヒントあり</th><th>比</th><th>ヒントを持たない書体</th></tr></thead><tbody>{body}</tbody></table>")
+
+
+def glyph_list_section(path: Path, counter: Counter) -> str:
+    """ss03 の全グリフ (横組 194、縦組の別の字形 41) を、通常字と試作字形 (ヒントなし・ヒントあり) で大きく並べる。崩れた字を探すための一覧です。"""
+    font = TTFont(path)
+    em = font["head"].unitsPerEm
+    rows = trial_labels(font)
+    plain = freetype_render.Renderer(path, 40, freetype_render.NO_HINTING)
+    hinted = freetype_render.Renderer(path, 40, 0)
+    pitch = round(LIST_PPEM * 1.25)
+    parts = []
+    for start in range(0, len(rows), LIST_COLUMNS):
+        chunk = rows[start:start + LIST_COLUMNS]
+        width, height = pitch * len(chunk) + LIST_PPEM // 2, round(LIST_PPEM * 1.7)
+        figures = []
+        for caption, renderer, index in (("通常", plain, 1), ("試作", plain, 2), ("試作・ヒントあり", hinted, 2)):
+            canvas = bytearray([255] * (width * height))
+            for column, row in enumerate(chunk):
+                left, top, _advance, cols, rows_, bitmap = renderer.render(font.getGlyphID(row[index]), LIST_PPEM)
+                stride = len(bitmap) // rows_ if rows_ else 0
+                for by in range(rows_):
+                    for bx in range(cols):
+                        x, y = LIST_PPEM // 4 + column * pitch + left + bx, round(LIST_PPEM * 1.25) - top + by
+                        if 0 <= x < width and 0 <= y < height:
+                            canvas[y * width + x] = min(canvas[y * width + x], 255 - bitmap[by * stride + bx])
+            uri = png(width, height, bytes(canvas))
+            figures.append(f'<figure><figcaption>{caption}</figcaption><img alt="{html.escape("".join(r[0] for r in chunk))} {caption}" src="{uri}" width="{width}" height="{height}"></figure>')
+        parts.append(f"<p>{html.escape(' '.join(r[0] for r in chunk))}</p><div class=pair>{''.join(figures)}</div>")
+    renderers = (plain, hinted)
+    for renderer in renderers:
+        renderer.close()
     font.close()
     return "".join(parts)
 
@@ -180,7 +295,7 @@ def embolden_section(path: Path, directory: Path, counter: Counter, ink_table: l
                     base = ink(canvas)
                 ink_table.append((path.name, label, ppem, ink(canvas) / base))
                 cells.append(figure_html(*canvas, text, ppem, figure_id=counter.next("e"), caption=label))
-            parts.append(f"<p>{ppem} ppem（本文{ppem * 2}px のルビ）・{script}</p><div class=pair>{''.join(cells)}</div>")
+            parts.append(f"<p>{ppem} ppem（本文{ppem * 2}px のルビ）・{html.escape(script)}</p><div class=pair>{''.join(cells)}</div>")
     parts.append(f"<h4>拡大（{LARGE_PPEM}px・ヒントなし。画像は等倍）</h4><div class=pair>")
     for index, (label, multipliers) in enumerate(VARIANTS):
         features = () if multipliers is None else ("ss03",)
@@ -259,6 +374,7 @@ def page() -> str:
     counter = Counter()
     summary, ink_rows = [], []
     sections, links = [], []
+    blur = blur_rows([ROOT / "fonts" / spec.output_name(family, weight) for family in spec.FAMILIES for weight in spec.WEIGHTS])
     with tempfile.TemporaryDirectory() as directory:
         for family in spec.FAMILIES:
             for weight in spec.WEIGHTS:
@@ -267,18 +383,21 @@ def page() -> str:
                 anchor = f"{family['key']}-{weight}".lower()
                 links.append(f"<a href=#{anchor}>{family['name_ja']} {weight}</a>")
                 sections.append(f"<h2 id={anchor}>{family['name_ja']} {weight}</h2><p><code>{digest}</code></p>"
+                                f"<h3>0　全グリフの一覧（{LIST_PPEM}px）</h3>{glyph_list_section(path, counter)}"
                                 f"<h3>1・2　ヒントの有無と gasp</h3>{hinting_section(path, counter, summary)}"
                                 f"<h3>3　補強量</h3>{embolden_section(path, Path(directory), counter, ink_rows)}")
     numbers = ("<h2 id=numbers>数値のまとめ</h2><p>同じ字を同じ位置に描いた2つのラスタの、濃さが違う画素の数と、濃さの差の合計です"
-               "（インク1画素分を単位にする。平仮名と片仮名の20字の合計）。「ヒントの差」が通常字のヒントによる差、「補強の差」が試作との差です。</p>"
+               "（インク1画素分を単位にする。ss03 の対象 194 字の合計）。「ヒントの差」が通常字のヒントによる差、「補強の差」が試作との差です。</p>"
                f"<details><summary>ヒント・補強・gasp ごとの数値</summary>{summary_table(summary)}</details>"
                f"<details><summary>補強量ごとのインクの量（通常・ヒントなしを 1 とした比）</summary>{ink_table_html(ink_rows)}</details>")
-    return INTRO.replace("__VERSION__", spec.VERSION).replace("__LINKS__", " ／ ".join(links)) + numbers + "\n".join(sections) + "</html>", summary, ink_rows
+    content = (INTRO.replace("__VERSION__", spec.VERSION).replace("__LINKS__", " ／ ".join(links) + " ／ <a href=#blur>ヒントでにじみが増える字</a>")
+               + numbers + blur_section(blur) + "\n".join(sections) + "</html>")
+    return content, summary, ink_rows, blur
 
 
 def main() -> int:
     OUTPUT.mkdir(exist_ok=True)
-    content, summary, ink_rows = page()
+    content, summary, ink_rows, blur = page()
     (OUTPUT / "ruby-trial.html").write_text(content, encoding="utf-8")
     print("dist/ruby-trial.html")
     for name, interpreter, environment, ppem, t in summary:
@@ -286,6 +405,10 @@ def main() -> int:
               f"embolden {t['embolden'][0]} px / {t['embolden'][1]:.1f}, all {t['all'][0]} px / {t['all'][1]:.1f}, unhinted trial {t['unhinted_trial'][0]} px / {t['unhinted_trial'][1]:.1f}, "
               f"trial hint {t['trial_hint'][0]} px / {t['trial_hint'][1]:.1f}, "
               f"ink {t['ink_hinted']:.1f}/{t['ink_plain']:.1f}/{t['ink_trial_plain']:.1f}/{t['ink_trial']:.1f}")
+    worse = [r for r in blur if r[2] > r[1]]
+    print(f"blur (v40 gray, 8-10ppem, 4 fonts): {len(worse)} of {len(blur)} glyphs get more boundary blur with hinting; total {sum(r[1] for r in blur):.1f} -> {sum(r[2] for r in blur):.1f}")
+    for label, plain, hinted, missing in sorted(worse, key=lambda r: r[2] / r[1], reverse=True):
+        print(f"  blur {label}: {plain:.1f} -> {hinted:.1f} ({hinted / plain:.3f}), fonts without instructions {missing}")
     for name in dict.fromkeys(row[0] for row in ink_rows):
         for label, _multipliers in VARIANTS:
             ratios = [f"{sum(r[3] for r in ink_rows if r[:3] == (name, label, ppem)) / len(SAMPLES):.3f}" for ppem in PPEMS]
