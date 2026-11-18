@@ -160,6 +160,8 @@ zizmor --persona pedantic --strict-collection --cache-dir /path/to/work/zizmor-c
 
 `GH_TOKEN` があれば GitHub API を使う検査も実行します。手元で通信しないときは `--offline` を足します。zizmor は公式の実行ファイルを使い、フォントのビルド環境に検査用の Python 依存を混ぜません。`.github/zizmor.yml` には除外の理由を書いてあります。actionlint が新しい `$/` の自リポジトリ表記を受け付けないため、release の同じコミットの `./` 呼び出しを保ちます。native proof の全実行とリリースの各タグを独立して完走させる従来の同時実行の方針も保ちます。
 
+検査・SBOM 用の道具は手動で更新します。公式のリリースとチェックサムを確認し、`scripts/supply_chain_tools.json` を更新します。チェックサムファイルの無い道具は、ワークフローに直接書いた SHA-256 も合わせます。Action の SHA と版のコメントの更新は、引き続き Dependabot が行います。
+
 ## SBOM と証明
 
 `build.yml` は `fonts/DokushoUD-<版>.cdx.json` を1つ作り、成果物 `DokushoUD` に8つのフォントと並べて保存します。`release.yml` は、後から変えられないリリースを公開する前に、その JSON も下書きに添えます。過去のリリースには追加しません。

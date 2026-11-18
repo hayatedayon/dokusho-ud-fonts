@@ -157,6 +157,8 @@ zizmor --persona pedantic --strict-collection --cache-dir /path/to/work/zizmor-c
 
 Set `GH_TOKEN` to enable GitHub API audits; `--offline` runs only local audits. The official zizmor binary keeps lint dependencies outside the font build environment. `.github/zizmor.yml` records narrow exceptions: actionlint rejects the proposed `$/` self-repository syntax, so the release retains `./` at the same commit; native proof runs and independent release tags retain their existing concurrency behavior.
 
+The security and SBOM tool binaries are updated manually: review the official release and checksums, update `scripts/supply_chain_tools.json`, and update the explicit workflow SHA-256 pins for assets without a checksum file. Dependabot continues to update Action SHAs and version comments.
+
 ## SBOM and attestations
 
 `build.yml` generates one `fonts/DokushoUD-<version>.cdx.json` and includes it beside the eight fonts in the `DokushoUD` artifact. `release.yml` attaches it to the draft before publishing the immutable release. Earlier releases are unchanged.
