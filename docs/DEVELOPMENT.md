@@ -104,7 +104,7 @@ Safari と Microsoft Edge は、同じワークフローの `browser-proof` ジ�
 リリースは取り消せないので、公開前のフォントを実際の環境で試してから版を切ります。[AGENTS.md](../AGENTS.md) のリリースの手順の 1 番がこの節の内容で、推敲や `VERSION` を上げる前に済ませます。CI の成果物は既定で 1 日しか残らないため、手動実行のときだけ保存日数を延ばせます。
 
 1. GitHub の Actions で `Build` を手動実行し（`gh workflow run build.yml --ref <ブランチ> -f retention_days=14`）、保存日数に 14 などを指定します。既定は 1 日で、`push`・`pull_request`・`release.yml` からの呼び出しは変わりません。上限は 90 日です。
-2. 成果物 `DokushoUD`（フォント）と `DokushoUD-proof`（見本）を取り、フォントを Hayate Reader などで数日読んで試します。Reader の手順は [PROOFING.md](PROOFING.md#hayate-reader-で確かめる) にあります。成果物のフォントの版番号はまだ公開済みの版のままです（`VERSION` はリリースの手順で上げます）。候補版のファイルは公開せず、配りません。公開するのはタグから作るリリースのファイルだけです。
+2. 成果物 `DokushoUD`（フォントと SBOM）と `DokushoUD-proof`（見本）を取り、フォントを Hayate Reader などで数日読んで試します。Reader の手順は [PROOFING.md](PROOFING.md#hayate-reader-で確かめる) にあります。成果物のフォントの版番号はまだ公開済みの版のままです（`VERSION` はリリースの手順で上げます）。候補版のファイルは公開せず、配りません。公開するのはタグから作るリリースのファイルだけです。
 3. `.github/workflows/native-proof.yml` を手動実行し、CoreText と DirectWrite の結果（合否の検査とギャラリー）と、Safari・Edge の測定値を見ます。定期実行もありますが、`main` でしか動かず、公開済みのフォントを確かめるものなので、候補版では手動実行します。
 4. 問題が無ければ、[AGENTS.md](../AGENTS.md) のリリースの手順の 2 番（推敲）へ進みます。問題があれば直し、1 からやり直します。
 
@@ -159,3 +159,42 @@ zizmor --persona pedantic --strict-collection --cache-dir /path/to/work/zizmor-c
 ```
 
 `GH_TOKEN` があれば GitHub API を使う検査も実行します。手元で通信しないときは `--offline` を足します。zizmor は公式の実行ファイルを使い、フォントのビルド環境に検査用の Python 依存を混ぜません。`.github/zizmor.yml` には除外の理由を書いてあります。actionlint が新しい `$/` の自リポジトリ表記を受け付けないため、release の同じコミットの `./` 呼び出しを保ちます。native proof の全実行とリリースの各タグを独立して完走させる従来の同時実行の方針も保ちます。
+
+## SBOM と証明
+
+`build.yml` は `fonts/DokushoUD-<版>.cdx.json` を1つ作り、成果物 `DokushoUD` に8つのフォントと並べて保存します。`release.yml` は、後から変えられないリリースを公開する前に、その JSON も下書きに添えます。過去のリリースには追加しません。
+
+syft 1.57.2 は、ビルドに使った venv の Python パッケージを調べます。`scripts/build_sbom.py` が `requirements.txt` の固定した依存と、そこからたどれる依存だけを残し、pip など無関係な道具を外します。`scripts/font_sbom.py` は、元の BIZ UD・BIZ UDP の8ファイル（フォント内の版、Google Fonts のコミット・URL、照合した SHA-256、OFL-1.1）と、配る4書体の TTF・WOFF2（SHA-256・版・OFL-1.1）を別々に記述します。cyclonedx-cli 0.33.1 の `merge` で3つを統合した後、リリースの主体と材料の関係を書き、参照の欠落を検査して、`validate --fail-on-errors` で CycloneDX 1.6 の形式を確かめます。
+
+今の依存では18部品とリリースの主体、19の依存記録になります。リリースから8つの配布ファイルへ、各配布ファイルから対応する UD・UDP とビルド用の Python 依存へ関係を張ります。WOFF2 は対応する TTF にも、fonttools は brotli にもつながります。これは作るときの材料を表すもので、フォントを使うときに Python が要るという意味ではありません。
+
+手元では、別の clean な worktree の専用 venv でビルドしてから実行します。中間ファイルのディレクトリと出力は毎回新しい場所にし、既存のファイルは上書きしません。
+
+```sh
+python3 scripts/install_supply_chain_tools.py syft cyclonedx-cli \
+  --bin-dir /path/to/work/bin --download-dir /path/to/work/downloads
+export PATH="/path/to/work/bin:$PATH"
+SOURCE_DATE_EPOCH="$(git log -1 --format=%ct)"
+export SOURCE_DATE_EPOCH
+.venv/bin/python scripts/build_sbom.py --work-dir /path/to/work/sbom
+cyclonedx validate --input-file fonts/DokushoUD-1.009.cdx.json --fail-on-errors
+```
+
+例の版は `scripts/spec.py` に合わせます。固定した Python 依存の未検出、元フォントの SHA-256 の不一致、出力の不足や版の不一致、統合時の部品の欠落、参照の欠落、形式の不正があると止まります。
+
+証明には公式の `actions/attest` v4.2.2（完全な SHA で固定）を2回使います。公式の入力に従い、`subject-path` だけを渡すと全フォントと SBOM のビルドの来歴（SLSA）になり、フォントの `subject-path` と `sbom-path` を渡すと CycloneDX の SBOM の証明になります。`id-token: write` と `attestations: write` は release ジョブだけに付け、build・PR は読み取り権限を保ちます。証明は公開前に作り、証明用の束を別のリリースファイルとして配ることはしません。
+
+同じ版のフォントと JSON をダウンロードし、`gh attestation` が使える GitHub CLI で、ビルドの来歴・各フォントの SBOM の証明・JSON 自体の来歴を確かめます。
+
+```sh
+# 1.009 は例です。ダウンロードした版のファイル名に置き換えます。
+gh attestation verify DokushoUDMincho-Regular.ttf --repo hayatedayon/dokusho-ud-fonts \
+  --signer-workflow hayatedayon/dokusho-ud-fonts/.github/workflows/release.yml
+gh attestation verify DokushoUDMincho-Regular.ttf --repo hayatedayon/dokusho-ud-fonts \
+  --signer-workflow hayatedayon/dokusho-ud-fonts/.github/workflows/release.yml \
+  --predicate-type https://cyclonedx.org/bom
+gh attestation verify DokushoUD-1.009.cdx.json --repo hayatedayon/dokusho-ud-fonts \
+  --signer-workflow hayatedayon/dokusho-ud-fonts/.github/workflows/release.yml
+```
+
+`--signer-workflow` は、このリポジトリの試験用など、別のワークフローが作った証明を受け付けないための指定です。証明の検証はファイルのハッシュとビルド元を結び付けます。フォントに不具合が無いことや SBOM に漏れが無いことまで保証するものではありません。

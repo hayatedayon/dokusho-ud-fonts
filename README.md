@@ -26,6 +26,23 @@
 
 実際の文章で見比べるには、[文章の見本](https://hayatedayon.github.io/dokusho-ud-fonts/)と[版ごとの変化](https://hayatedayon.github.io/dokusho-ud-fonts/versions.html)をご覧ください。
 
+## SBOM と証明
+
+この手順で作るリリースには、材料と依存を記した CycloneDX JSON `DokushoUD-<版>.cdx.json` を1つ添えます。ビルド用の Python 依存、元の BIZ UD・BIZ UDP の8ファイル、配布するフォントの8ファイル、その SHA-256・ライセンス・作った関係を含みます。過去のリリースには追加しません。`gh attestation` が使える GitHub CLI で、ビルドの来歴・フォントの SBOM の証明・SBOM 自体を確かめられます。
+
+```sh
+# 1.009 は例です。ダウンロードした版のファイル名に置き換えます。
+gh attestation verify DokushoUDMincho-Regular.ttf --repo hayatedayon/dokusho-ud-fonts \
+  --signer-workflow hayatedayon/dokusho-ud-fonts/.github/workflows/release.yml
+gh attestation verify DokushoUDMincho-Regular.ttf --repo hayatedayon/dokusho-ud-fonts \
+  --signer-workflow hayatedayon/dokusho-ud-fonts/.github/workflows/release.yml \
+  --predicate-type https://cyclonedx.org/bom
+gh attestation verify DokushoUD-1.009.cdx.json --repo hayatedayon/dokusho-ud-fonts \
+  --signer-workflow hayatedayon/dokusho-ud-fonts/.github/workflows/release.yml
+```
+
+使うファイルごとに実行します。署名元を指定することで、リリース用ワークフローが作った証明であることも確かめます。作り方と形式の検査は[作り方と確認](docs/DEVELOPMENT.md#sbom-と証明)にあります。
+
 ## なぜ合成したか
 
 日本語の横組の本は、仮名・漢字・約物を全角のマス目に並べ（[日本語組版処理の要件（JLReq）](https://www.w3.org/TR/jlreq/?lang=ja) のベタ組）、欧字はプロポーショナルの欧文書体で組みます。BIZ UD と BIZ UDP は、どちらか一方ではこの組み方になりません。
@@ -86,7 +103,7 @@ Safari 27.2（macOS 15.8.2）で `writing-mode: vertical-rl` または `vertical
 
 [SIL Open Font License 1.1](OFL.txt) です。個人でも商用でも無料で使え、アプリや文書に同梱して配れます。フォント単体での販売はできません。元のフォントの著作権表示は OFL.txt にあります。
 
-リリースで配るのはフォントのファイルだけです。OFL が配るフォントの 1 つ 1 つに求める著作権表示と使用許諾の全文は、フォントの中（name テーブルの著作権表示とライセンスの欄）に入れてあります。フォントを再配布するときも、ファイルだけで足ります。
+リリースにはフォントのファイルと、材料と依存を記した SBOM を添えます。OFL が配るフォントの 1 つ 1 つに求める著作権表示と使用許諾の全文は、フォントの中（name テーブルの著作権表示とライセンスの欄）に入れてあります。フォントを再配布するときも、ファイルだけで足ります。
 
 このフォントはモリサワとは関係がありません。不具合はこのリポジトリの Issue に報告してください。
 

@@ -21,6 +21,8 @@ jobs:
     permissions:
       contents: write # Create and publish the immutable release.
       actions: write # Dispatch pages.yml after publication.
+      id-token: write # Sign provenance and SBOM attestations with GitHub OIDC.
+      attestations: write # Store both attestations with the repository.
 
     steps:
       - name: Download the fonts
@@ -49,14 +51,38 @@ jobs:
                   sys.exit(f"{name} is not version {version} (tag {sys.argv[1]})")
           PY
 
+      - name: Find the single release SBOM
+        id: sbom
+        run: |
+          shopt -s nullglob
+          sboms=(fonts/*.cdx.json)
+          test "${#sboms[@]}" -eq 1
+          echo "path=${sboms[0]}" >> "$GITHUB_OUTPUT"
+
+      - name: Attest build provenance (fonts and SBOM)
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
+        with:
+          subject-path: |
+            fonts/*.ttf
+            fonts/*.woff2
+            fonts/*.cdx.json
+
+      - name: Attest the fonts' SBOM
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
+        with:
+          subject-path: |
+            fonts/*.ttf
+            fonts/*.woff2
+          sbom-path: ${{ steps.sbom.outputs.path }}
+
       # リリースは変えられない (immutable releases)。公開した後はファイルを足せないので、下書きで
-      # すべてのファイルを付けてから公開する。配るのはフォントだけ (使用許諾はフォントの中にある)
+      # フォントと1つのSBOMを付けてから公開する (使用許諾はフォントの中にある)
       - name: Publish
         env:
           GH_TOKEN: ${{ github.token }}
           TAG: ${{ github.ref_name }}
         run: |
-          gh release create "$TAG" fonts/*.ttf fonts/*.woff2 \
+          gh release create "$TAG" fonts/*.ttf fonts/*.woff2 fonts/*.cdx.json \
             --repo "$GITHUB_REPOSITORY" --verify-tag --draft \
             --title "読書 UD明朝・読書 UDゴシック $TAG" --generate-notes
           gh release edit "$TAG" --repo "$GITHUB_REPOSITORY" --draft=false

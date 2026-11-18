@@ -17,6 +17,7 @@
 4. タグのプッシュはやり直せないので、直前に確認を取ります。
 5. 注釈付きタグを付けます。版 X.YYZ のタグは vX.Y.Z で（1.005 は `v1.0.5`）、メッセージは `読書 UD明朝・読書 UDゴシック 1.005` の形式です。プッシュすると `release.yml` がビルド、確認、公開まで行います。
 6. 自動生成のリリース文は `Full Changelog` だけなので、公開後に `gh release edit --notes-file` で書きます。
+   公開したフォントと SBOM の証明を `gh attestation verify` で確かめます（[docs/DEVELOPMENT.md](docs/DEVELOPMENT.md) の「SBOM と証明」）。
 7. GitHub Pages の版の比較に新しい版が出ていることを確かめます。`release.yml` が公開の最後に `pages.yml` を起動します。起動していなければ `gh workflow run pages.yml --ref main` で実行します。
 
 ## リリース文の書式

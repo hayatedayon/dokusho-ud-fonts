@@ -99,7 +99,7 @@ On each native OS, compile using the workflow commands, then run `scripts/native
 Releases cannot be undone, so unreleased fonts are tried in real environments before a version is cut. This section is step 1 of the release procedure in [AGENTS.md](../AGENTS.md) (Japanese) and is done before proofreading and before raising `VERSION`. CI artifacts are kept for one day by default; only a manual run can extend that.
 
 1. Run `Build` manually in GitHub Actions (`gh workflow run build.yml --ref <branch> -f retention_days=14`) and set the retention to 14 days or so. The default is 1 day, and `push`, `pull_request` and the call from `release.yml` are unchanged. The upper limit is 90 days.
-2. Download the `DokushoUD` (fonts) and `DokushoUD-proof` (proof pages) artifacts and read with the fonts in Hayate Reader or similar for a few days. The Reader procedure is in [PROOFING.md](PROOFING.md#hayate-reader-で確かめる) (Japanese). The fonts in the artifact still carry the already published version number (`VERSION` is raised in the release procedure). Do not publish or distribute candidate files; only the release files made from the tag are published.
+2. Download the `DokushoUD` (fonts and SBOM) and `DokushoUD-proof` (proof pages) artifacts and read with the fonts in Hayate Reader or similar for a few days. The Reader procedure is in [PROOFING.md](PROOFING.md#hayate-reader-で確かめる) (Japanese). The fonts in the artifact still carry the already published version number (`VERSION` is raised in the release procedure). Do not publish or distribute candidate files; only the release files made from the tag are published.
 3. Run `.github/workflows/native-proof.yml` manually and look at the CoreText and DirectWrite results (checks and gallery) and the Safari and Edge measurements. A scheduled run also exists, but it runs only on `main` and checks the published fonts, so a candidate is checked by a manual run.
 4. If there are no problems, continue with step 2 (proofreading) of the release procedure in [AGENTS.md](../AGENTS.md) (Japanese). If there are, fix them and start again from step 1.
 
@@ -156,3 +156,40 @@ zizmor --persona pedantic --strict-collection --cache-dir /path/to/work/zizmor-c
 ```
 
 Set `GH_TOKEN` to enable GitHub API audits; `--offline` runs only local audits. The official zizmor binary keeps lint dependencies outside the font build environment. `.github/zizmor.yml` records narrow exceptions: actionlint rejects the proposed `$/` self-repository syntax, so the release retains `./` at the same commit; native proof runs and independent release tags retain their existing concurrency behavior.
+
+## SBOM and attestations
+
+`build.yml` generates one `fonts/DokushoUD-<version>.cdx.json` and includes it beside the eight fonts in the `DokushoUD` artifact. `release.yml` attaches it to the draft before publishing the immutable release. Earlier releases are unchanged.
+
+`syft` 1.57.2 inventories the installed build venv using the Python installed-package cataloger. `scripts/build_sbom.py` keeps the exact `requirements.txt` pins and their discovered transitive dependencies, excluding unrelated tools such as pip. `scripts/font_sbom.py` separately describes the eight BIZ UD/UDP source fonts (actual embedded versions, Google Fonts commit and URLs, verified SHA-256 and OFL-1.1) and the four faces in TTF and WOFF2 (hashes, versions and OFL-1.1). `cyclonedx-cli` 0.33.1 `merge` combines the three parts. The release subject and build relationships are added, references are checked and `validate --fail-on-errors` validates CycloneDX 1.6. The current requirements produce 18 components plus the release subject and 19 dependency records: the release points to the eight outputs; each output points to its corresponding UD/UDP sources and Python build dependencies; WOFF2 also points to its TTF; fonttools depends on brotli. These are build inputs, not runtime requirements for using the fonts.
+
+Run in a separate clean worktree after building with its own venv. Use a new intermediate directory and output each time; existing files are never overwritten:
+
+```sh
+python3 scripts/install_supply_chain_tools.py syft cyclonedx-cli \
+  --bin-dir /path/to/work/bin --download-dir /path/to/work/downloads
+export PATH="/path/to/work/bin:$PATH"
+SOURCE_DATE_EPOCH="$(git log -1 --format=%ct)"
+export SOURCE_DATE_EPOCH
+.venv/bin/python scripts/build_sbom.py --work-dir /path/to/work/sbom
+cyclonedx validate --input-file fonts/DokushoUD-1.009.cdx.json --fail-on-errors
+```
+
+The version in the example must match `scripts/spec.py`. An installed package missing from the pins, a changed source hash, a missing output, a wrong embedded version, a missing component after merge, an unresolved reference or an invalid schema stops generation.
+
+The official `actions/attest` v4.2.2 (SHA pinned) is used twice, following its official inputs: `subject-path` alone generates SLSA provenance for all fonts and the SBOM; `subject-path` for the fonts plus `sbom-path` generates a CycloneDX SBOM attestation. Only the release job has `id-token: write` and `attestations: write`; build and PR jobs keep read permission. The attestation is created before publication and no bundle is uploaded as an extra release asset.
+
+Download the fonts and the JSON for the same release and use a GitHub CLI with `gh attestation` support. Check provenance, the SBOM attestation for each font, and provenance of the JSON itself:
+
+```sh
+# 1.009 is an example: use the version you downloaded.
+gh attestation verify DokushoUDMincho-Regular.ttf --repo hayatedayon/dokusho-ud-fonts \
+  --signer-workflow hayatedayon/dokusho-ud-fonts/.github/workflows/release.yml
+gh attestation verify DokushoUDMincho-Regular.ttf --repo hayatedayon/dokusho-ud-fonts \
+  --signer-workflow hayatedayon/dokusho-ud-fonts/.github/workflows/release.yml \
+  --predicate-type https://cyclonedx.org/bom
+gh attestation verify DokushoUD-1.009.cdx.json --repo hayatedayon/dokusho-ud-fonts \
+  --signer-workflow hayatedayon/dokusho-ud-fonts/.github/workflows/release.yml
+```
+
+`--signer-workflow` rejects attestations from unrelated test workflows in this repository. A verified attestation binds a digest and build identity; it does not assert that a font is defect-free or that the SBOM is exhaustive.

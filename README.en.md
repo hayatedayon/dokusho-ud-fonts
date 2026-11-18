@@ -26,6 +26,23 @@ Download the TTF or WOFF2 files from the [latest release](https://github.com/hay
 
 See the [text specimen](https://hayatedayon.github.io/dokusho-ud-fonts/) and the [changes by version](https://hayatedayon.github.io/dokusho-ud-fonts/versions.html) to compare them in real text (Japanese pages).
 
+## SBOM and attestations
+
+Releases built with this workflow include one CycloneDX JSON, `DokushoUD-<version>.cdx.json`, listing the Python build dependencies, the eight BIZ UD/UDP source files and the eight distributed font files, their SHA-256 hashes, licenses and build relationships. Earlier releases do not gain these files retroactively. Use a GitHub CLI with `gh attestation` support to verify provenance, the font's SBOM attestation and the SBOM file itself:
+
+```sh
+# 1.009 is an example: use the version you downloaded.
+gh attestation verify DokushoUDMincho-Regular.ttf --repo hayatedayon/dokusho-ud-fonts \
+  --signer-workflow hayatedayon/dokusho-ud-fonts/.github/workflows/release.yml
+gh attestation verify DokushoUDMincho-Regular.ttf --repo hayatedayon/dokusho-ud-fonts \
+  --signer-workflow hayatedayon/dokusho-ud-fonts/.github/workflows/release.yml \
+  --predicate-type https://cyclonedx.org/bom
+gh attestation verify DokushoUD-1.009.cdx.json --repo hayatedayon/dokusho-ud-fonts \
+  --signer-workflow hayatedayon/dokusho-ud-fonts/.github/workflows/release.yml
+```
+
+Repeat for the files you use. The signer restriction checks that the attestation came from the release workflow. See [building and verification](docs/DEVELOPMENT.en.md#sbom-and-attestations) for generation and schema validation.
+
 ## Why
 
 Horizontal Japanese books set kana, kanji and punctuation on a full-width grid (solid setting in the [Requirements for Japanese Text Layout](https://www.w3.org/TR/jlreq/)), and Latin letters in a proportional typeface. Neither BIZ UD nor BIZ UDP does that on its own.
@@ -86,7 +103,7 @@ In the next-version candidate, `text-orientation: mixed` gives these two charact
 
 [SIL Open Font License 1.1](OFL.txt). Free for personal and commercial use, and free to bundle with apps and documents; the fonts may not be sold by themselves. The copyright notices of the original fonts are in OFL.txt.
 
-Releases contain only the font files. The copyright notice and the full text of the license, which the OFL requires in each copy, are inside the fonts (the copyright and license fields of the name table), so the files alone are enough when you redistribute them.
+Releases include the font files and an SBOM describing their sources and build dependencies. The copyright notice and the full text of the license, which the OFL requires in each copy, are inside the fonts (the copyright and license fields of the name table), so the files alone are enough when you redistribute them.
 
 These fonts are not affiliated with Morisawa. Please report problems as issues in this repository.
 

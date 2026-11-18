@@ -63,7 +63,19 @@ jobs:
           dpkg-query -W libfreetype6 libharfbuzz0b unicode-data
           .venv/bin/python scripts/check.py
 
-      # 配るのはフォントだけ。著作権表示と使用許諾の全文は、フォントの中 (name の 0 と 13) にある。
+      - name: Install verified SBOM tools
+        run: >-
+          python3 scripts/install_supply_chain_tools.py syft cyclonedx-cli
+          --bin-dir "$RUNNER_TEMP/bin" --download-dir "$RUNNER_TEMP/tool-downloads"
+
+      - name: Generate and validate the release SBOM
+        run: |
+          export PATH="$RUNNER_TEMP/bin:$PATH"
+          SOURCE_DATE_EPOCH="$(git log -1 --format=%ct)"
+          export SOURCE_DATE_EPOCH
+          .venv/bin/python scripts/build_sbom.py --work-dir "$RUNNER_TEMP/sbom"
+
+      # フォントと、その版の SBOM を保存する。著作権表示と使用許諾の全文はフォントの中にある。
       # 残すのは 1 日だけ。プルリクエストで作ったフォントを手元で確かめるには足り、release.yml は
       # 同じ実行の中ですぐに受け取る (配るのはリリースで、成果物ではない)。手動実行だけは
       # retention_days で延ばせる。それ以外 (push・pull_request・workflow_call) の inputs は
@@ -75,6 +87,7 @@ jobs:
           path: |
             fonts/*.ttf
             fonts/*.woff2
+            fonts/*.cdx.json
           if-no-files-found: error
           retention-days: ${{ inputs.retention_days || 1 }}
 
