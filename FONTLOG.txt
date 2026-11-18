@@ -31,7 +31,7 @@ ChangeLog
   this matches 1.009 and is retained as a known limitation. On macOS
   15.8.2, upright vertical-rl/lr gives both dashes a 1-em advance and
   overlaps the next character (all four fonts, normal/vert/vrt2).
-  The candidate with text-orientation: mixed gives 2/3 em and avoids
+  With text-orientation: mixed, 1.010 gives 2/3 em and avoids
   this overlap, with a different orientation. iOS Safari is untested.
   CoreText, DirectWrite, HarfBuzz, Edge and WebKitGTK do not regress
   in the checks.
