@@ -85,7 +85,8 @@ def expectations(font) -> dict:
     kern_text = next(c[-1] for c in CASES if c[0] == "kern")
     # ss03: 横組は cmap の字から ss03 の置き換え先へ、縦組は vert (DirectWrite)・vrt2 (CoreText) の後に ss03。送りは原字と同じ
     ss03 = gsub_mapping(font, "ss03")
-    ss03_horizontal = [[gid(ss03[cmap[ord(c)]]), font["hmtx"][cmap[ord(c)]][0] * 24 / em] for c in KANA]
+    # 期待値はフォントの GSUB から求める。ss03 が一部の仮名だけの版 (1.009 までの 20 字) では、残りは通常の字形が期待値になる
+    ss03_horizontal = [[gid(ss03.get(cmap[ord(c)], cmap[ord(c)])), font["hmtx"][cmap[ord(c)]][0] * 24 / em] for c in KANA]
 
     def ss03_vertical(mapping):
         names = [mapping.get(cmap[ord(c)], cmap[ord(c)]) for c in KANA]
@@ -258,7 +259,7 @@ def check_expectations(output: Path, engine: str) -> list[str]:
             actual = [g for g, _ in flatten(record(font, f"cell-{code:04x}"))]
             if actual != want:
                 problems.append(f"{label} cell-{code:04x}: glyphs {actual}, expected {want}")
-        # ss03: 194 字すべてが試作字形になり、送りは原字と同じ。ss03=0 の対照は通常の字形のまま (縦組は字形だけ見る)
+        # ss03: フォントの ss03 の置き換えどおり (今の版は 194 字すべて) の試作字形になり、送りは原字と同じ。ss03=0 の対照は通常の字形のまま (縦組は字形だけ見る)
         want = expected["ss03"]
         for case, vertical, trial in (("ss03", False, True), ("ss03-off", False, False), ("ss03-v", True, True), ("ss03-off-v", True, False)):
             actual = flatten(record(font, case))
