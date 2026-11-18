@@ -164,12 +164,13 @@ def trial_hint_issues(font, source: str, name: str, scale: float) -> list[str]:
     # IUP[1] も原字にあるが、x の点を touch する命令がないので動かない。
     if ops - RUBY_HINT_OPS or "SVTCA[0]" not in instructions or "SVTCA[1]" in instructions:
         issues.append("instructions are not point-relative y-only operations")
-    o, t = original.coordinates, trial.coordinates
-    mo = [sum(c[i] for c in o) / len(o) for i in (0, 1)]
-    mt = [sum(c[i] for c in t) / len(t) for i in (0, 1)]
-    worst = max(abs((t[k][i] - mt[i]) - scale * (o[k][i] - mo[i])) for k in range(len(o)) for i in (0, 1))
-    if worst > 1.5 * trial_strength(font) + 2:
-        issues.append(f"point correspondence differs ({worst:.1f} units)")
+    # 距離だけでは、鋭い角の補強を拒否する一方、近い点の入れ替えを許しうる。
+    # 同じ原字から変換を再計算し、丸めた後の座標を番号ごとに完全一致で照合する。
+    # transform/embolden/make_glyph は点を増減・並べ替えせず、各点を同じ順に出す。
+    strength = trial_strength(font)
+    expected = trial_glyph(font, source, scale, strength, strength)
+    if list(trial.coordinates) != list(expected.coordinates):
+        issues.append("point correspondence differs from the transformed source")
     return issues
 
 

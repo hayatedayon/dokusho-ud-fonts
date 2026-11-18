@@ -44,13 +44,22 @@ ChangeLog
   by 12%; one emboldening amount per face), and the 28 glyphs of the earlier
   20 kana are unchanged (outlines, instructions, advances). The trial glyphs
   copy the hinting instructions of the original kana in BIZ UD when the
-  instructions only move points vertically by point number and every point
-  of the trial outline stays within 1.5 times the emboldening amount plus 2
-  units of the scaled original; 924 of the 940 glyphs qualify and 16 have no
-  instructions (Mincho Regular: そ ぞ む; Mincho Bold: こ ご ゆ and the
-  vertical ォ; Gothic Regular: す ず そ ぞ ゑ; Gothic Bold: そ て で ゑ),
-  where one or two sharp corner points move 0.1 to 7.9 units beyond that
-  limit. Measured with FreeType v40 (8 to 10 ppem, four fonts), hinting
+  instructions only move points vertically by point number and the outline
+  structure matches. Point correspondence is checked by recomputing the
+  scaling, emboldening and translation and requiring exact integer
+  coordinates at every point index. All 940 glyphs qualify, including the
+  16 rejected by the former distance-only limit (1.5 times the emboldening
+  amount plus 2 units): Mincho Regular そ ぞ む; Mincho Bold こ ご ゆ and
+  the vertical ォ; Gothic Regular す ず そ ぞ ゑ; Gothic Bold そ て で ゑ.
+  Those sharp corners exceeded the former limit by 0.1 to 7.9 units but
+  retained the correct point correspondence. Compared with work/ruby, only
+  their glyf instructions, loca and head checksum change. FreeType v35/v40,
+  8–10 ppem: hinted/unhinted differences total 2159 grayscale pixels
+  (density difference 295.1) and 431 mono pixels; ink ratios are
+  0.882–1.148 and 0.846–1.267 respectively. Points move only vertically,
+  by at most 54/64 px; inspected images at 8–10 and 64 ppem show no broken
+  shapes. The earlier measurement with 924 hinted glyphs (FreeType v40,
+  8 to 10 ppem, four fonts)
   increases the blur at the edges (pixels of intermediate density) of 27 of
   the 235 glyphs, by at most 4.4%, and reduces it in total by 9%; the
   hinting was kept on all of them (the earlier three, ッ in horizontal and

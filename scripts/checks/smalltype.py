@@ -140,6 +140,7 @@ def check_ruby_hint_programs(ctx: FontContext) -> None:
     trial = gsub_mapping(font, "ss03")
     check(len(trial) == 235, f"{label}: expected 235 trial ruby glyphs, found {len(trial)}")
     strength = small_type.trial_strength(font)
+    hinted_count = 0
     scales = small_type.trial_sources(font)
     for source, target in trial.items():
         gid = font.getGlyphID(source)
@@ -149,6 +150,7 @@ def check_ruby_hint_programs(ctx: FontContext) -> None:
         if issues:
             check(not bytecode, f"{label}: unsafe instructions on {target}: {issues}")
             continue
+        hinted_count += bool(bytecode)
         check(len(bytecode) > 0, f"{label}: trial ruby {target} (of {source}) has no hinting")
         check(bytecode == plain.program.getBytecode() == original.program.getBytecode(),
               f"{label}: trial ruby {target} does not have the instructions of {source} in BIZ UD")
@@ -161,13 +163,18 @@ def check_ruby_hint_programs(ctx: FontContext) -> None:
         check(shipped.numberOfContours == original.numberOfContours and list(shipped.endPtsOfContours) == list(original.endPtsOfContours)
               and [f & 1 for f in shipped.flags] == [f & 1 for f in original.flags],
               f"{label}: trial ruby {target} has a different contour structure from {source}")
-        # 点ごとの対応: 重心を引いた座標が、原字の座標 × 拡大率に、補強の分だけ近いこと
+        # 独立した上限: embolden は d=1+cosθ>1/16 の角を動かす。
+        # 法線和の長さは sqrt(2d) なので、補強による偏位は strength/2*sqrt(2/d)
+        # < sqrt(8)*strength。重心を引くと2倍以下、整数丸めの残差は1以下。
+        # この粗い上限だけで点番号の一致を認めず、上の再計算による完全一致も必須とする。
         scale = scales[source]
         o, t = original.coordinates, shipped.coordinates
         mo = [sum(c[i] for c in o) / len(o) for i in (0, 1)]
         mt = [sum(c[i] for c in t) / len(t) for i in (0, 1)]
-        worst = max(max(abs((t[k][i] - mt[i]) - scale * (o[k][i] - mo[i])) for i in (0, 1)) for k in range(len(o)))
-        check(worst <= 1.5 * strength + 2, f"{label}: trial ruby {target} points do not follow {source} ({worst:.1f} units)")
+        worst = max(abs((t[k][i] - mt[i]) - scale * (o[k][i] - mo[i])) for k in range(len(o)) for i in (0, 1))
+        check(worst <= (32 ** 0.5) * strength + 1,
+              f"{label}: trial ruby {target} exceeds the emboldening bound ({worst:.1f} units)")
+    check(hinted_count == 235, f"{label}: expected 235 hinted trial ruby glyphs, found {hinted_count}")
 
 
 def check_ruby_combinations(ctx: FontContext) -> None:
