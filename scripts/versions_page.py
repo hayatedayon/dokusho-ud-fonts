@@ -2,7 +2,7 @@
 
 各版のフォントを GitHub のリリースから dist/releases/ に取ってきて、ページで使う字だけのサブセットにして埋め込む。
 1 つのファイルで完結するので、ブラウザで直接開ける。fonts/ のフォントは「未公開」の版として最後に並ぶ。
-見本ごとに、前の版とこの版を HarfBuzz で組んで比べ、差が出ない見本があれば止める (説明と実物がずれないように)。
+組版の見本は、前の版とこの版を HarfBuzz で組んで比べ、差が出なければ止める。ブラウザ固有の差はそのブラウザで確認する。
 
     python3 scripts/versions_page.py
 """
@@ -39,16 +39,18 @@ FEATURES = ["locl", "ccmp", "mark", "mkmk", "liga", "calt", "kern", "vert", "vrt
 
 
 class Demo:
-    def __init__(self, label, text, note="", language="ja", features=(), vertical=False, markup=None):
+    def __init__(self, label, text, note="", language="ja", features=(), vertical=False, markup=None, browser_only=False):
         self.label, self.text, self.note, self.language = label, text, note, language
         self.features, self.vertical, self.markup = tuple(features), vertical, markup
+        self.browser_only = browser_only
 
 
 class Raster:
     """ブラウザでは差が見えないヒンティングは、FreeType で描いた画素で見せる"""
 
-    def __init__(self, label, text, sizes, note="", features=()):
+    def __init__(self, label, text, sizes, note="", features=(), compare_hinting=False):
         self.label, self.text, self.sizes, self.note, self.features = label, text, sizes, note, tuple(features)
+        self.compare_hinting = compare_hinting
 
 
 VERSIONS = [
@@ -108,14 +110,26 @@ VERSIONS = [
     ]),
     ("1.009", "2026-11-16", "縦組の 〱 〲 ⸺ ⸻ の送りと、ss03 のヒンティング", [
         Demo("縦組の 〱 〲 ⸺ ⸻", "あ〱い〲う⸺え⸻お",
-             "1.009 では、これらの字の縦組の字形を 2 つの字に分けて、環境によらず送りが 2 字分（⸻ は 3 字分）になります。"
-             "1.008 では、縦組の送りに vmtx を使わない環境（CoreText、WebKitGTK。Safari などですが、Safari 自体は確かめていません）で、"
-             "〱 〲 が次の字に重なっていました。vmtx を使う Chrome などでは、1.008 と 1.009 は同じに見えます。",
+             "1.008 では CoreText や WebKitGTK で 〱 〲 が次の字に重なっていました。"
+             "1.009 で縦組の置き換えを 2 段にし、CoreText と vert を指定した WebKitGTK で送りが 2 字分（⸻ は 3 字分）になりました。"
+             "Chrome では両版とも同じ送りです。Safari 27.2 では 1.009 でも 4 字が次の字に重なり、1.010 で mixed の送りを直しました。",
              vertical=True, markup='<span class="vtext">あ〱い〲う⸺え⸻お</span>'),
         Raster("ss03 のルビ仮名の画素", "あめぬれゃゅょっがぱ", (8, 9, 10),
                "ss03 の字形に、原字のヒンティングの命令を付けました。8ppem 以上で効きます（本文 16〜20px のルビ）。"
                "6・7ppem は変わりません。FreeType (v40) の描画です。Windows の Chrome でも、8〜10px で画素が変わることを確かめました。",
                features=["ss03"]),
+    ]),
+    ("1.010", "2026-11-18", "Safari の縦組の送りを修正し、ss03 の試作字形を 194 字に", [
+        Demo("Safari の縦組の 〱 〲 ⸺ ⸻", "あ〱い〲う⸺え⸻お",
+             "Safari 27.2 で、この見本のように text-orientation: mixed にすると、送りが 2 字分（⸻ は 3 字分）になり、次の字と重ならなくなりました。"
+             "ブラウザによっては両版が同じに見えます。Safari の upright で ⸺ ⸻ が次の字と重なるのは既知の制限です。",
+             vertical=True, markup='<span class="vtext">あ〱い〲う⸺え⸻お</span>', browser_only=True),
+        Demo("ルビ仮名の試作を 194 字に (ss03)", "ことりとコトリ・ㇰㇱ",
+             "試作字形を 20 字から 194 字に広げました。見本には今回の追加分だけを使いました。", features=["ss03"]),
+        Raster("ヒントを加えたルビ仮名の画素", "すずそぞむゑ", (8, 9, 10),
+               "これまでの候補版でヒントを付けられなかった 16 グリフにも、原字のヒントを付けました。"
+               "見本は明朝・ゴシックの Regular から選び、1.010 の試作字形を FreeType (v40) でヒントなし・ありの順に並べています。",
+               features=["ss03"], compare_hinting=True),
     ]),
 ]
 
@@ -216,18 +230,21 @@ def cell(version: str, demo, extra: str = "") -> str:
 
 
 def raster_block(item: Raster, before: str, after: str, serial: list[int]) -> str:
+    variants = ((before, 0, before), (after, 0, after))
+    if item.compare_hinting:
+        variants = ((after, freetype_render.NO_HINTING, "ヒントなし"), (after, 0, "ヒントあり"))
     groups = []
     for family in spec.FAMILIES:
         rows = []
         for size in item.sizes:
-            for version in (before, after):
+            for version, flags, label in variants:
                 path = source_path(version, family, "Regular")
                 font = TTFont(path)
                 shaper = harfbuzz_shape.Shaper(path)
-                renderer = freetype_render.Renderer(path, 40, 0)
+                renderer = freetype_render.Renderer(path, 40, flags)
                 serial[0] += 1
                 figure = proof_page.raster_figure(shaper, renderer, item.text, size, font["head"].unitsPerEm, item.features,
-                                                  figure_id=f"raster-{serial[0]}", caption=f"{version}・{size}px")
+                                                  figure_id=f"raster-{serial[0]}", caption=f"{label}・{size}px")
                 rows.append(figure)
                 renderer.close()
                 shaper.close()
@@ -255,7 +272,7 @@ def changes(previous: str, current: str) -> list[str]:
         facts.append(f"形か幅が変わった字 {shape_changed}")
     if added:
         facts.append("新しい機能 " + " ".join(added))
-    return facts or ["字と機能の変更なし"]
+    return facts or ["収録字の追加・既定の字形や横幅の変更・機能タグの追加なし"]
 
 
 def matrix(shaped: dict) -> str:
@@ -352,7 +369,10 @@ def main() -> int:
             if isinstance(demo, Raster):
                 body = raster_block(demo, previous, version, serial)
             else:
-                if cell_shape(shapers[previous], fonts[previous], demo) == cell_shape(shapers[version], fonts[version], demo):
+                # Safari 固有の送りの差は HarfBuzz では再現しない。
+                if (not demo.browser_only
+                        and cell_shape(shapers[previous], fonts[previous], demo)
+                        == cell_shape(shapers[version], fonts[version], demo)):
                     failures.append(f"{version} {demo.label}: no difference from {previous}")
                 body = cell(previous, demo) + cell(version, demo, " after")
                 if demo.vertical:
@@ -387,7 +407,8 @@ def main() -> int:
                f'<main><section id="all"><div class="version-head"><h2>全版の並び</h2><p class="summary">同じ文を元の BIZ UD から順に並べました。色の付いた行は、すぐ上の行と字形か配置が違います。</p></div>{matrix(shaped)}</section>'
                f'{"".join(sections)}</main>'
                '<footer>各版のフォントはリリースのファイルから、ページで使う字だけを取り出して埋め込んでいます。ヒンティングは除いています（ヒンティングの差は画素の画像で示しています）。'
-               '色の付いた行の判定と各見本の差は、明朝 Regular を HarfBuzz で組んで確かめています。ライセンスは SIL Open Font License 1.1 です。</footer>')
+               '色の付いた行と組版の見本の差は、明朝 Regular を HarfBuzz で組んで確かめています。Safari 固有の差は Safari で確認しました。'
+               'ライセンスは SIL Open Font License 1.1 です。</footer>')
     # サブセットに含める字: 見本と画面の文字すべて
     plain = re.sub(r"<[^>]+>", "", content) + "".join(d.text for *_x, ds in VERSIONS for d in ds)
     plain = html.unescape(plain) + "".join(s[1] for s in SAMPLES)

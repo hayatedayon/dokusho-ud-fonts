@@ -22,7 +22,7 @@ with their substitutions, from BIZ UDP of the same design.
 ChangeLog
 ---------
 
-(unreleased) (hayatedayon) Dokusho UD next version
+2026-11-18 (hayatedayon) Dokusho UD 1.010
 - Add GPOS `curs` XAdvance values to the first-stage vertical forms of 〱 〲
   ⸺ ⸻: one em for the two-cell forms and two em for the three-cell form.
   Safari 27.2 uses this adjustment for the glyph before the multiple
