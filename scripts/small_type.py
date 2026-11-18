@@ -1,7 +1,7 @@
 """小さい字の調整。追加数字には縦方向だけのヒント、試作ルビ仮名には任意の ss03 を用意する。
 
 ルビ仮名は全角の枠を保ち、原字のインクの中心を基準に細い線をわずかに補強する。小書き仮名だけは
-12% 大きくする。全面的なルビ書体ではなく、20 字を比較するための試作。通常の ruby と
+12% 大きくする。全仮名 194 字を機械的に調整する試作。通常の ruby と
 本文の字形は変えない。横組・縦組の字形を別々に作り、原字と同じ送りを使う。ヒントは原字の命令をそのまま付ける。
 """
 
@@ -10,8 +10,11 @@ from fontTools.ttLib.tables.ttProgram import Program
 import fraction_digits
 import latin_symbols
 
-RUBY_KANA = "あめぬれゃゅょっがぱアメヌレャュョッガパ"
-SMALL_KANA = "ゃゅょっャュョッ"
+# U+30FB「・」も docs/RUBY.md の対象表に含む (範囲だけなら 193 字)。
+RUBY_KANA = "".join(chr(c) for start, stop in ((0x3041, 0x3097), (0x30A0, 0x30FC), (0x31F0, 0x3200))
+                    for c in range(start, stop))
+SMALL_KANA = "ぁぃぅぇぉっゃゅょゎゕゖァィゥェォッャュョヮヵヶ" + "".join(map(chr, range(0x31F0, 0x3200)))
+RUBY_HINT_OPS = {"NPUSHB", "NPUSHW", "PUSHB", "PUSHW", "SVTCA", "MDAP", "SRP1", "SRP2", "IP", "SHP", "IUP"}
 
 
 def hint_digits(font) -> int:
@@ -142,7 +145,35 @@ def trial_sources(font) -> dict[str, float]:
     return sources
 
 
-def hint_trial(font, source: str, name: str) -> bool:
+def trial_hint_issues(font, source: str, name: str, scale: float) -> list[str]:
+    """原字の点番号を安全に流用できる条件を検査する。満たさないときは理由を返す。"""
+    original, trial = font["glyf"][source], font["glyf"][name]
+    if original.isComposite() or trial.isComposite() or original.numberOfContours <= 0:
+        return ["not a simple outline"]
+    if (original.numberOfContours != trial.numberOfContours
+            or list(original.endPtsOfContours) != list(trial.endPtsOfContours)
+            or len(original.coordinates) != len(trial.coordinates)
+            or [f & 1 for f in original.flags] != [f & 1 for f in trial.flags]):
+        return ["contour structure differs"]
+    assembly = original.program.getAssembly()
+    instructions = [line.split()[0] for line in assembly if line and not line.lstrip("-").isdigit()]
+    ops = {line.split("[")[0] for line in instructions}
+    issues = []
+    if not instructions:
+        issues.append("source has no instructions")
+    # IUP[1] も原字にあるが、x の点を touch する命令がないので動かない。
+    if ops - RUBY_HINT_OPS or "SVTCA[0]" not in instructions or "SVTCA[1]" in instructions:
+        issues.append("instructions are not point-relative y-only operations")
+    o, t = original.coordinates, trial.coordinates
+    mo = [sum(c[i] for c in o) / len(o) for i in (0, 1)]
+    mt = [sum(c[i] for c in t) / len(t) for i in (0, 1)]
+    worst = max(abs((t[k][i] - mt[i]) - scale * (o[k][i] - mo[i])) for k in range(len(o)) for i in (0, 1))
+    if worst > 1.5 * trial_strength(font) + 2:
+        issues.append(f"point correspondence differs ({worst:.1f} units)")
+    return issues
+
+
+def hint_trial(font, source: str, name: str, scale: float) -> bool:
     """試作字形 name に、原字 source の命令をそのまま付ける。付けたら True。
 
     原字の命令は y 方向だけで、点の番号を指す MDAP・SHP・IP・SRP・IUP だけでできており、cvt も関数も使わない
@@ -151,9 +182,7 @@ def hint_trial(font, source: str, name: str) -> bool:
     """
     glyf = font["glyf"]
     original, trial = glyf[source], glyf[name]
-    if (original.isComposite() or original.numberOfContours != trial.numberOfContours
-            or list(original.endPtsOfContours) != list(trial.endPtsOfContours)
-            or [f & 1 for f in original.flags] != [f & 1 for f in trial.flags]):
+    if trial_hint_issues(font, source, name, scale):
         return False
     bytecode = original.program.getBytecode()
     if not bytecode:
@@ -180,7 +209,7 @@ def ruby_trial(font) -> dict[str, str]:
             advance, side = font["vmtx"][source]
             font["vmtx"][name] = (advance, side + original.yMax - glyph.yMax)
             mapping[source] = name
-            hint_trial(font, source, name)
+            hint_trial(font, source, name, scale)
     fraction_digits._new_feature(gsub, "ss03", latin_symbols.single(gsub, mapping))
     # 字形パネルで試作字形を選んだ場合や、vert を後の段階で適用する組版環境にも対応する。
     for tag in ("vert", "vrt2"):
