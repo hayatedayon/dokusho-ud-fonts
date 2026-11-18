@@ -31,13 +31,13 @@
 この手順で作るリリースには、材料と依存を記した CycloneDX JSON `DokushoUD-<版>.cdx.json` を1つ添えます。ビルド用の Python 依存、元の BIZ UD・BIZ UDP の8ファイル、配布するフォントの8ファイル、その SHA-256・ライセンス・作った関係を含みます。過去のリリースには追加しません。`gh attestation` が使える GitHub CLI で、ビルドの来歴・フォントの SBOM の証明・SBOM 自体を確かめられます。
 
 ```sh
-# 1.009 は例です。ダウンロードした版のファイル名に置き換えます。
+# 1.010 は例です。ダウンロードした版のファイル名に置き換えます。
 gh attestation verify DokushoUDMincho-Regular.ttf --repo hayatedayon/dokusho-ud-fonts \
   --signer-workflow hayatedayon/dokusho-ud-fonts/.github/workflows/release.yml
 gh attestation verify DokushoUDMincho-Regular.ttf --repo hayatedayon/dokusho-ud-fonts \
   --signer-workflow hayatedayon/dokusho-ud-fonts/.github/workflows/release.yml \
   --predicate-type https://cyclonedx.org/bom
-gh attestation verify DokushoUD-1.009.cdx.json --repo hayatedayon/dokusho-ud-fonts \
+gh attestation verify DokushoUD-1.010.cdx.json --repo hayatedayon/dokusho-ud-fonts \
   --signer-workflow hayatedayon/dokusho-ud-fonts/.github/workflows/release.yml
 ```
 

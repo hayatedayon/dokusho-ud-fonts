@@ -129,7 +129,7 @@ Safari 27.2（macOS 15.8.2）で `writing-mode: vertical-rl` または `vertical
 
 1.010 では `text-orientation: mixed` にすると、この2字の送りは2 em・3 emになり、次の字との重なりを避けられます（同じ環境で測定）。字の向きも変わるので、用途に合わせて選んでください。iOS Safari は未確認です。
 
-1.010 の `wide_cursX` 実装（commit `7895043`）は、`SOURCE_DATE_EPOCH=1794919244` でビルドし、run 44199462703 で4書体を検証しました。1.009（run 44195381228）の標準結果と比較すると、Safari 27.2 の mixed vertical-rl / vertical-lr、`normal`・`"vert" 1`・`"vrt2" 1` は、1.010 は全4書体で `あ+字+い` の合計4・4・4・5 em（1.009 は3・3・3・3 em）でした。Safari の `text-orientation: upright` は `〱`・`〲` が4 em、`⸺`・`⸻` が3 emで、後者は1.009と同じで、既知の制限として残します。sideways も測定しましたが、1.009 の標準成果物に同条件の行がないため、その向きの差分比較には含めていません。Safari の測定は送りの長さと文字範囲を測ったもので、OS標準のフォント描画 API によるピクセル単位のインク比較ではありません。
+1.010 の `wide_cursX` 実装（commit `7895043`）は、`SOURCE_DATE_EPOCH=1794919244` でビルドし、run 44199462703 で4書体を検証しました。1.009（run 44195381228）の標準の結果と比べると、Safari 27.2 の mixed の vertical-rl・vertical-lr（`normal`・`"vert" 1`・`"vrt2" 1`）では、1.010 は全4書体で `あ+字+い` の合計が4・4・4・5 em でした（1.009 は3・3・3・3 em）。Safari の `text-orientation: upright` は `〱`・`〲` が4 em、`⸺`・`⸻` が3 emです。後者は1.009と同じで、既知の制限として残します。sideways も測定しましたが、1.009 の標準成果物に同条件の行がないため、その向きの差分比較には含めていません。Safari の測定は送りの長さと文字範囲を測ったもので、OS標準のフォント描画 API によるピクセル単位のインク比較ではありません。
 
 | 環境 | 1.009 → 1.010 の結果 | 位置・輪郭 |
 | --- | --- | --- |
@@ -140,7 +140,7 @@ Safari 27.2（macOS 15.8.2）で `writing-mode: vertical-rl` または `vertical
 | WebKitGTK 2.52.6 | `vert` ありは2・2・2・3 em。なしの `〱`・`〲` は1.009と同じ1 em | 4書体×72条件の実測で、送り・文字範囲の差0 |
 | Safari 27.2（macOS） | mixed は 1.010 で4・4・4・5 em。upright の `⸺`・`⸻` は3 emのまま | mixed で1.009から改善。iOS未確認 |
 
-この補正を採用しました。1.009 のビルドと比べた TTF は4書体とも `GPOS` のみ意味が変わり、`head` のチェックサムが追随して変化しました。`curs` の XAdvance を1段目の縦字形に追加し、既存の空白字の値は維持しています。glyph order、`glyf`、`cmap`、`hmtx`、`vmtx` は一致し、他の OpenType 機能も不変です。`scripts/check.py` は `ok: 4 fonts` でした。補助 CI run 44199462703 は総合 success（Edge / CoreText / DirectWrite success、Safari advisory failure）。Safari の残る upright ダッシュの不具合は 1.010 でも残ります。
+この補正を採用しました。1.009 のビルドと比べると、TTF は4書体とも `GPOS` の中身だけが変わり、それに合わせて `head` のチェックサムが変わりました。`curs` の XAdvance を1段目の縦字形に追加し、既存の空白字の値は維持しています。glyph order、`glyf`、`cmap`、`hmtx`、`vmtx` は一致し、他の OpenType 機能も不変です。`scripts/check.py` は `ok: 4 fonts` でした。補助 CI run 44199462703 は総合 success（Edge / CoreText / DirectWrite success、Safari advisory failure）。Safari で upright を指定したときのダッシュ2字の重なりは、1.010 でも残ります。
 
 Hayate Reader 本体での候補版の確認（2026-11-16）でわかったことは次のとおりです。
 

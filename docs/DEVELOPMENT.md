@@ -88,7 +88,7 @@ DirectWrite は `vert` だけを使い、1 つの文字から出た字の縦送�
 - カーニング（`T. V, W. Y, P. F, r. y, v. w,`）の幅と、句読点の単独ペアの幅が、GPOS の実効値と同じであること。CoreText は `kern=0` で詰めが外れ、DirectWrite は外れない（`kern` と同じ幅）ことも、環境の期待として明示しています。
 - `𠮷 〱 〲` と `ja` の文の字が、cmap の字形 ID・`hmtx` の送りで出ること。
 - 縦組の `〱 〲 ⸺ ⸻` の字形の並びが、CoreText は `vrt2`、DirectWrite は `vert`（`〱 〲`）と cmap の字（`⸺ ⸻`）と同じであること。
-- `ss03` を指定した仮名194字（横組・縦組）が、フォントの `ss03` の置き換えどおりの字形で組まれ（縦組は CoreText が `vrt2`、DirectWrite が `vert` の後。公開済みのフォントを確かめるときは、その版の `ss03` の対象だけが変わる）、横組の送りが原字と同じであること。`ss03=0` を指定した同じ文字列は、通常の字形のままであること。
+- `ss03` を指定した仮名194字（横組・縦組）が、フォントの `ss03` の置き換えどおりの字形で組まれ（縦組は CoreText が `vrt2`、DirectWrite が `vert` の後。期待する字はフォントの `ss03` の置き換えから求めるので、週1回の定期実行で公開済みのフォントを確かめるときは、その版の `ss03` の対象で確かめる）、横組の送りが原字と同じであること。`ss03=0` を指定した同じ文字列は、通常の字形のままであること。
 - 確認文のすべての字がこのフォントにあり、別のフォントへのフォールバックと欠落グリフ（字形 ID 0）が無いこと。
 
 検査はギャラリー（画像と JSON）を出した後に、外れた項目をすべて集めてから失敗にします。外れた項目は、確認文・書体・字（コードポイント）・期待・実際の形で、ジョブのログ（`::error::` の注釈と、末尾の件数）と、成果物の `checks-<engine>.json` に出ます。環境で違うと分かっている縦組の `ALWAYS_UDP`（DirectWrite は `“ ”` を横組の半角の字形のまま回す）などは、合否にせず [PROOFING.md](PROOFING.md) に記録しています。
@@ -179,7 +179,7 @@ export PATH="/path/to/work/bin:$PATH"
 SOURCE_DATE_EPOCH="$(git log -1 --format=%ct)"
 export SOURCE_DATE_EPOCH
 .venv/bin/python scripts/build_sbom.py --work-dir /path/to/work/sbom
-cyclonedx validate --input-file fonts/DokushoUD-1.009.cdx.json --fail-on-errors
+cyclonedx validate --input-file fonts/DokushoUD-1.010.cdx.json --fail-on-errors
 ```
 
 例の版は `scripts/spec.py` に合わせます。固定した Python 依存の未検出、元フォントの SHA-256 の不一致、出力の不足や版の不一致、統合時の部品の欠落、参照の欠落、形式の不正があると止まります。
@@ -189,13 +189,13 @@ cyclonedx validate --input-file fonts/DokushoUD-1.009.cdx.json --fail-on-errors
 同じ版のフォントと JSON をダウンロードし、`gh attestation` が使える GitHub CLI で、ビルドの来歴・各フォントの SBOM の証明・JSON 自体の来歴を確かめます。
 
 ```sh
-# 1.009 は例です。ダウンロードした版のファイル名に置き換えます。
+# 1.010 は例です。ダウンロードした版のファイル名に置き換えます。
 gh attestation verify DokushoUDMincho-Regular.ttf --repo hayatedayon/dokusho-ud-fonts \
   --signer-workflow hayatedayon/dokusho-ud-fonts/.github/workflows/release.yml
 gh attestation verify DokushoUDMincho-Regular.ttf --repo hayatedayon/dokusho-ud-fonts \
   --signer-workflow hayatedayon/dokusho-ud-fonts/.github/workflows/release.yml \
   --predicate-type https://cyclonedx.org/bom
-gh attestation verify DokushoUD-1.009.cdx.json --repo hayatedayon/dokusho-ud-fonts \
+gh attestation verify DokushoUD-1.010.cdx.json --repo hayatedayon/dokusho-ud-fonts \
   --signer-workflow hayatedayon/dokusho-ud-fonts/.github/workflows/release.yml
 ```
 

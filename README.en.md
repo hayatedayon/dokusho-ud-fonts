@@ -31,13 +31,13 @@ See the [text specimen](https://hayatedayon.github.io/dokusho-ud-fonts/) and the
 Releases built with this workflow include one CycloneDX JSON, `DokushoUD-<version>.cdx.json`, listing the Python build dependencies, the eight BIZ UD/UDP source files and the eight distributed font files, their SHA-256 hashes, licenses and build relationships. Earlier releases do not gain these files retroactively. Use a GitHub CLI with `gh attestation` support to verify provenance, the font's SBOM attestation and the SBOM file itself:
 
 ```sh
-# 1.009 is an example: use the version you downloaded.
+# 1.010 is an example: use the version you downloaded.
 gh attestation verify DokushoUDMincho-Regular.ttf --repo hayatedayon/dokusho-ud-fonts \
   --signer-workflow hayatedayon/dokusho-ud-fonts/.github/workflows/release.yml
 gh attestation verify DokushoUDMincho-Regular.ttf --repo hayatedayon/dokusho-ud-fonts \
   --signer-workflow hayatedayon/dokusho-ud-fonts/.github/workflows/release.yml \
   --predicate-type https://cyclonedx.org/bom
-gh attestation verify DokushoUD-1.009.cdx.json --repo hayatedayon/dokusho-ud-fonts \
+gh attestation verify DokushoUD-1.010.cdx.json --repo hayatedayon/dokusho-ud-fonts \
   --signer-workflow hayatedayon/dokusho-ud-fonts/.github/workflows/release.yml
 ```
 

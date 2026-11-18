@@ -68,7 +68,7 @@ As with multi-em dashes, these dedicated vertical glyphs are checked against the
 
 The added-glyph page saves actual-size and 4x FreeType rasters at 12/14/16px, plus 96px images, for all four faces. Compare joints, stroke size and two-cell advances with the original halves beside them.
 
-`.github/workflows/native-proof.yml` is an auxiliary CI workflow independent of build, release and pages (`release.yml` calls only `build.yml` and does not depend on it). CoreText on macOS (`scripts/native/coretext.swift`) and DirectWrite on Windows (`scripts/native/directwrite.cpp`) shape the same 49 cases in four faces at 24px. Cases include Japanese/English horizontal/vertical text, punctuation kerning, accents, new characters, and the 17 symbols with `locl` enabled/disabled. Fonts load directly from files. The `DokushoUD-coretext` and `DokushoUD-directwrite` artifacts retain `dist/native/index.html`, PNGs, JSON glyph IDs/advances/positions, `checks-<engine>.json` (check results), font SHA-256 and OS details (`platform.txt`). Compare artifacts with matching font hashes. Differences in the `locl-off` diagnostics inform a future cmap decision; equality with `locl` disabled is not required. With both CoreText and DirectWrite, `locl=0` leaves glyph IDs and advances unchanged, so it does not reproduce an environment without `locl`.
+`.github/workflows/native-proof.yml` is an auxiliary CI workflow independent of build, release and pages (`release.yml` calls only `build.yml` and does not depend on it). CoreText on macOS (`scripts/native/coretext.swift`) and DirectWrite on Windows (`scripts/native/directwrite.cpp`) shape the same 53 cases in four faces at 24px. Cases include Japanese/English horizontal/vertical text, punctuation kerning, accents, new characters, the 17 symbols with `locl` enabled/disabled, and `ss03` enabled/disabled (the 194 kana, horizontal and vertical). Fonts load directly from files. The `DokushoUD-coretext` and `DokushoUD-directwrite` artifacts retain `dist/native/index.html`, PNGs, JSON glyph IDs/advances/positions, `checks-<engine>.json` (check results), font SHA-256 and OS details (`platform.txt`). Compare artifacts with matching font hashes. Differences in the `locl-off` diagnostics inform a future cmap decision; equality with `locl` disabled is not required. With both CoreText and DirectWrite, `locl=0` leaves glyph IDs and advances unchanged, so it does not reproduce an environment without `locl`.
 
 | Run | Fonts checked | OS | When a check fails |
 | --- | --- | --- | --- |
@@ -84,6 +84,7 @@ Checks that decide pass or fail (`scripts/native_proof.py`; expectations come fr
 - The width of the kerning line (`T. V, W. Y, P. F, r. y, v. w,`) and of isolated punctuation pairs equals the effective GPOS values. Environment differences are explicit: CoreText removes the kerning with `kern=0`, DirectWrite does not (same width as `kern`).
 - `𠮷 〱 〲` and the characters of the `ja` sentence have the `cmap` glyph IDs and `hmtx` advances.
 - The vertical glyph sequences of `〱 〲 ⸺ ⸻` equal `vrt2` for CoreText and `vert` (`〱 〲`) plus the cmap glyph (`⸺ ⸻`) for DirectWrite.
+- With `ss03`, the 194 kana (horizontal and vertical) are set with the glyphs of the font's `ss03` substitution (vertically, after `vrt2` for CoreText and after `vert` for DirectWrite). The expected glyphs come from the font's `ss03` substitution, so when the scheduled run checks a published font, it checks that version's `ss03` coverage. Horizontal advances equal those of the original kana, and the same strings with `ss03=0` keep the normal glyphs.
 - Every character of the test sentences is in this font, with no fallback to another font and no missing glyph (glyph ID 0).
 
 The checks run after the gallery (images and JSON) is written and collect every failure before failing. A failure shows the sentence, face, character (code point), expected and actual values in the job log (`::error::` annotations and a final count) and in `checks-<engine>.json` of the artifact. Known environment differences, such as vertical `ALWAYS_UDP` (DirectWrite rotates the horizontal half-width quotes), are not checks and are recorded in [PROOFING.md](PROOFING.md) (Japanese).
@@ -174,7 +175,7 @@ export PATH="/path/to/work/bin:$PATH"
 SOURCE_DATE_EPOCH="$(git log -1 --format=%ct)"
 export SOURCE_DATE_EPOCH
 .venv/bin/python scripts/build_sbom.py --work-dir /path/to/work/sbom
-cyclonedx validate --input-file fonts/DokushoUD-1.009.cdx.json --fail-on-errors
+cyclonedx validate --input-file fonts/DokushoUD-1.010.cdx.json --fail-on-errors
 ```
 
 The version in the example must match `scripts/spec.py`. An installed package missing from the pins, a changed source hash, a missing output, a wrong embedded version, a missing component after merge, an unresolved reference or an invalid schema stops generation.
@@ -184,13 +185,13 @@ The official `actions/attest` v4.2.2 (SHA pinned) is used twice, following its o
 Download the fonts and the JSON for the same release and use a GitHub CLI with `gh attestation` support. Check provenance, the SBOM attestation for each font, and provenance of the JSON itself:
 
 ```sh
-# 1.009 is an example: use the version you downloaded.
+# 1.010 is an example: use the version you downloaded.
 gh attestation verify DokushoUDMincho-Regular.ttf --repo hayatedayon/dokusho-ud-fonts \
   --signer-workflow hayatedayon/dokusho-ud-fonts/.github/workflows/release.yml
 gh attestation verify DokushoUDMincho-Regular.ttf --repo hayatedayon/dokusho-ud-fonts \
   --signer-workflow hayatedayon/dokusho-ud-fonts/.github/workflows/release.yml \
   --predicate-type https://cyclonedx.org/bom
-gh attestation verify DokushoUD-1.009.cdx.json --repo hayatedayon/dokusho-ud-fonts \
+gh attestation verify DokushoUD-1.010.cdx.json --repo hayatedayon/dokusho-ud-fonts \
   --signer-workflow hayatedayon/dokusho-ud-fonts/.github/workflows/release.yml
 ```
 
