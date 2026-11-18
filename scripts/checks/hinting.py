@@ -169,7 +169,11 @@ def check_ruby_hint_rendering(ctx: FontContext) -> None:
                     aligned[key] += sum(1 for y in set(ys) if ys.count(y) >= 3 and y % 64 == 0)
                 if not flags:
                     ratio = sum(shown[5]) / max(1, sum(unhinted[5]))
-                    check(0.75 <= ratio <= 1.4, f"{label}: {mode}: trial ruby {target} changes its ink by {ratio:.2f} at {ppem} ppem")
+                    # 約 1〜2 px の点 (・) は、原字のヒントが点を 1 px の整数倍に丸めるので、原字そのものが同じ量だけ動く。
+                    # 原字と同じ動きなら (0.1 以内) 許す。
+                    original_ratio = sum(hinted.render(source, ppem)[5]) / max(1, sum(plain.render(source, ppem)[5]))
+                    check(0.75 <= ratio <= 1.4 or abs(ratio - original_ratio) <= 0.1,
+                          f"{label}: {mode}: trial ruby {target} changes its ink by {ratio:.2f} at {ppem} ppem (original {original_ratio:.2f})")
                 ink[0] += sum(shown[5]) if not flags else sum(bin(b).count("1") for b in shown[5])
                 ink[1] += sum(unhinted[5]) if not flags else sum(bin(b).count("1") for b in unhinted[5])
             if ppem >= 8:

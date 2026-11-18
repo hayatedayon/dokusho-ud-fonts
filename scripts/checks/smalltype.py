@@ -10,7 +10,7 @@ import small_type
 import spec
 
 from .common import FontContext, SOURCES, check
-from .fonttables import gpos_values, gsub_mapping, outputs
+from .fonttables import gpos_values, gsub_mapping, gsub_alternates, outputs
 from .geometry import glyph_bounds, overflow
 
 
@@ -99,8 +99,15 @@ def check_ruby(ctx: FontContext) -> None:
             check(a[0][2:] == b[0][2:], f"{label}: trial ruby changes the frame of {char}")
             bounds = glyph_bounds(font, order[b[0][0]])
             check(bounds is not None and not any(overflow(font, order[b[0][0]])), f"{label}: trial ruby {char} clips")
-    check(run("漢字さしすせそ", ("ss03",)) == run("漢字さしすせそ"), f"{label}: ss03 changes unselected characters")
+    excluded = "漢字ーゝゞヽヾゟヿ゛゜\u3099\u309a"
+    for vertical in (False, True):
+        check(run(excluded, ("ss03",), vertical) == run(excluded, (), vertical), f"{label}: ss03 changes unselected characters")
     trial = gsub_mapping(font, "ss03")
+    codes = {*range(0x3041, 0x3097), *range(0x30A0, 0x30FC), *range(0x31F0, 0x3200)}
+    check(set(map(ord, small_type.RUBY_KANA)) == codes and len(small_type.RUBY_KANA) == 194,
+          f"{label}: ss03 must cover exactly the documented 194 kana")
+    check(set(trial) == set(small_type.trial_sources(font)) and len(trial) == 235,
+          f"{label}: ss03 must have 194 horizontal and 41 vertical forms")
     for tag, vertical in (("palt", False), ("vpal", True)):
         values = gpos_values(font, tag)
         for source, target in trial.items():
@@ -120,29 +127,37 @@ RUBY_HINT_OPS = {"NPUSHB", "NPUSHW", "PUSHB", "PUSHW", "SVTCA", "MDAP", "SRP1", 
 
 
 def check_ruby_hint_programs(ctx: FontContext) -> None:
-    """ss03 の試作字形 (横組・縦組の 28 グリフ) すべてが、原字 (BIZ UD) と同じ命令を持つこと。
+    """ss03 の試作字形 (横組・縦組の 235 グリフ) の命令と、原字 (BIZ UD) との点の対応を確かめる。
 
     命令は点の番号だけを指すので、原字と輪郭の構成 (輪郭の数・終点・点の数と順序・on/off) が同じで、
     点が原字の点を拡大・補強・平行移動した位置にあることを確かめる。ヒントを付けない字を作らないよう、
-    持たない字があれば失敗にする。
+    条件を満たさない字には命令がないことも確かめる。
     """
     label = ctx.label
     font = ctx.font
     ud = ctx.ud
     glyf, ud_glyf = font["glyf"], ud["glyf"]
     trial = gsub_mapping(font, "ss03")
-    check(len(trial) == 28, f"{label}: expected 28 trial ruby glyphs, found {len(trial)}")
+    check(len(trial) == 235, f"{label}: expected 235 trial ruby glyphs, found {len(trial)}")
     strength = small_type.trial_strength(font)
     scales = small_type.trial_sources(font)
     for source, target in trial.items():
         gid = font.getGlyphID(source)
         original, shipped, plain = glyf[source], glyf[target], ud_glyf[ud.getGlyphOrder()[gid]]
         bytecode = shipped.program.getBytecode()
+        issues = small_type.trial_hint_issues(font, source, target, scales[source])
+        if issues:
+            check(not bytecode, f"{label}: unsafe instructions on {target}: {issues}")
+            continue
         check(len(bytecode) > 0, f"{label}: trial ruby {target} (of {source}) has no hinting")
         check(bytecode == plain.program.getBytecode() == original.program.getBytecode(),
               f"{label}: trial ruby {target} does not have the instructions of {source} in BIZ UD")
         ops = {line.split("[")[0].split()[0] for line in shipped.program.getAssembly() if not line[0].isdigit() and line[0] != "-"}
         check(ops <= RUBY_HINT_OPS and "SVTCA" in ops, f"{label}: trial ruby {target} uses unexpected instructions {sorted(ops - RUBY_HINT_OPS)}")
+        instructions = shipped.program.getAssembly()
+        instructions = [line.split()[0] for line in instructions]
+        check("SVTCA[0]" in instructions and "SVTCA[1]" not in instructions,
+              f"{label}: trial ruby {target} changes the x direction")
         check(shipped.numberOfContours == original.numberOfContours and list(shipped.endPtsOfContours) == list(original.endPtsOfContours)
               and [f & 1 for f in shipped.flags] == [f & 1 for f in original.flags],
               f"{label}: trial ruby {target} has a different contour structure from {source}")
@@ -158,34 +173,52 @@ def check_ruby_hint_programs(ctx: FontContext) -> None:
 def check_ruby_combinations(ctx: FontContext) -> None:
     """ss03 が、仮名の濁音・半濁点の分解形、結合濁点・半濁点、か゚ などの合字と組み合わさっても動きが変わらないこと。
 
-    調べた範囲 (HarfBuzz、横組・縦組)。aalt を指定すると ss03 より先に半角の候補に置き換わり、ss03 は効かない。
-    それは BIZ UD の aalt の動きのままなので、ここでは検査しない (docs/RUBY.md)。
+    調べた範囲は HarfBuzz の横組・縦組。aalt・hwid・fwid の順序と候補も検査する。
     """
     label = ctx.label
     run = ctx.run
+    trial_mapping = gsub_mapping(ctx.font, "ss03")
+    ligature_kana = "かきくけこカキクケコセツトㇷ"
     for vertical in (False, True):
         where = "vertical" if vertical else "horizontal"
         # 濁音・半濁音は、分解した形 (か + U+3099) でも、ccmp で合成してから ss03 の字形になる
-        for composed, decomposed in (("が", "か\u3099"), ("ぱ", "は\u309a"), ("ガ", "カ\u3099"), ("パ", "ハ\u309a")):
+        for composed in small_type.RUBY_KANA:
+            decomposed = unicodedata.normalize("NFD", composed)
+            if composed == decomposed:
+                continue
             plain, trial = run(decomposed, (), vertical), run(decomposed, ("ss03",), vertical)
             check(trial == run(composed, ("ss03",), vertical), f"{label}: ss03 of decomposed {composed} differs ({where})")
             check(len(trial) == 1 and trial[0][0] != plain[0][0], f"{label}: ss03 is lost on decomposed {composed} ({where})")
-        # 20 字 + 結合濁点・半濁点。字形だけが試作になり、記号の字形・送り・位置と、仮名の送りは変わらない
+        # 194 字 + 結合濁点・半濁点。ccmp の合字になる組は次で別に検査する
         for char in small_type.RUBY_KANA:
             for mark in ("\u3099", "\u309a"):
                 text = char + mark
                 if unicodedata.normalize("NFC", text) != text:
                     continue
+                if mark == "\u309a" and char in ligature_kana:
+                    continue
                 plain, trial = run(text, (), vertical), run(text, ("ss03",), vertical)
                 check(len(plain) == len(trial) == 2 and trial[0][0] != plain[0][0] and trial[1:] == plain[1:]
                       and trial[0][2:] == plain[0][2:], f"{label}: ss03 changes the mark or advance of {text!r} ({where})")
-        # か゚ などの合字は 20 字に入らず、ss03 でも変わらない。前後の字は通常どおり選ばれる
-        for char in "かきくけこカキクケコセツトㇷ":
+        # か゚ などの合字自体は対象外。構成する仮名には ss03 があっても合字は変わらない
+        for char in ligature_kana:
             text = char + "\u309a"
             check(run(text, ("ss03",), vertical) == run(text, (), vertical), f"{label}: ss03 changes the ligature {text!r} ({where})")
         mixed_plain, mixed_trial = run("か\u309aが", (), vertical), run("か\u309aが", ("ss03",), vertical)
         check(mixed_trial[:-1] == mixed_plain[:-1] and mixed_trial[-1][0] != mixed_plain[-1][0],
               f"{label}: ss03 misses the kana after か゚ ({where})")
+        for tag in ("aalt", "hwid", "fwid"):
+            for char in small_type.RUBY_KANA:
+                plain = run(char, (tag,), vertical)
+                expected = [(ctx.font.getGlyphID(trial_mapping.get(ctx.order[r[0]], ctx.order[r[0]])), *r[1:]) for r in plain]
+                check(run(char, (tag, "ss03"), vertical) == expected,
+                      f"{label}: ss03 changes the order/advance of {tag} for {char} ({where})")
+    alternates, original_alternates = gsub_alternates(ctx.font, "aalt"), gsub_alternates(ctx.ud, "aalt")
+    for char in small_type.RUBY_KANA:
+        name = ctx.cmap[ord(char)]
+        check(alternates.get(name, []) == original_alternates.get(name, []), f"{label}: ss03 changes aalt candidates of {char}")
+    check(not set(trial_mapping.values()) & {g for values in alternates.values() for g in values},
+          f"{label}: aalt offers trial ruby glyphs")
 
 
 def check_small_digits(ctx: FontContext) -> None:
