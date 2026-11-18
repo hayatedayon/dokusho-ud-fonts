@@ -32,7 +32,13 @@ def main() -> None:
     parser.add_argument("tools", nargs="+", choices=sorted(manifest))
     parser.add_argument("--bin-dir", type=Path, required=True)
     parser.add_argument("--download-dir", type=Path, required=True)
+    parser.add_argument("--sha256", action="append", default=[], metavar="TOOL=HASH",
+                        help="Also require an explicit workflow pin to match the manifest")
     args = parser.parse_args()
+    for value in args.sha256:
+        name, separator, digest = value.partition("=")
+        if not separator or name not in args.tools or digest != manifest[name]["sha256"]:
+            parser.error(f"Explicit workflow SHA-256 does not match the manifest: {name}")
     if platform.system() != "Linux" or platform.machine() not in {"x86_64", "AMD64"}:
         parser.error("These pinned assets support Linux x86-64 only; use a Linux worktree/container.")
     args.bin_dir.mkdir(parents=True, exist_ok=True)

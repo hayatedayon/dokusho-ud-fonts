@@ -66,6 +66,7 @@ jobs:
       - name: Install verified SBOM tools
         run: >-
           python3 scripts/install_supply_chain_tools.py syft cyclonedx-cli
+          --sha256 cyclonedx-cli=bfc8b2538da86fe239bc53658bbb63c1c8c510a293c1e6891aa5bea5d3c58746
           --bin-dir "$RUNNER_TEMP/bin" --download-dir "$RUNNER_TEMP/tool-downloads"
 
       - name: Generate and validate the release SBOM

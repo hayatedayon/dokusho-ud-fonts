@@ -34,6 +34,8 @@ jobs:
       - name: Install verified linters
         run: >-
           python3 scripts/install_supply_chain_tools.py actionlint shellcheck zizmor
+          --sha256 shellcheck=b7af85e41cc99489dcc21d66c6d5f3685138f06d34651e6d34b42ec6d54fe6f6
+          --sha256 zizmor=bb110cc765eca9cd7efb2e284a956be5974c60027b0970f16397d86208a9957b
           --bin-dir "$RUNNER_TEMP/bin" --download-dir "$RUNNER_TEMP/tool-downloads"
       - name: actionlint with ShellCheck
         run: |
