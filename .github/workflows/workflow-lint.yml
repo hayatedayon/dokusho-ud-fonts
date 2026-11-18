@@ -1,0 +1,47 @@
+name: Workflow lint
+
+on:
+  push:
+    paths:
+      - '.github/**'
+      - 'scripts/install_supply_chain_tools.py'
+      - 'scripts/supply_chain_tools.json'
+  pull_request:
+    paths:
+      - '.github/**'
+      - 'scripts/install_supply_chain_tools.py'
+      - 'scripts/supply_chain_tools.json'
+  schedule:
+    - cron: '47 18 * * 0'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: workflow-lint-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  lint:
+    name: Check workflow syntax and security
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Install verified linters
+        run: >-
+          python3 scripts/install_supply_chain_tools.py actionlint shellcheck zizmor
+          --bin-dir "$RUNNER_TEMP/bin" --download-dir "$RUNNER_TEMP/tool-downloads"
+      - name: actionlint with ShellCheck
+        run: |
+          export PATH="$RUNNER_TEMP/bin:$PATH"
+          actionlint
+      - name: zizmor (including online GitHub audits)
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: >-
+          "$RUNNER_TEMP/bin/zizmor" --persona pedantic --strict-collection --no-progress
+          --cache-dir "$RUNNER_TEMP/zizmor-cache" .github/workflows .github/dependabot.yml

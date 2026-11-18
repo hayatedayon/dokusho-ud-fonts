@@ -64,7 +64,8 @@ jobs:
       # 日時は、前後で同じにする (変更の側のコミットの日時)。違うと head の日時だけでバイトが違ってしまう
       - name: Build
         run: |
-          export SOURCE_DATE_EPOCH="$(git -C after log -1 --format=%ct)"
+          SOURCE_DATE_EPOCH="$(git -C after log -1 --format=%ct)"
+          export SOURCE_DATE_EPOCH
           for side in before after; do (cd "$side" && .venv/bin/python scripts/build.py > /dev/null); done
           sha256sum before/fonts/* after/fonts/*
 

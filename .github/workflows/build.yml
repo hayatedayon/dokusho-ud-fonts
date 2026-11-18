@@ -54,7 +54,8 @@ jobs:
       # 作った日時をコミットの日時にする (同じコミットからは同じファイル)
       - name: Build
         run: |
-          export SOURCE_DATE_EPOCH="$(git log -1 --format=%ct)"
+          SOURCE_DATE_EPOCH="$(git log -1 --format=%ct)"
+          export SOURCE_DATE_EPOCH
           .venv/bin/python scripts/build.py
 
       - name: Check

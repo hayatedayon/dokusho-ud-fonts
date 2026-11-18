@@ -67,7 +67,8 @@ jobs:
         shell: bash
         run: |
           "$PROOF_PYTHON" scripts/fetch_sources.py
-          export SOURCE_DATE_EPOCH="$(git log -1 --format=%ct)"
+          SOURCE_DATE_EPOCH="$(git log -1 --format=%ct)"
+          export SOURCE_DATE_EPOCH
           "$PROOF_PYTHON" scripts/build.py
           echo "FONT_DIR=fonts" >> "$GITHUB_ENV"
           echo "FONT_LABEL=built from $GITHUB_SHA ($GITHUB_REF_NAME)" >> "$GITHUB_ENV"
@@ -161,7 +162,8 @@ jobs:
         run: |
           if [ "$FONT_SOURCE" = build ]; then
             "$PROOF_PYTHON" scripts/fetch_sources.py
-            export SOURCE_DATE_EPOCH="$(git log -1 --format=%ct)"
+            SOURCE_DATE_EPOCH="$(git log -1 --format=%ct)"
+            export SOURCE_DATE_EPOCH
             "$PROOF_PYTHON" scripts/build.py
             echo "FONT_DIR=fonts" >> "$GITHUB_ENV"
             echo "FONT_LABEL=built from $GITHUB_SHA ($GITHUB_REF_NAME)" >> "$GITHUB_ENV"
@@ -177,10 +179,12 @@ jobs:
         run: sudo safaridriver --enable
       - name: Measure in the browser
         shell: bash
+        env:
+          PROOF_BROWSER: ${{ matrix.browser }}
         run: |
           mkdir -p dist/browser
           { echo "runner image: $ImageOS $ImageVersion"; echo "fonts: $FONT_LABEL"; } | tee dist/browser/platform.txt
-          "$PROOF_PYTHON" scripts/browser_proof.py --browser ${{ matrix.browser }} --fonts "$FONT_DIR" --output dist/browser
+          "$PROOF_PYTHON" scripts/browser_proof.py --browser "$PROOF_BROWSER" --fonts "$FONT_DIR" --output dist/browser
       - name: Preserve results and screenshots (including partial failures)
         if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2

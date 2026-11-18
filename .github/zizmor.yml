@@ -1,0 +1,12 @@
+rules:
+  self-repository:
+    ignore:
+      # actionlint 1.7.12 rejects the proposed $/ syntax. ./ calls this exact
+      # checked-out commit without introducing a movable remote ref.
+      - release.yml
+  concurrency-limits:
+    ignore:
+      # Preserve all native proof runs and their artifacts, even when parallel.
+      - native-proof.yml
+      # Each immutable release tag must finish; do not cancel or serialize tags.
+      - release.yml

@@ -144,3 +144,18 @@ python3 scripts/scan_secrets.py --all-history
 ```
 
 `.betterleaks.toml` は組み込みの検出規則を継承します。許可するのは `tests/fixtures/widths-1.006.json` の `shaping_sha256`（組んだ字の検査結果の SHA-256）が generic-api-key として検出された場合だけです。同じファイルのほかの値や、プロバイダ固有の規則は除外しません。新たな検出は値を共有せず場所と種類を確認し、秘密情報なら削除や履歴の書き換えをせず管理者に連絡します。
+
+## ワークフローの検査
+
+`workflow-lint.yml` は `.github/`・道具の入手スクリプトが変わった push・プルリクエストと、週1回に actionlint 1.7.12（ShellCheck 0.11.0 も使用）と zizmor 1.32.0 を実行します。全ワークフローと Dependabot の設定を検査します。Action は完全なコミット SHA と版のコメントで固定し、Dependabot が両方を更新できる書き方を保ちます。更新後の Action を検査から外す設定はありません。
+
+```sh
+python3 scripts/install_supply_chain_tools.py actionlint shellcheck zizmor \
+  --bin-dir /path/to/work/bin --download-dir /path/to/work/downloads
+export PATH="/path/to/work/bin:$PATH"
+actionlint
+zizmor --persona pedantic --strict-collection --cache-dir /path/to/work/zizmor-cache \
+  .github/workflows .github/dependabot.yml
+```
+
+`GH_TOKEN` があれば GitHub API を使う検査も実行します。手元で通信しないときは `--offline` を足します。zizmor は公式の実行ファイルを使い、フォントのビルド環境に検査用の Python 依存を混ぜません。`.github/zizmor.yml` には除外の理由を書いてあります。actionlint が新しい `$/` の自リポジトリ表記を受け付けないため、release の同じコミットの `./` 呼び出しを保ちます。native proof の全実行とリリースの各タグを独立して完走させる従来の同時実行の方針も保ちます。

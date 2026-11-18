@@ -19,8 +19,8 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
-      contents: write
-      actions: write
+      contents: write # Create and publish the immutable release.
+      actions: write # Dispatch pages.yml after publication.
 
     steps:
       - name: Download the fonts

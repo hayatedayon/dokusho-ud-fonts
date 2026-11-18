@@ -141,3 +141,18 @@ python3 scripts/scan_secrets.py --all-history
 The installer downloads only official GitHub release assets and checks their SHA-256 against `scripts/supply_chain_tools.json`. Where upstream provides a checksum file, the file itself is hash-pinned and its contents are checked too. Otherwise the downloaded asset's SHA-256 is pinned in that manifest. Existing different binaries are never overwritten.
 
 `.betterleaks.toml` extends the built-in rules. Its only exception is the `shaping_sha256` property (a digest of font shaping test results) in `tests/fixtures/widths-1.006.json`, for the generic-api-key rule only. Other values in that file and provider-specific rules remain scanned. Report a new secret by location and type without sharing its value; do not delete it or rewrite history.
+
+## Workflow lint
+
+`workflow-lint.yml` runs actionlint 1.7.12 with ShellCheck 0.11.0 and zizmor 1.32.0 on changes to `.github/` or the tool installer, and weekly. All workflows and Dependabot configuration are checked. Actions keep full commit SHA pins and version comments so Dependabot can update both together. No linter rule exempts updated Action versions.
+
+```sh
+python3 scripts/install_supply_chain_tools.py actionlint shellcheck zizmor \
+  --bin-dir /path/to/work/bin --download-dir /path/to/work/downloads
+export PATH="/path/to/work/bin:$PATH"
+actionlint
+zizmor --persona pedantic --strict-collection --cache-dir /path/to/work/zizmor-cache \
+  .github/workflows .github/dependabot.yml
+```
+
+Set `GH_TOKEN` to enable GitHub API audits; `--offline` runs only local audits. The official zizmor binary keeps lint dependencies outside the font build environment. `.github/zizmor.yml` records narrow exceptions: actionlint rejects the proposed `$/` self-repository syntax, so the release retains `./` at the same commit; native proof runs and independent release tags retain their existing concurrency behavior.
