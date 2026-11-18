@@ -32,6 +32,42 @@ ChangeLog
   DirectWrite, HarfBuzz, Edge and WebKitGTK do not regress in the checks.
   The only semantic font change is these `curs` XAdvance values: glyph
   outlines, cmap, hmtx, vmtx and other OpenType features are unchanged.
+- The optional ss03 (Ruby kana, trial) now covers all 194 kana instead of
+  20: hiragana U+3041-3096, katakana U+30A0-30FB (including the double
+  hyphen and the middle dot) and the katakana phonetic extensions
+  U+31F0-31FF. The long vowel mark, the iteration marks (ゝ ゞ ヽ ヾ), ゟ,
+  ヿ, the combining voiced and semi-voiced marks and ゛゜ are not included.
+  The 41 kana with a different vertical form (the 40 small kana and ゠) get
+  a trial glyph for that form too: 235 glyphs per font, 940 in the four
+  fonts (28 per font before). Every kana gets the same processing as the
+  20 before, with no per-glyph adjustment (only small kana are enlarged,
+  by 12%; one emboldening amount per face), and the 28 glyphs of the earlier
+  20 kana are unchanged (outlines, instructions, advances). The trial glyphs
+  copy the hinting instructions of the original kana in BIZ UD when the
+  instructions only move points vertically by point number and every point
+  of the trial outline stays within 1.5 times the emboldening amount plus 2
+  units of the scaled original; 924 of the 940 glyphs qualify and 16 have no
+  instructions (Mincho Regular: そ ぞ む; Mincho Bold: こ ご ゆ and the
+  vertical ォ; Gothic Regular: す ず そ ぞ ゑ; Gothic Bold: そ て で ゑ),
+  where one or two sharp corner points move 0.1 to 7.9 units beyond that
+  limit. Measured with FreeType v40 (8 to 10 ppem, four fonts), hinting
+  increases the blur at the edges (pixels of intermediate density) of 27 of
+  the 235 glyphs, by at most 4.4%, and reduces it in total by 9%; the
+  hinting was kept on all of them (the earlier three, ッ in horizontal and
+  vertical text and メ, among them). ss03 still comes after aalt and hwid:
+  with aalt or hwid the half-width alternate is chosen and ss03 has no
+  effect, and the trial glyphs are not aalt alternates (as in the earlier
+  20 kana; unchanged). Only ss03 glyphs differ from the build before this
+  change: the glyph count (maxp.numGlyphs 14368 to 14575) and glyf, loca,
+  hmtx, vmtx, hhea, vhea, GSUB (the ss03, vert and vrt2 lookups), GPOS (palt,
+  vpal and mark carry the values of the original kana), GDEF, OS/2
+  (xAvgCharWidth, by 1) and the checksum of head change; every other glyph
+  and table, and the HarfBuzz result of every character without ss03, are
+  identical. The TrueType files grow by 34 to 80 KB each (Mincho Regular
+  6264152 to 6323652 bytes, Mincho Bold 7220352 to 7300556, Gothic Regular
+  4761220 to 4795796, Gothic Bold 4731840 to 4766124). Checked with
+  FreeType and HarfBuzz; not checked yet with CoreText, DirectWrite, Safari
+  or Edge.
 
 2026-11-16 (hayatedayon) Dokusho UD 1.009
 - In vertical text, the two- and three-cell glyphs (〱 〲 ⸺ ⸻) are now

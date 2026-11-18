@@ -75,7 +75,7 @@ p { margin:0; margin-block-end:.7em; } rt { font-size:.5em; --ss03:var(--ruby-tr
 </header>
 <p class="note">１行32字分・50emの奥行き・行送り1.75の固定版面。バージョン __VERSION__。
 横組・縦組と大きさを切り替えて比較してください。印刷は倍率100%を選びます（縦組はA4横向き）。
-ルビ仮名の試作は20字だけに適用されます。<a href="small-type.html">ラスタ比較</a> ／ <a href="specimen.html">文章の見本</a></p>
+ルビ仮名の試作は仮名194字だけに適用されます。<a href="small-type.html">ラスタ比較</a> ／ <a href="specimen.html">文章の見本</a></p>
 <main><article id="proof" class="proof">__TEXT__</article></main>
 <script>
 const fonts = __FONTS__;

@@ -110,7 +110,7 @@ CONTENT = """
 
 <section class="block">
 <h2 class="label">ルビ仮名の試作</h2>
-<p><ruby>雨<rt>あめ</rt></ruby>・<ruby>濡<rt>ぬれ</rt></ruby>・<ruby>客<rt>きゃく</rt></ruby>・<ruby>急<rt>きゅう</rt></ruby>・<ruby>曲<rt>きょく</rt></ruby>・<ruby>葉<rt>ぱっぱ</rt></ruby>。ss03 は「あめぬれゃゅょっがぱ」と対応する片仮名の20字だけを変えます。</p>
+<p><ruby>雨<rt>あめ</rt></ruby>・<ruby>濡<rt>ぬれ</rt></ruby>・<ruby>客<rt>きゃく</rt></ruby>・<ruby>急<rt>きゅう</rt></ruby>・<ruby>曲<rt>きょく</rt></ruby>・<ruby>葉<rt>ぱっぱ</rt></ruby>。ss03 は平仮名・片仮名・小書きの片仮名拡張の194字だけを変えます。</p>
 </section>
 <section class="block">
 <h2 class="label">数字</h2>
@@ -245,7 +245,7 @@ body.paper-dark { --paper: #1c1c1e; --ink: #d8d6d0; }
 <label><input type="checkbox" id="kern" checked> 欧字カーニング</label>
 <label><input type="checkbox" id="japanese-quotes"> 和文引用符（ss01）</label>
 <label><input type="checkbox" id="latin-symbols"> 欧文記号（ss02）</label>
-<label><input type="checkbox" id="ruby-trial"> ルビ仮名の試作（ss03・20字）</label>
+<label><input type="checkbox" id="ruby-trial"> ルビ仮名の試作（ss03・194字）</label>
 <label><input type="checkbox" id="palt"> 全体に palt（縦は vpal）</label>
 <label><input type="checkbox" id="raw-palt"> 縦書きでも palt を適用（比較用）</label>
 <span id="status" class="status"></span>

@@ -70,7 +70,7 @@ DirectWrite は `vert` だけを使い、1 つの文字から出た字の縦送�
 
 追加字のページは４書体の12・14・16pxの FreeType 実寸・４倍画像と96px画像を保存します。既存の上下部品と並べて接合・太さ・２セルの送りを見比べられます。
 
-`.github/workflows/native-proof.yml` は既存の build・release・pages と独立した補助 CI です（`release.yml` は `build.yml` だけを呼び、これには依存しません）。macOS の CoreText（`scripts/native/coretext.swift`）、Windows の DirectWrite（`scripts/native/directwrite.cpp`）が、同じ49条件×４書体を24pxで組みます。横縦の和英混植、句読点のペア、アクセント付きの字、追加字、17記号の `locl` 有効・無効を記録します。フォントはファイルから直接読みます。成果物 `DokushoUD-coretext`・`DokushoUD-directwrite` の `dist/native/index.html`、各 PNG・JSON（グリフ ID・送り・配置）、`checks-<engine>.json`（検査の結果）、フォント SHA-256、OS情報（`platform.txt`）を保存します。同じ SHA-256 の２成果物を比較し、`locl-off` の違いは後の cmap 変更の判断材料にします。`locl` 無効時も同じ字になることは合格条件にしません。CoreText と DirectWrite のどちらでも、`locl=0` を指定した結果は字形 ID と字幅が通常と同じで、`locl` が効かない環境の再現にはなりません。
+`.github/workflows/native-proof.yml` は既存の build・release・pages と独立した補助 CI です（`release.yml` は `build.yml` だけを呼び、これには依存しません）。macOS の CoreText（`scripts/native/coretext.swift`）、Windows の DirectWrite（`scripts/native/directwrite.cpp`）が、同じ53条件×４書体を24pxで組みます。横縦の和英混植、句読点のペア、アクセント付きの字、追加字、17記号の `locl` 有効・無効、`ss03` の有効・無効（仮名194字、横組・縦組）を記録します。フォントはファイルから直接読みます。成果物 `DokushoUD-coretext`・`DokushoUD-directwrite` の `dist/native/index.html`、各 PNG・JSON（グリフ ID・送り・配置）、`checks-<engine>.json`（検査の結果）、フォント SHA-256、OS情報（`platform.txt`）を保存します。同じ SHA-256 の２成果物を比較し、`locl-off` の違いは後の cmap 変更の判断材料にします。`locl` 無効時も同じ字になることは合格条件にしません。CoreText と DirectWrite のどちらでも、`locl=0` を指定した結果は字形 ID と字幅が通常と同じで、`locl` が効かない環境の再現にはなりません。
 
 実行の仕方は次の 2 つです。
 
@@ -88,6 +88,7 @@ DirectWrite は `vert` だけを使い、1 つの文字から出た字の縦送�
 - カーニング（`T. V, W. Y, P. F, r. y, v. w,`）の幅と、句読点の単独ペアの幅が、GPOS の実効値と同じであること。CoreText は `kern=0` で詰めが外れ、DirectWrite は外れない（`kern` と同じ幅）ことも、環境の期待として明示しています。
 - `𠮷 〱 〲` と `ja` の文の字が、cmap の字形 ID・`hmtx` の送りで出ること。
 - 縦組の `〱 〲 ⸺ ⸻` の字形の並びが、CoreText は `vrt2`、DirectWrite は `vert`（`〱 〲`）と cmap の字（`⸺ ⸻`）と同じであること。
+- `ss03` を指定した仮名194字（横組・縦組）が、すべて `ss03` の置き換え先の字形で組まれ（縦組は CoreText が `vrt2`、DirectWrite が `vert` の後）、横組の送りが原字と同じであること。`ss03=0` を指定した同じ文字列は、通常の字形のままであること。
 - 確認文のすべての字がこのフォントにあり、別のフォントへのフォールバックと欠落グリフ（字形 ID 0）が無いこと。
 
 検査はギャラリー（画像と JSON）を出した後に、外れた項目をすべて集めてから失敗にします。外れた項目は、確認文・書体・字（コードポイント）・期待・実際の形で、ジョブのログ（`::error::` の注釈と、末尾の件数）と、成果物の `checks-<engine>.json` に出ます。環境で違うと分かっている縦組の `ALWAYS_UDP`（DirectWrite は `“ ”` を横組の半角の字形のまま回す）などは、合否にせず [PROOFING.md](PROOFING.md) に記録しています。
