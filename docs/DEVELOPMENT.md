@@ -126,3 +126,21 @@ Safari と Microsoft Edge は、同じワークフローの `browser-proof` ジ�
 5. 手元の `.venv` は、`.venv/bin/pip install -r requirements.txt` で上書きします（作り直しは要りません。CI は毎回 `requirements.txt` から作ります）。
 
 FreeType・HarfBuzz・unicode-data（検査が使う、CI では apt で入れる外部のライブラリ）は、版を固定していません。更新のたびに、CI の `dpkg-query` の出力の版を見ます。
+
+## 秘密情報の検査
+
+`secrets.yml` は push・プルリクエスト・毎週日曜の定期実行で betterleaks v1.10.0 を実行します。作業ツリーと push/PR のコミット範囲を検査し、定期・手動実行は取得した全履歴を検査します。検出すると失敗し、ログでは値を伏せます。外部 API に秘密情報を送る検証は行いません。
+
+Linux x86-64 では、リポジトリの外の空の作業フォルダを用意して次のように実行できます。公式 GitHub リリースだけから取得し、`scripts/supply_chain_tools.json` の SHA-256 と照合します。公式のチェックサムファイルがある道具は、そのファイル自体も固定した SHA-256 で確認してから照合します。ファイルが無い道具はダウンロードの SHA-256 を同じマニフェストに固定しています。既存の異なる実行ファイルは上書きしません。
+
+```sh
+python3 scripts/install_supply_chain_tools.py betterleaks \
+  --bin-dir /path/to/work/bin --download-dir /path/to/work/downloads
+export PATH="/path/to/work/bin:$PATH"
+python3 scripts/scan_secrets.py
+# 全履歴を調べる前に、全リモートブランチも取得する
+git fetch origin '+refs/heads/*:refs/remotes/origin/*' --no-tags
+python3 scripts/scan_secrets.py --all-history
+```
+
+`.betterleaks.toml` は組み込みの検出規則を継承します。許可するのは `tests/fixtures/widths-1.006.json` の `shaping_sha256`（組んだ字の検査結果の SHA-256）が generic-api-key として検出された場合だけです。同じファイルのほかの値や、プロバイダ固有の規則は除外しません。新たな検出は値を共有せず場所と種類を確認し、秘密情報なら削除や履歴の書き換えをせず管理者に連絡します。

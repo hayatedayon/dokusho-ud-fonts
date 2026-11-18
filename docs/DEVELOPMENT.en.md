@@ -121,3 +121,23 @@ To take an update:
 5. Update your local `.venv` by overwriting it with `.venv/bin/pip install -r requirements.txt` (no need to recreate it; CI builds from `requirements.txt` every time).
 
 FreeType, HarfBuzz and unicode-data (external libraries the checks use, installed with apt in CI) are not pinned. At each update, look at the versions printed by the `dpkg-query` step in CI.
+
+## Secret scanning
+
+`secrets.yml` runs betterleaks v1.10.0 on pushes, pull requests and weekly. It checks the working tree and the push/PR commit range; scheduled and manual runs check all fetched history. Findings fail the job and values are redacted. Live validation against external APIs is disabled.
+
+On Linux x86-64, use an empty work folder outside the repository:
+
+```sh
+python3 scripts/install_supply_chain_tools.py betterleaks \
+  --bin-dir /path/to/work/bin --download-dir /path/to/work/downloads
+export PATH="/path/to/work/bin:$PATH"
+python3 scripts/scan_secrets.py
+# Fetch every remote branch before auditing every local and remote ref.
+git fetch origin '+refs/heads/*:refs/remotes/origin/*' --no-tags
+python3 scripts/scan_secrets.py --all-history
+```
+
+The installer downloads only official GitHub release assets and checks their SHA-256 against `scripts/supply_chain_tools.json`. Where upstream provides a checksum file, the file itself is hash-pinned and its contents are checked too. Otherwise the downloaded asset's SHA-256 is pinned in that manifest. Existing different binaries are never overwritten.
+
+`.betterleaks.toml` extends the built-in rules. Its only exception is the `shaping_sha256` property (a digest of font shaping test results) in `tests/fixtures/widths-1.006.json`, for the generic-api-key rule only. Other values in that file and provider-specific rules remain scanned. Report a new secret by location and type without sharing its value; do not delete it or rewrite history.

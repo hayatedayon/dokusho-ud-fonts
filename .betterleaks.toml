@@ -1,0 +1,14 @@
+title = "Dokusho UD secrets policy"
+betterleaksMinVersion = "v1.10.0"
+
+# These values are SHA-256 digests of shaped-font test results, not credentials.
+# Limit the exception to this property, this fixture, and the generic rule;
+# other contents of the fixture and all provider-specific rules remain scanned.
+filter = '''
+attributes["path"] == "tests/fixtures/widths-1.006.json" &&
+finding["rule_id"] == "generic-api-key" &&
+filter.matchesAny(finding["line"], [`^\s*"shaping_sha256":\s*"[0-9a-f]{64}"\s*,?\s*$`])
+'''
+
+[extend]
+useDefault = true
