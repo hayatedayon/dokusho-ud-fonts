@@ -33,8 +33,8 @@ ChangeLog
   overlaps the next character (all four fonts, normal/vert/vrt2).
   The candidate with text-orientation: mixed gives 2/3 em and avoids
   this overlap, with a different orientation. iOS Safari is untested.
-  CoreText,
-  DirectWrite, HarfBuzz, Edge and WebKitGTK do not regress in the checks.
+  CoreText, DirectWrite, HarfBuzz, Edge and WebKitGTK do not regress
+  in the checks.
   For this adjustment, only the `curs` XAdvance values change: glyph
   outlines, cmap, hmtx, vmtx and other OpenType features are unchanged.
 - The optional ss03 (Ruby kana, trial) now covers all 194 kana instead of
@@ -63,8 +63,10 @@ ChangeLog
   (density difference 295.1) and 431 mono pixels; ink ratios are
   0.882–1.148 and 0.846–1.267 respectively. Points move only vertically,
   by at most 54/64 px; inspected images at 8–10 and 64 ppem show no broken
-  shapes. The earlier measurement with 924 hinted glyphs (FreeType v40,
-  8 to 10 ppem, four fonts)
+  shapes. With all 940 glyphs hinted, the boundary blur total is
+  25768.3 unhinted and 23410.1 hinted (FreeType v40, 8–10 ppem, four
+  fonts), with the same 27 glyphs increasing as in the earlier measurement.
+  In that earlier measurement with 924 hinted glyphs, hinting
   increases the blur at the edges (pixels of intermediate density) of 27 of
   the 235 glyphs, by at most 4.4%, and reduces it in total by 9%; the
   hinting was kept on all of them (the earlier three, ッ in horizontal and
@@ -78,8 +80,8 @@ ChangeLog
   (xAvgCharWidth, by 1) and the checksum of head change; every other glyph
   and table, and the HarfBuzz result of every character without ss03, are
   identical. The TrueType files grow by 34 to 80 KB each (Mincho Regular
-  6264152 to 6323652 bytes, Mincho Bold 7220352 to 7300556, Gothic Regular
-  4761220 to 4795796, Gothic Bold 4731840 to 4766124). Checked with
+  6264152 to 6323784 bytes, Mincho Bold 7220352 to 7300632, Gothic Regular
+  4761220 to 4795976, Gothic Bold 4731840 to 4766216). Checked with
   FreeType and HarfBuzz, and with the supplementary CI: CoreText (macOS 15)
   and DirectWrite (Windows 2025) apply ss03 to all 194 kana, in horizontal
   and vertical text; not checked with Safari, Edge or a real Windows or
