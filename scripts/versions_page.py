@@ -147,7 +147,11 @@ ORDER = [BASE] + [version for version, *_ in VERSIONS]
 
 
 def tag_of(version: str) -> str:
-    return f"v{version[0]}.{version[2]}.{int(version[3:])}" if len(version) == 5 else version
+    """版 X.YYZ のタグは vX.Y.Z (1.009 は v1.0.9、1.010 は v1.1.0。AGENTS.md のリリースの手順 5)"""
+    if len(version) != 5:
+        return version
+    major, rest = version.split(".")
+    return f"v{int(major)}.{int(rest[:2])}.{rest[2]}"
 
 
 def source_path(version: str, family: dict, weight: str) -> Path:
