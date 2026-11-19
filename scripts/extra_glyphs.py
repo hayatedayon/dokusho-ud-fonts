@@ -5,6 +5,7 @@
 - 空白 (U+2000〜200A・U+202F・U+205F): 決まった幅の空の字。幅は Unicode の決まりに従う (数字の幅の
   空白 U+2007 は 0 の幅、句読点の幅の空白 U+2008 は . の幅)
 - 改行しないハイフン (U+2011): - と同じ字
+- 二重括弧 (U+2985・U+2986): ｟ ｠ (U+FF5F・U+FF60) と同じ字
 - 2 倍・3 倍ダッシュ (⸺ U+2E3A・⸻ U+2E3B): ― (U+2015) を 2 つ・3 つつないだ字。縦組では、縦組の ―
   をつないだ字にする (vert・vrt2)。部品を並べた字 (複合グリフ) にする (横組の ― はヒンティングを外した字)
 - 〞 (U+301E): 〝 (U+301D) を全角の枠の中心で左右反転した字 (Noto Serif CJK JP などと同じ向き)。縦方向の
@@ -25,6 +26,8 @@ from fontTools.ttLib import TTFont
 from fontTools.ttLib.tables import otTables
 from fontTools.ttLib.tables._c_m_a_p import CmapSubtable
 from fontTools.ttLib.tables._g_l_y_f import Glyph, GlyphComponent, GlyphCoordinates
+
+import spec
 
 INVISIBLE = {0x200B: "uni200B", 0x200C: "uni200C", 0x200D: "uni200D", 0x2060: "uni2060", 0xFEFF: "uniFEFF"}
 
@@ -87,6 +90,19 @@ def _map(font: TTFont, codes, name: str) -> None:
         for table in font["cmap"].tables:
             if table.isUnicode() and table.format != 14 and (code <= 0xFFFF or table.format in (12, 13)):
                 table.cmap[code] = name
+
+
+def alias_white_parentheses(font: TTFont) -> None:
+    """二重括弧の割り当てを、全角の二重括弧が入っている表に加える。"""
+    for table in font["cmap"].tables:
+        if table.format == 14:
+            continue
+        for code, fullwidth in spec.WHITE_PARENTHESIS_ALIASES.items():
+            if fullwidth in table.cmap:
+                name = table.cmap[fullwidth]
+                # 同じサブテーブルのデータを指す cmap のレコードがある。
+                if table.cmap.setdefault(code, name) != name:
+                    raise SystemExit(f"U+{code:04X} is already mapped to a different glyph")
 
 
 def _contours(font: TTFont, name: str):

@@ -24,6 +24,7 @@
    結合用の記号の mark・mkmk と GDEF も、ここで一緒に組み込み、その後に i の ccmp を足す)
 10. 欧字の kern、任意の和文引用符・欧文記号 (ss01・ss02)、小さい数字の縦方向のヒントと
     任意のルビ仮名の試作 (ss03) を足す (kerning.py・reading_styles.py・small_type.py)
+11. 二重括弧 ⦅ ⦆ を全角の二重括弧 ｟ ｠ のグリフに割り当てる (extra_glyphs.py)
 
 BIZ UD と BIZ UDP は、ヒンティングの cvt と prep が違う。BIZ UDP から持ってきた字の命令は、
 いったん外し (BIZ UD の cvt では正しく働かない)、hinting.py が cvt と prep を付け足してから、
@@ -475,6 +476,9 @@ def build(family: dict, weight: str) -> Path:
     # 元の署名は、変えたフォントでは合わない
     if "DSIG" in ud:
         del ud["DSIG"]
+
+    # 文字の範囲を使って機能を組み立てた後で、既存のグリフに割り当てる。
+    extra_glyphs.alias_white_parentheses(ud)
 
     # 同じ元からは同じファイルを作る。作った日時は SOURCE_DATE_EPOCH (無ければ BIZ UD のもの)
     ud.recalcTimestamp = False

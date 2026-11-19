@@ -31,6 +31,7 @@ STEPS = [
     charset.check_japanese_kept,
     latin.check_latin_substitutions,
     vertical.check_vertical_tables,
+    vertical.check_white_parentheses,
     names.check_name_table,
     latin.check_latin_symbols,
     hinting.check_hinting,

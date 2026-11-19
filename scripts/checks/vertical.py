@@ -21,6 +21,26 @@ def check_vertical_tables(ctx: FontContext) -> None:
     check("vhea" in font and "vmtx" in font, f"{label}: vertical metrics are missing")
 
 
+def check_white_parentheses(ctx: FontContext) -> None:
+    """二重括弧を横・縦に組み、全角の二重括弧と同じ字形・送り・位置になること。"""
+    font, cmap = ctx.font, ctx.cmap
+    horizontal = tuple(cmap.get(code) for code in spec.WHITE_PARENTHESIS_ALIASES.values())
+    if not all(horizontal):
+        check(False, f"{ctx.label}: fullwidth white parentheses are missing")
+        return
+
+    for vertical, tag, features in ((False, None, ()), (True, "vert", ()), (True, "vrt2", ("vert=0", "vrt2"))):
+        forms = gsub_mapping(font, tag) if tag else {}
+        expected_names = tuple(forms.get(name, name) for name in horizontal)
+        check(not vertical or all(a != b for a, b in zip(expected_names, horizontal)),
+              f"{ctx.label}: {tag} lacks vertical forms for white parentheses")
+        expected_ids = [font.getGlyphID(name) for name in expected_names]
+        fullwidth = ctx.run("｟あ｠", features, vertical)
+        aliases = ctx.run("⦅あ⦆", features, vertical)
+        check(len(fullwidth) == 3 and fullwidth == aliases and [g[0] for g in fullwidth[::2]] == expected_ids,
+              f"{ctx.label}: white parentheses shape differently ({tag or 'horizontal'})")
+
+
 def check_proportional_vertical(ctx: FontContext) -> None:
     """vpal で、仮名・約物・全角の字 (ccmp の半濁点の合字も) の縦組の字が BIZ UDP と同じ縦の位置
     (縦組の原点からのインクの中心が 1 単位まで) と縦の字送りになり、付けるべき字に漏れが無いこと。漢字や結合用の記号には付かないこと"""

@@ -20,16 +20,25 @@ def check_cmap(ctx: FontContext) -> None:
     ud = ctx.ud
     cmap = ctx.cmap
     cmap_ud = ctx.cmap_ud
-    # 文字の割り当ては BIZ UD のまま。作った数字・空白・記号と、新しい和文３字だけを加える。変えるのは、
+    # 文字の割り当ては BIZ UD のまま。作った数字・空白・記号、和文３字、二重括弧を加える。変えるのは、
     # ほかの文字と字を分け合っていた結合用の記号 (˜ U+02DC と同じ字の U+0303) だけ
     added = {code: cmap[code] for code in cmap.keys() - cmap_ud.keys()}
     remapped = {code for code in cmap_ud if cmap.get(code) != cmap_ud[code]}
     shared_marks = {code for code in combining_codes(cmap_ud)
                     if any(c != code and g == cmap_ud[code] for c, g in cmap_ud.items())}
-    check(remapped <= shared_marks and set(added) == set(NEW_SUPERSCRIPTS) | set(EXTRA_CODES) | {0x301E, 0x20BB7, 0x3031, 0x3032},
-          f"{label}: the character map differs from BIZ UD by more than the superscripts and subscripts")
+    aliases = spec.WHITE_PARENTHESIS_ALIASES
+    expected = set(NEW_SUPERSCRIPTS) | set(EXTRA_CODES) | {0x301E, 0x20BB7, 0x3031, 0x3032} | aliases.keys()
+    check(remapped <= shared_marks and set(added) == expected, f"{label}: unexpected cmap changes from BIZ UD")
+    for table in font["cmap"].tables:
+        for code, fullwidth in aliases.items():
+            check(table.cmap.get(code) == table.cmap.get(fullwidth),
+                  f"{label}: U+{code:04X} differs from U+{fullwidth:04X} in cmap "
+                  f"({table.platformID}, {table.platEncID}, format {table.format})")
     # BIZ UD のグリフの後に、欧文の中の記号 (BIZ UDP の字) だけが足してあること
     order, order_ud = font.getGlyphOrder(), ud.getGlyphOrder()
+    # post は形式 3。fontTools が小さい方のコードから組み立てる名前を、元のグリフの位置に対応させる。
+    renamed = {cmap_ud[fullwidth]: cmap.get(fullwidth) for fullwidth in aliases.values()}
+    order_ud = [renamed.get(name, name) for name in order_ud]
     check(order[: len(order_ud)] == order_ud, f"{label}: the glyph order of BIZ UD is not kept")
     # と、hwid の置き換え先として残した BIZ UD の半角の字
     extra = set(order[len(order_ud):])
