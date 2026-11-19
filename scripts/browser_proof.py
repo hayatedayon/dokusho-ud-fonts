@@ -33,6 +33,9 @@ ORIENTATIONS = ("mixed", "upright", "sideways")
 FEATURES = ("normal", '"vert" 1', '"vrt2" 1')
 WRITING_MODES = ("vertical-rl", "vertical-lr")
 SYMBOLS = "‘’“”—−¼½¾⅓⅔⅕°‼⁇⁈⁉"  # ALWAYS_UDP。native_proof の always-udp の確認文と同じ
+# ⦅ ⦆ (U+2985・U+2986。縦の向き R) と ｟ ｠ (U+FF5F・U+FF60。縦の向き Tr) の比較 (測るだけ。合否にしない)。
+# 組: (⦅ ⦆ の字, 比べる ｟ ｠ の字)。縦組は text-orientation の mixed (既定)・upright の両方
+WHITE_PARENS = (("⦅", "｟"), ("⦆", "｠"))
 KERN_TEXT = "T. V, W. Y, P. F, r. y, v. w,"
 SIZE = 64  # px。小さいと字の送りの丸めが目立つので大きく測る
 
@@ -47,6 +50,13 @@ body { margin: 8px; font: 14px sans-serif; background: #fff; color: #000; }
 .cell { display: flex; flex-direction: column; align-items: flex-start; width: 92px; margin: 2px; border: 1px solid #ccc; }
 .cell small { width: 90px; white-space: normal; word-break: break-all; }
 #vgrid { display: flex; flex-wrap: wrap; }
+#parens { display: none; }
+body.parens #parens { display: block; }
+body.parens #info, body.parens #vgrid, body.parens .row { display: none; }
+#parens .group { display: flex; flex-wrap: wrap; gap: 8px; align-items: flex-start; margin: 4px 0; }
+#parens .item { border: 1px solid #ccc; padding: 2px; }
+#parens .item div { font-size: 28px; line-height: 1.5; white-space: nowrap; }
+#parens .item .v { height: 8em; }
 .h { font-size: %(size)spx; white-space: nowrap; line-height: 1.5; }
 .hidden { position: absolute; left: 0; top: 0; visibility: hidden; }
 .vp { writing-mode: vertical-rl; display: inline-block; font-size: 28px; line-height: 1.5; white-space: nowrap; }
@@ -56,6 +66,7 @@ small { display: block; font: 11px monospace; }
 <div id="info"></div>
 <div id="stage"></div>
 <div id="vgrid"></div>
+<div id="parens"></div>
 <script>
 const CONFIG = %(config)s;
 %(script)s
@@ -93,6 +104,8 @@ function inkBox(family, ch, fallback) {
   const m = g.measureText(ch);
   return [m.actualBoundingBoxLeft, m.actualBoundingBoxRight, m.actualBoundingBoxAscent, m.actualBoundingBoxDescent];
 }
+function applyHash() { document.body.classList.toggle('parens', location.hash === '#parens'); }
+window.addEventListener('hashchange', applyHash); applyHash();
 async function run() {
   const stage = document.getElementById('stage');
   const result = {userAgent: navigator.userAgent, platform: navigator.platform, dpr: devicePixelRatio, size: SIZE, fonts: {}};
@@ -124,6 +137,26 @@ async function run() {
       probe.style.cssText = `font-family: "${fam}", serif; ${style}`;
       probe.textContent = 'あ' + ch + 'い'; stage.appendChild(probe);
       out.vertical.push({writingMode, orientation, feature, char: ch, rects: rects(node), extent: probe.getBoundingClientRect().height});
+    }
+    // ⦅ ⦆ と ｟ ｠ (測るだけ): 横組と、縦組の mixed・upright。「あ + 括弧 + い」の長さ (括弧の送り) と、括弧の字の箱の大きさを測る。
+    // 描かれた向きは getImageData が使えない環境があるので、画面の見本 (#parens の画像) で見る
+    out.whiteParens = [];
+    const holder = document.createElement('div'); holder.className = 'group'; holder.appendChild(Object.assign(document.createElement('small'), {textContent: font.name}));
+    document.getElementById('parens').appendChild(holder);
+    for (const [writingMode, orientation] of [['horizontal-tb', 'mixed'], ['vertical-rl', 'mixed'], ['vertical-rl', 'upright']]) for (const [white, plain] of CONFIG.whiteParens) for (const ch of [plain, white]) {
+      const style = `writing-mode: ${writingMode}; text-orientation: ${orientation}`;
+      const probe = document.createElement('div'); probe.className = 'vp hidden'; probe.lang = 'ja';
+      probe.style.cssText = `font-family: "${fam}", serif; ${style}`;
+      probe.textContent = 'あ' + ch + 'い'; stage.appendChild(probe);
+      const box = probe.getBoundingClientRect();
+      out.whiteParens.push({writingMode, orientation, char: ch, extent: writingMode === 'horizontal-tb' ? box.width : box.height, cross: writingMode === 'horizontal-tb' ? box.height : box.width, rect: rects(probe.firstChild)[1]});
+      if (visible) {
+        const item = document.createElement('div'); item.className = 'item';
+        const el = document.createElement('div'); el.lang = 'ja'; el.className = writingMode === 'horizontal-tb' ? '' : 'v';
+        el.style.cssText = `font-family: "${fam}", serif; ${style}`; el.textContent = 'あ' + ch + 'い';
+        const label = document.createElement('small'); label.textContent = `${writingMode === 'horizontal-tb' ? 'horizontal' : orientation} U+${ch.codePointAt(0).toString(16).toUpperCase()}`;
+        item.appendChild(el); item.appendChild(label); holder.appendChild(item);
+      }
     }
     // 追加字 𠮷: 自分の字形が出ているか (𠮷 を持たない面 = 代わりのフォントの輪郭の範囲との違い)
     const probe = CONFIG.fonts[index].noGlyphFamily;
@@ -164,7 +197,7 @@ def build_site(fonts: Path, site: Path, visible: str = "DokushoUDMincho-Regular"
         entries.append({"name": path.stem, "family": family, "noGlyphFamily": empty})
     config = {"fonts": entries, "visibleIndex": next(i for i, e in enumerate(entries) if e["name"] == visible),
               "cells": CELLS, "symbols": SYMBOLS, "kernText": KERN_TEXT, "size": SIZE,
-              "writingModes": WRITING_MODES, "orientations": ORIENTATIONS, "features": FEATURES}
+              "whiteParens": WHITE_PARENS, "writingModes": WRITING_MODES, "orientations": ORIENTATIONS, "features": FEATURES}
     (site / "index.html").write_text(PAGE % {"faces": "\n".join(faces), "size": SIZE,
                                              "config": json.dumps(config, ensure_ascii=False), "script": SCRIPT}, encoding="utf-8")
     return config
@@ -270,6 +303,12 @@ def drive(browser: str, url: str, output: Path) -> dict:
         shot = client.call("GET", client.s("/screenshot"))
         import base64
         (output / "screenshot.png").write_bytes(base64.b64decode(shot))
+        try:  # ⦅ ⦆ と ｟ ｠ の見本だけを見せて撮る (測るだけ。撮れなくても他の結果は残す)
+            client.call("POST", client.s("/url"), {"url": url + "#parens"})
+            time.sleep(1)
+            (output / "screenshot-white-parens.png").write_bytes(base64.b64decode(client.call("GET", client.s("/screenshot"))))
+        except Exception as error:
+            print(f"white parens screenshot failed: {error}")
         result["webdriver"] = info
         return result
     finally:
@@ -325,6 +364,34 @@ def check_result(result: dict, expected: dict) -> list[str]:
                     problems.append(f"{name} {item.get('writingMode', 'vertical-rl')} ({item['orientation']}, {item['feature']}) U+{ord(char):04X}: "
                                     f"あ+字+い is {length:.3f} em long, expected {CELLS[char] + 2} em")
     return problems
+
+
+def white_parens(result: dict) -> dict:
+    """⦅ ⦆ と ｟ ｠ の比較 (測るだけ)。書体・組み方ごとに、あ+字+い の長さ (括弧の送り + 2 em を引いた値) と、
+    ⦅ が ｟ と、⦆ が ｠ と同じ送り・同じ箱の大きさか。縦組の mixed で違えば、ブラウザが ⦅ ⦆ を寝かせて描いている可能性がある (推測。画像で確かめる)"""
+    if "error" in result:
+        return {}
+    size, out = result["size"], {}
+    for name, data in result["fonts"].items():
+        unit = 28  # 見本は 28px
+        rows = {}
+        for item in data.get("whiteParens", []):
+            key = (item["writingMode"], item["orientation"], item["char"])
+            rows[key] = item
+        report = []
+        for mode, orientation in (("horizontal-tb", "mixed"), ("vertical-rl", "mixed"), ("vertical-rl", "upright")):
+            for white, plain in WHITE_PARENS:
+                a, b = rows.get((mode, orientation, plain)), rows.get((mode, orientation, white))
+                if not a or not b:
+                    continue
+                advance_a, advance_b = a["extent"] / unit - 2, b["extent"] / unit - 2
+                report.append({"layout": "horizontal" if mode == "horizontal-tb" else f"{mode} {orientation}",
+                               "plain": f"U+{ord(plain):04X}", "white": f"U+{ord(white):04X}",
+                               "advanceEm": {"plain": round(advance_a, 3), "white": round(advance_b, 3)},
+                               "crossEm": {"plain": round(a["cross"] / unit, 3), "white": round(b["cross"] / unit, 3)},
+                               "sameAdvance": abs(advance_a - advance_b) <= .03, "sameCross": abs(a["cross"] - b["cross"]) <= .5})
+        out[name] = report
+    return out
 
 
 def summary(result: dict) -> dict:
@@ -422,9 +489,15 @@ def main() -> int:
     problems = check_result(result, expected)
     (args.output / "result.json").write_text(json.dumps(result, indent=1, ensure_ascii=False), encoding="utf-8")
     (args.output / "summary.json").write_text(json.dumps({"webdriver": result.get("webdriver"), "userAgent": result.get("userAgent"),
-                                                          "problems": problems, "measured": None if "error" in result else summary(result)},
+                                                          "problems": problems, "measured": None if "error" in result else summary(result),
+                                                          "whiteParens (advisory)": white_parens(result)},
                                                          indent=1, ensure_ascii=False), encoding="utf-8")
     print(json.dumps({"webdriver": result.get("webdriver"), "userAgent": result.get("userAgent")}, ensure_ascii=False))
+    for name, rows in white_parens(result).items():
+        for row in rows:
+            flag = "" if row["sameAdvance"] and row["sameCross"] else "  <-- differs"
+            print(f"INFO white-parens {name} {row['layout']} {row['white']} vs {row['plain']}: advance {row['advanceEm']['white']} vs {row['advanceEm']['plain']} em, "
+                  f"cross {row['crossEm']['white']} vs {row['crossEm']['plain']} em{flag}")
     for line in problems:
         print(f"::error::{line}" if os.environ.get("GITHUB_ACTIONS") else f"FAIL {line}")
     print(f"{len(problems)} browser check(s) failed" if problems else f"ok: {args.browser}: browser checks")

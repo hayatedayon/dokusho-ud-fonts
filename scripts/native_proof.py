@@ -31,6 +31,10 @@ CASES += [(name + "-v", lang, True, kern, locl, ss03, text) for name, lang, _, k
 # 縦組の 2 セル・3 セルの字 (〱 〲 ⸺ ⸻)。字 → セルの数。前後に 1 セルずつの仮名を置き、送りの合計を見る
 VERTICAL_CELLS = {0x3031: 2, 0x3032: 2, 0x2E3A: 2, 0x2E3B: 3}
 CASES += [(f"cell-{code:04x}", "ja", True, -1, -1, -1, f"あ{chr(code)}い") for code in VERTICAL_CELLS]
+# ⦅ ⦆ (U+2985・U+2986) と ｟ ｠ (U+FF5F・U+FF60) を同じ並びで組み、同じに出るかを比べる (測るだけ。合否にしない)。
+# Unicode の縦の向きは ⦅ ⦆ が R、｟ ｠ が Tr で違うので、環境が違う字形を選ぶことがある (フォントの不具合とは限らない)
+WHITE_PARENS = "｟あ｠⦅あ⦆"
+CASES += [("paren-h", "ja", False, -1, -1, -1, WHITE_PARENS), ("paren-v", "ja", True, -1, -1, -1, WHITE_PARENS)]
 # ss03 (ルビ仮名の試作) を指定して、対象の 194 字を横組・縦組で組む。ss03 を指定しない同じ文字列は、通常の字形の対照
 KANA = "".join(chr(c) for start, stop in ((0x3041, 0x3097), (0x30A0, 0x30FC), (0x31F0, 0x3200)) for c in range(start, stop))
 CASES += [("ss03", "ja", False, -1, -1, 1, KANA), ("ss03-v", "ja", True, -1, -1, 1, KANA),
@@ -92,7 +96,17 @@ def expectations(font) -> dict:
         names = [mapping.get(cmap[ord(c)], cmap[ord(c)]) for c in KANA]
         return [gid(ss03.get(n, n)) for n in names]
 
+    # ⦅ ⦆ と ｟ ｠ の期待値: 横組は cmap の字形と送り、縦組は CoreText = vrt2、DirectWrite = vert の置き換え後の字形 ID (先頭)
+    parens = {}
+    for char in "｟｠⦅⦆":
+        if ord(char) not in cmap:  # ⦅ ⦆ は 1.011 から。公開済みの古い版には無い
+            continue
+        parens[char] = {"horizontal": [gid(cmap[ord(char)]), font["hmtx"][cmap[ord(char)]][0] * 24 / em],
+                        "vertical": {"coretext": sequence(vrt2, vrt2_multiple, char)[0],
+                                     "directwrite": sequence(vert, vert_multiple, char)[0]}}
+
     return {
+        "whiteParens": parens,
         "horizontal": {char: horizontal(char) for case in CASES if case[0] in ("ja", "always-udp") for char in case[-1]},
         "kernTotals": {"on": kern_total(font, pairs, kern_text, True), "off": kern_total(font, pairs, kern_text, False)},
         "pairWidths": {name: kern_total(font, pairs, text, True) for name, _, _, _, _, _, text in CASES if name.startswith("pair-")},
@@ -219,6 +233,8 @@ def check_expectations(output: Path, engine: str) -> list[str]:
         # DirectWrite は GetFilePathFromKey が大文字のファイル名を返すことがある (別のフォントではない)
         own = {font.casefold(), data["file"].casefold()}
         for case in manifest["cases"]:
+            if case.startswith("paren-"):
+                continue  # 測るだけ。white_parens が記録する
             text = next(c[-1] for c in CASES if c[0] == case)
             result = record(font, case)
             flat = flatten(result)
@@ -280,6 +296,49 @@ def check_expectations(output: Path, engine: str) -> list[str]:
     return problems
 
 
+def white_parens(output: Path, engine: str) -> list[str]:
+    """⦅ ⦆ と ｟ ｠ を同じ並びで組んだ結果 (paren-h・paren-v) を比べて white-parens-<engine>.json に残し、行を返す。
+    合否にしない (測るだけ)。見るもの: 字形 ID・送り (px)・代わりのフォントになっていないか、⦅ が ｟ と、⦆ が ｠ と同じか、
+    フォントから求めた期待の字形 (横組は cmap、縦組は vrt2・vert の置き換え後) と合うか。縦組の送りは、CoreText は高さ、DirectWrite はそのまま"""
+    manifest = json.loads((output / "manifest.json").read_text(encoding="utf-8"))
+    out, lines = {}, []
+    for font, data in manifest["fonts"].items():
+        expected = data["expected"]["whiteParens"]
+        out[font] = {}
+        for case, vertical in (("paren-h", False), ("paren-v", True)):
+            result = json.loads((output / engine / font / f"{case}.json").read_text(encoding="utf-8"))
+            items = []
+            for run in result["runs"]:
+                for glyph, advance in zip(run["glyphs"], run["advances"]):
+                    if isinstance(advance, list):
+                        advance = abs(advance[1] if vertical else advance[0])
+                    items.append({"glyph": glyph, "advance": round(advance, 3), "font": run["font"]})
+            entry = {"text": WHITE_PARENS, "items": items}
+            if len(items) != len(WHITE_PARENS):
+                entry["note"] = f"{len(items)} glyphs for {len(WHITE_PARENS)} characters; not compared"
+                lines.append(f"{engine} {font} {case}: {entry['note']}")
+                out[font][case] = entry
+                continue
+            pairs = {}
+            for plain, white, index in (("｟", "⦅", 3), ("｠", "⦆", 5)):
+                a, b = items[WHITE_PARENS.index(plain)], items[index]
+                want = None  # フォントに無い字 (古い版の ⦅ ⦆) は期待の字形なし。字形 0 (.notdef) か代わりのフォントで現れる
+                if white in expected:
+                    want = expected[white]["vertical"][engine] if vertical else expected[white]["horizontal"][0]
+                pairs[f"{white} vs {plain}"] = {
+                    "sameGlyph": a["glyph"] == b["glyph"], "sameAdvance": abs(a["advance"] - b["advance"]) <= .02,
+                    "glyphs": [a["glyph"], b["glyph"]], "advances": [a["advance"], b["advance"]],
+                    "expectedGlyph": want, "whiteMatchesExpected": b["glyph"] == want,
+                    "fellBack": [a["font"], b["font"]] if a["font"] != b["font"] or b["glyph"] == 0 else None}
+                lines.append(f"{engine} {font} {case} U+{ord(white):04X} vs U+{ord(plain):04X}: glyph {b['glyph']} vs {a['glyph']}, "
+                             f"advance {b['advance']:g}px vs {a['advance']:g}px, expected glyph {want}"
+                             + ("" if pairs[f"{white} vs {plain}"]["sameGlyph"] and pairs[f"{white} vs {plain}"]["sameAdvance"] else "  <-- differs"))
+            entry["pairs"] = pairs
+            out[font][case] = entry
+    (output / f"white-parens-{engine}.json").write_text(json.dumps({"engine": engine, "advisory": True, "results": out}, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+    return lines
+
+
 def report(output: Path, engine: str, problems: list[str]):
     """検査の結果を JSON に残し、外れた項目を全部出す。すべて合格なら True (失敗の扱いは呼び出し側)"""
     (output / f"checks-{engine}.json").write_text(json.dumps({"engine": engine, "problems": problems}, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
@@ -318,6 +377,7 @@ def main():
     args = parser.parse_args()
     if args.validate:
         validate(args.output, args.validate)
+        print("\n".join("INFO white-parens " + line for line in white_parens(args.output, args.validate)))
         return 0 if report(args.output, args.validate, check_vertical_cells(args.output, args.validate)
                            + check_expectations(args.output, args.validate)) else 1
     fonts = prepare(args.output, args.fonts)
@@ -335,6 +395,7 @@ def main():
                         str(target.resolve()), family, "Bold" if "Bold" in font.stem else "Regular"], check=True)
     validate(args.output, engine)
     gallery(args.output, engine)
+    print("\n".join("INFO white-parens " + line for line in white_parens(args.output, engine)))
     return 0 if report(args.output, engine, check_vertical_cells(args.output, engine)
                        + check_expectations(args.output, engine)) else 1
 
