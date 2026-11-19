@@ -131,6 +131,14 @@ VERSIONS = [
                "見本は明朝・ゴシックの Regular から選び、1.010 の試作字形を FreeType (v40) でヒントなし・ありの順に並べています。",
                features=["ss03"], compare_hinting=True),
     ]),
+    ("1.011", "2026-11-19", "二重括弧 ⦅ ⦆ を足す", [
+        Demo("二重括弧 ⦅ ⦆", "⦅読書⦆と｟読書｠",
+             "⦅ ⦆（U+2985・U+2986）を、全角の二重括弧 ｟ ｠ と同じ字形で足しました。1.010 では、⦅ ⦆ はほかのフォントで描かれます。"),
+        Demo("縦組の ⦅ ⦆", "⦅読書⦆と｟読書｠",
+             "縦組でも ｟ ｠ と同じ縦の字形になります（text-orientation: mixed）。"
+             "Safari の upright で ⦅ ⦆ だけが横の形のまま描かれるのは既知の制限です。",
+             vertical=True, markup='<span class="vtext">⦅読書⦆と｟読書｠</span>', browser_only=True),
+    ]),
 ]
 
 SAMPLES = [

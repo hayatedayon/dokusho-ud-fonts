@@ -22,7 +22,7 @@ with their substitutions, from BIZ UDP of the same design.
 ChangeLog
 ---------
 
-Next release (unreleased)
+2026-11-19 (hayatedayon) Dokusho UD 1.011
 - Add white parentheses ⦅ ⦆ (U+2985 and U+2986) by mapping them to the
   existing fullwidth glyphs for ｟ ｠ (U+FF5F and U+FF60). They share
   the same advances, hinting and OpenType vertical forms.
