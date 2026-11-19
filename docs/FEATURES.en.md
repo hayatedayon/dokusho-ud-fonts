@@ -37,6 +37,8 @@ In Safari 27.2 on macOS 15.8.2, `writing-mode: vertical-rl` or `vertical-lr` wit
 
 In 1.010, `text-orientation: mixed` gives these two characters advances of 2 em and 3 em and avoids overlap with the next character in the same measured environment. It also changes their orientation, so choose it to suit the text. iOS Safari is untested.
 
+The white parentheses `⦅ ⦆` (U+2985 and U+2986) added in the next release have the same vertical forms as `｟ ｠` (U+FF5F and U+FF60), and the font provides them. However, the Unicode Vertical_Orientation property differs: R (kept sideways) for `⦅ ⦆` and Tr (use the vertical form when available) for `｟ ｠`. Some engines therefore draw them differently (supplementary CI run 44623794218). In Safari 27.2 with `text-orientation: upright`, only `⦅ ⦆` are drawn in the horizontal shape (horizontal text and mixed are the same). In vertical text, DirectWrite (Windows) does not use the vertical forms for `⦅ ⦆` and draws the horizontal glyphs rotated by 90 degrees; they look almost the same, with slightly less space next to the neighbouring characters. CoreText and Edge match `｟ ｠` in horizontal and vertical text. The font cannot fix this. For vertical body text, use `｟ ｠`, which gives the same vertical forms in every environment.
+
 ## Examples by use
 
 These CSS examples show how to enable OpenType features. Install the font and set its family on your page. Feature support varies by application.
