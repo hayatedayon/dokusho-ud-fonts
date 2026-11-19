@@ -22,6 +22,11 @@ with their substitutions, from BIZ UDP of the same design.
 ChangeLog
 ---------
 
+Next release (unreleased)
+- Add white parentheses ⦅ ⦆ (U+2985 and U+2986) by mapping them to the
+  existing fullwidth glyphs for ｟ ｠ (U+FF5F and U+FF60). They share
+  the same advances, hinting and OpenType vertical forms.
+
 2026-11-18 (hayatedayon) Dokusho UD 1.010
 - Add GPOS `curs` XAdvance values to the first-stage vertical forms of 〱 〲
   ⸺ ⸻: one em for the two-cell forms and two em for the three-cell form.
