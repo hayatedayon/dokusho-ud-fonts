@@ -24,7 +24,7 @@
 
 [最新のリリース](https://github.com/hayatedayon/dokusho-ud-fonts/releases/latest)から、TTF または WOFF2 をダウンロードしてください。
 
-実際の文章で見比べるには、[文章の見本](https://hayatedayon.github.io/dokusho-ud-fonts/)と[版ごとの変化](https://hayatedayon.github.io/dokusho-ud-fonts/versions.html)をご覧ください。
+紹介のページは [GitHub Pages](https://hayatedayon.github.io/dokusho-ud-fonts/) にあります。実際の文章で見比べるには、[文章の見本](https://hayatedayon.github.io/dokusho-ud-fonts/specimen.html)と[版ごとの変化](https://hayatedayon.github.io/dokusho-ud-fonts/versions.html)をご覧ください。
 
 ## SBOM と証明
 

@@ -49,7 +49,7 @@ CI も見本を生成し、比較に必要なフォントと一緒に `DokushoUD
 
 ## GitHub Pages
 
-`.github/workflows/pages.yml` は最新のリリースのフォントから文章の見本と版の比較を作り、公開します。リリースを公開すると `release.yml` が最後にこのワークフローを起動し、手動でも実行できます。版の比較に載せる版は `scripts/versions_page.py` の `VERSIONS` に書きます。ページをまとめる処理は `scripts/pages_site.py` です。
+`.github/workflows/pages.yml` は最新のリリースのフォントから、トップの紹介のページ、文章の見本（`specimen.html`）、版の比較を作り、公開します。リリースを公開すると `release.yml` が最後にこのワークフローを起動し、手動でも実行できます。版の比較に載せる版は `scripts/versions_page.py` の `VERSIONS` に書きます。ページをまとめる処理は `scripts/pages_site.py` で、トップは `scripts/landing_page.py` が作ります。トップは、ページで使う字だけの WOFF2 のサブセットを `_site/landing/` にビルドのときに作って読み込み（フォント全体は読み込みません）、外部の資源は使いません。版の番号は `spec.py` の `VERSION`、使い方の CSS は README から取ります。手元では `specimen_page.py`、`versions_page.py`、`pages_site.py` の順に実行して `_site/` を作り、`python3 -m http.server --bind 127.0.0.1` で開きます。
 
 ## 追加字・行送り・実環境の比較
 

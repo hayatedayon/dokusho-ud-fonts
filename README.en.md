@@ -24,7 +24,7 @@ Fonts for reading books. They are Morisawa's [BIZ UDMincho](https://github.com/g
 
 Download the TTF or WOFF2 files from the [latest release](https://github.com/hayatedayon/dokusho-ud-fonts/releases/latest).
 
-See the [text specimen](https://hayatedayon.github.io/dokusho-ud-fonts/) and the [changes by version](https://hayatedayon.github.io/dokusho-ud-fonts/versions.html) to compare them in real text (Japanese pages).
+The [introduction page](https://hayatedayon.github.io/dokusho-ud-fonts/) is on GitHub Pages. See the [text specimen](https://hayatedayon.github.io/dokusho-ud-fonts/specimen.html) and the [changes by version](https://hayatedayon.github.io/dokusho-ud-fonts/versions.html) to compare them in real text (Japanese pages).
 
 ## SBOM and attestations
 
