@@ -35,6 +35,7 @@ STEPS = [
     names.check_name_table,
     latin.check_latin_symbols,
     hinting.check_hinting,
+    hinting.check_diagonal_hints,
     spacing.check_spacing,
     digits.check_fractions,
     additions.check_extra,
