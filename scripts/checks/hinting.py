@@ -1,13 +1,18 @@
 """ヒンティング。FreeType でヒンティングを動かして描き、画素を元のフォントと比べる。"""
 
+import tempfile
+from pathlib import Path
+
 from fontTools.ttLib import TTFont
 
+import diagonal_hints
 import freetype_render
+import hinting as hinting_tools
 import spec
 
 from .charset import JAPANESE
 from .common import FONTS, FontContext, SOURCES, check
-from .fonttables import gsub_mapping, latin_codes, latin_symbol_mapping, latin_targets
+from .fonttables import gsub_mapping, latin_codes, latin_symbol_mapping, latin_targets, outline
 
 
 HINTING_PPEMS = range(8, 25)
@@ -36,6 +41,14 @@ def check_hinting(ctx: FontContext) -> None:
     half_widths = {half: ud_hwid.get(key, key) for key, half in gsub_mapping(font, "hwid").items()
                    if half not in order_ud and key in order_ud}
     check(half_widths, f"{label}: no half widths for hwid to draw")
+    # 斜線を書き直した字 (spec.DIAGONAL_GLYPHS) は、BIZ UD・BIZ UDP の命令に決まった末尾を足したもので、画素が元と違う。
+    # 元と同じ画素の比較から外す代わりに、末尾を外した字 (元の命令だけ) を元と比べる。足した末尾が何を変えるかは
+    # check_diagonal_hints が縛る (命令の形・横線のそろい・x が動かないこと・斜線の縦の幅)
+    listed = diagonal_listed(ctx)
+    stripped_dir = tempfile.TemporaryDirectory()
+    paths["stripped"] = Path(stripped_dir.name) / label
+    write_stripped(ctx, paths["stripped"], listed)
+    order = font.getGlyphOrder()
     plain_gray = freetype_render.Renderer(paths["ours"], freetype_render.MODES[0][1], freetype_render.NO_HINTING)
     # 字全体が消えうるのは、インクの幅か高さが細い字だけ (漢字などは、線が 1 本消えても字は残る)
     glyf = font["glyf"]
@@ -47,6 +60,7 @@ def check_hinting(ctx: FontContext) -> None:
     for mode, interpreter, flags in freetype_render.MODES:
         renderers = {key: freetype_render.Renderer(path, interpreter, flags) for key, path in paths.items()}
         ours, ud, udp = renderers["ours"], renderers["ud"], renderers["udp"]
+        stripped = renderers["stripped"]
         # (何を, 読書 UD のグリフの番号, 比べる相手, 相手のグリフの番号)
         # ヒンティングを付けない字 (spec.UNHINTED) は、元のフォントと同じには描かれない
         cases = [(f"U+{code:04X}", ours.char_index(code), udp, udp.char_index(code)) for code in latin_codes(cmap)
@@ -64,8 +78,9 @@ def check_hinting(ctx: FontContext) -> None:
                   for name, source in sorted(half_widths.items()) if source not in unhinted_ud]
         differ = []
         for what, ours_index, other, other_index in cases:
+            mine = stripped if order[ours_index] in listed else ours
             for ppem in HINTING_PPEMS:
-                if ours.render(ours_index, ppem) != other.render(other_index, ppem):
+                if mine.render(ours_index, ppem) != other.render(other_index, ppem):
                     differ.append(f"{what} at {ppem} ppem")
         check(not differ, f"{label}: {mode}: {len(differ)} glyphs are not drawn as in BIZ UD / BIZ UDP, "
                           f"such as {differ[:3]}")
@@ -73,6 +88,7 @@ def check_hinting(ctx: FontContext) -> None:
             renderer.close()
         check_nothing_vanishes(label, font, mode, interpreter, flags, symbols, by_name, targets, half_widths,
                                unhinted_ud, has_ink_gray)
+    stripped_dir.cleanup()
     # 細い横線だけの字 (spec.UNHINTED) は、文字が指す字・欧文の中の置き換え先・hwid の半角の字・2 倍と 3 倍の
     # ダッシュのどれもヒンティングを持たないこと
     for code in [*spec.UNHINTED, 0x2E3A, 0x2E3B]:
@@ -182,3 +198,177 @@ def check_ruby_hint_rendering(ctx: FontContext) -> None:
                       f"{label}: {mode}: trial ruby lines are not on pixel boundaries at {ppem} ppem {aligned}")
         hinted.close()
         plain.close()
+
+
+def diagonal_listed(ctx: FontContext) -> dict[str, str]:
+    """この書体で斜線を書き直した字 (グリフ名 → 文字)"""
+    return spec.DIAGONAL_GLYPHS.get((ctx.family["key"], ctx.weight), {})
+
+
+def program_tokens(font: TTFont, name: str) -> list | None:
+    glyph = font["glyf"][name]
+    glyph.expand(font["glyf"])
+    program = getattr(glyph, "program", None)
+    if glyph.numberOfContours == 0 or glyph.isComposite() or program is None or not program.getBytecode():
+        return None
+    return diagonal_hints.tokens(program)
+
+
+def write_stripped(ctx: FontContext, path: Path, listed: dict[str, str]) -> None:
+    """斜線を書き直した字から、足した末尾を外した (元の命令だけの) フォントを path に書く。末尾が決まった形で
+    なければ、check_diagonal_hints が報告するので、ここでは外さない"""
+    font = TTFont(ctx.path)
+    for name in listed:
+        tokens = program_tokens(font, name)
+        split = diagonal_hints.split_tail(tokens) if tokens is not None else None
+        if split is not None:
+            font["glyf"][name].program = diagonal_hints.assemble(split[0])
+    font.save(path)
+    font.close()
+
+
+def _polylines(points: list, flags: list, ends: list) -> list[list[tuple[float, float]]]:
+    """TrueType の 2 次曲線の輪郭を折れ線にする (曲線は 8 に分ける)。points は (x, y)、flags の下位 1 bit が曲線の上の点"""
+    polygons, start = [], 0
+    for end in ends:
+        ring = [(points[i], bool(flags[i] & 1)) for i in range(start, end + 1)]
+        start = end + 1
+        # 曲線の外の点が続くところに、間の曲線の上の点を足す
+        expanded = []
+        for k, (point, on) in enumerate(ring):
+            expanded.append((point, on))
+            following = ring[(k + 1) % len(ring)]
+            if not on and not following[1]:
+                expanded.append((((point[0] + following[0][0]) / 2, (point[1] + following[0][1]) / 2), True))
+        first = next((k for k, (_p, on) in enumerate(expanded) if on), None)
+        if first is None:
+            continue
+        expanded = expanded[first:] + expanded[:first]
+        polygon, k, count = [expanded[0][0]], 1, len(expanded)
+        while k <= count:
+            point, on = expanded[k % count]
+            if on:
+                polygon.append(point)
+                k += 1
+            else:
+                p0, end_point = polygon[-1], expanded[(k + 1) % count][0]
+                for step in range(1, 9):
+                    t = step / 8
+                    polygon.append(((1 - t) ** 2 * p0[0] + 2 * t * (1 - t) * point[0] + t * t * end_point[0],
+                                    (1 - t) ** 2 * p0[1] + 2 * t * (1 - t) * point[1] + t * t * end_point[1]))
+                k += 2
+        polygons.append(polygon)
+    return polygons
+
+
+def _vertical_thickness(polygons: list, x: float, y: float) -> float:
+    """点 (x, y) を通る縦の線の上の、y に最も近いインクの区間の長さ (x の前後 1/32 px の平均)"""
+    total = 0.0
+    for dx in (-2, 2):
+        crossings = []
+        for polygon in polygons:
+            for (x0, y0), (x1, y1) in zip(polygon, polygon[1:] + polygon[:1]):
+                if (x0 <= x + dx < x1) or (x1 <= x + dx < x0):
+                    crossings.append(y0 + (y1 - y0) * (x + dx - x0) / (x1 - x0))
+        crossings.sort()
+        best = None
+        for a, b in zip(crossings[0::2], crossings[1::2]):
+            distance = max(a - y, y - b, 0)
+            if best is None or distance < best[0]:
+                best = (distance, b - a)
+        total += best[1] if best else 0
+    return total / 2
+
+
+def slash_loss(plain: list, hinted: list, flags: list, ends: list, points: list[int]) -> float:
+    """斜線の縁の点 (points) の位置の、縦のインクの区間の長さが、ヒントなしからどれだけ縮んだか (px の平均。縮まなければ 0)。
+    調査の斜線の濃さの点数 (骨格の点の濃さの差) の代わりに使う、輪郭だけから求める量"""
+    before, after = _polylines(plain, flags, ends), _polylines(hinted, flags, ends)
+    loss = [max(0.0, _vertical_thickness(before, plain[p][0], plain[p][1])
+                - _vertical_thickness(after, plain[p][0], hinted[p][1])) / 64 for p in points]
+    return sum(loss) / len(loss)
+
+
+SLASH_PPEMS = range(9, 17)
+
+
+def check_diagonal_hints(ctx: FontContext) -> None:
+    """斜線を書き直した字 (spec.DIAGONAL_GLYPHS) を、画素の比較の代わりに縛る。
+
+    - 命令が「元の BIZ UD・BIZ UDP の命令」+「決まった形の末尾」であること。末尾のある字は一覧にあるものだけ
+    - 末尾を外した字は BIZ UD・BIZ UDP と同じ画素で描かれること (check_hinting が比べる。ここでは元の命令との一致)
+    - x に動く点が 0 (ヒントなしと同じ x)、同じ高さの点が 3 つ以上の横線の組のうちそろう数が、末尾を外した字と同じ
+      (8–24 ppem)、斜線の縁の縦の幅が、末尾を外した字より縮まないこと
+    """
+    label = ctx.label
+    font = ctx.font
+    listed = diagonal_listed(ctx)
+    order = font.getGlyphOrder()
+    ud_order, udp_order = set(ctx.ud.getGlyphOrder()), set(ctx.udp.getGlyphOrder())
+    funcs = hinting_tools.functions(ctx.udp["fpgm"].program)
+    offset = len(ctx.ud["cvt "].values)
+    tails = {}
+    for name in order:
+        glyph = font["glyf"][name]
+        if glyph.numberOfContours <= 0 or glyph.isComposite():
+            continue
+        tokens = program_tokens(font, name)
+        split = diagonal_hints.split_tail(tokens) if tokens is not None else None
+        if split is not None:
+            tails[name] = split
+    check(set(tails) == set(listed), f"{label}: the glyphs with a diagonal tail differ from spec.DIAGONAL_GLYPHS: "
+                                     f"{sorted(set(tails) ^ set(listed))[:5]}")
+    with tempfile.TemporaryDirectory() as directory:
+        stripped_path = Path(directory) / label
+        write_stripped(ctx, stripped_path, listed)
+        for name in sorted(set(tails) & set(listed)):
+            head, groups, _after = tails[name]
+            coordinates, ends, flags = outline(font, name)
+            points = [p for lo, hi, group in groups for p in group]
+            check(all(0 <= p < len(coordinates) for lo, hi, group in groups for p in (lo, hi, *group))
+                  and len(set(points)) == len(points) and not {lo for lo, _hi, _g in groups} & set(points)
+                  and not {hi for _lo, hi, _g in groups} & set(points)
+                  and all(coordinates[lo][1] != coordinates[hi][1] for lo, hi, _g in groups),
+                  f"{label}: {name}: the points of the diagonal tail are not valid")
+            # 元の命令と同じか (BIZ UD か BIZ UDP の同じ名前の字。名前の無い字 (読書 UD が作った字) は画素だけで比べる)
+            origins = []
+            if name in ud_order:
+                origins.append(program_tokens(ctx.ud, name))
+            if name in udp_order:
+                program = getattr(ctx.udp["glyf"][name], "program", None)
+                if program is not None and program.getBytecode():
+                    try:
+                        origins.append(diagonal_hints.tokens(hinting_tools.shift_cvt(program, funcs, offset, name, False)[0]))
+                    except SystemExit:
+                        pass
+            check(not origins or head in origins, f"{label}: {name} ({listed[name]}): the program before the tail is not "
+                                                  f"BIZ UD / BIZ UDP's")
+        for mode, interpreter, flags_ in freetype_render.MODES:
+            ours = freetype_render.Renderer(ctx.path, interpreter, flags_)
+            stripped = freetype_render.Renderer(stripped_path, interpreter, flags_)
+            plain = freetype_render.Renderer(ctx.path, interpreter, flags_ | freetype_render.NO_HINTING)
+            for name in sorted(set(tails) & set(listed)):
+                coordinates, ends, flags = outline(font, name)
+                index = font.getGlyphID(name)
+                by_height: dict[int, list[int]] = {}
+                for i, (_x, y) in enumerate(coordinates):
+                    by_height.setdefault(y, []).append(i)
+                rows = [rows_ for rows_ in by_height.values() if len(rows_) >= 3]
+                points = [p for _lo, _hi, group in tails[name][1] for p in group]
+                moved, lines, loss_ours, loss_original = 0, 0, [], []
+                for ppem in HINTING_PPEMS:
+                    mine, original, unhinted = (r.outline(index, ppem) for r in (ours, stripped, plain))
+                    moved += sum(1 for a, b in zip(mine, unhinted) if a[0] != b[0])
+                    lines += abs(sum(1 for r in rows if all(mine[i][1] % 64 == 0 for i in r))
+                                 - sum(1 for r in rows if all(original[i][1] % 64 == 0 for i in r)))
+                    if ppem in SLASH_PPEMS:
+                        loss_ours.append(slash_loss(unhinted, mine, flags, ends, points))
+                        loss_original.append(slash_loss(unhinted, original, flags, ends, points))
+                where = f"{label}: {mode}: {name} ({listed[name]})"
+                check(moved == 0, f"{where}: the diagonal tail moves {moved} points in x")
+                check(lines == 0, f"{where}: the diagonal tail changes the number of aligned horizontal lines")
+                check(sum(loss_ours) <= sum(loss_original) + 0.02 * len(loss_ours),
+                      f"{where}: the diagonal tail thins the slash ({sum(loss_ours) / len(loss_ours):.3f} px, "
+                      f"before the tail {sum(loss_original) / len(loss_original):.3f} px)")
+            for renderer in (ours, stripped, plain):
+                renderer.close()
