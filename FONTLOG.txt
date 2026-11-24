@@ -22,7 +22,7 @@ with their substitutions, from BIZ UDP of the same design.
 ChangeLog
 ---------
 
-Next release (unreleased)
+2026-11-24 (hayatedayon) Dokusho UD 1.012
 - The optional ss03 (Ruby kana, trial) no longer enlarges the 40 small kana
   (ぁぃぅぇぉっゃゅょゎゕゖ, ァィゥェォッャュョヮヵヶ and the 16 katakana
   phonetic extensions U+31F0-31FF) by 12%; they keep the size of the
