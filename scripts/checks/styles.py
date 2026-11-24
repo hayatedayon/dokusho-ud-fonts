@@ -8,7 +8,7 @@ import spec
 
 from .common import FontContext, Shaped, check
 from .fonttables import gsub_mapping, outline, outputs, vertical_closure
-from .hinting import HINTING_PPEMS
+from .hinting import HINTING_PPEMS, stripped_font
 
 
 STYLE_MODES = ((False, ()), (True, ()), (True, ("vert=0", "vrt2")))
@@ -39,8 +39,10 @@ def check_style_widths(ctx: FontContext) -> int:
     return count
 
 
-def check_style_copies(label: str, ours: Shaped, udp: Shaped, path: Path, source_path: Path) -> None:
-    """各複製を対応する文字・縦組経路の UDP 字形に照合し、未符号化の候補も描いて比べる。"""
+def check_style_copies(label: str, ours: Shaped, udp: Shaped, path: Path, source_path: Path,
+                       stripped_path: Path | None = None, listed=()) -> None:
+    """各複製を対応する文字・縦組経路の UDP 字形に照合し、未符号化の候補も描いて比べる。斜線を書き直した字
+    (spec.DIAGONAL_GLYPHS) の複製は、足した末尾を外した字 (stripped_path) で比べる (末尾が何を変えるかは hinting.check_diagonal_hints が縛る)。"""
     font = ours.font
     clones = vertical_closure(font, outputs(font, ("ss02",)))
     originals = vertical_closure(font, outputs(font, ("locl",)))
@@ -87,10 +89,13 @@ def check_style_copies(label: str, ours: Shaped, udp: Shaped, path: Path, source
     check(not clones - covered, f"{label}: ss02 copies have no character/path correspondence: {sorted(clones - covered)[:8]}")
     for mode, interpreter, flags in freetype_render.MODES:
         actual = freetype_render.Renderer(path, interpreter, flags)
+        stripped = freetype_render.Renderer(stripped_path, interpreter, flags) if stripped_path else actual
         reference = freetype_render.Renderer(source_path, interpreter, flags)
         bad = [(description, ppem) for (gid, source), description in pairs.items() for ppem in HINTING_PPEMS
-               if actual.render(gid, ppem) != reference.render(source, ppem)]
+               if (stripped if ours.order[gid] in listed else actual).render(gid, ppem) != reference.render(source, ppem)]
         check(not bad, f"{label}: {mode}: ss02 copies differ from corresponding UDP rasters: {bad[:6]}")
+        if stripped is not actual:
+            stripped.close()
         actual.close()
         reference.close()
 
@@ -102,7 +107,8 @@ def check_style_copies_all(ctx: FontContext) -> None:
     ours = ctx.ours
     udp = ctx.udp_shaped
     udp_path = ctx.udp_path
-    check_style_copies(label, ours, udp, path, udp_path)
+    with stripped_font(ctx) as (stripped_path, listed):
+        check_style_copies(label, ours, udp, path, udp_path, stripped_path, listed)
 
 
 def check_style_quotes(ctx: FontContext) -> None:
