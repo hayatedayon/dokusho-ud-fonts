@@ -44,6 +44,7 @@ from fontTools.ttLib.tables._g_l_y_f import Glyph
 import fetch_sources
 import combining_marks
 import extra_glyphs
+import diagonal_hints
 import fraction_digits
 import hinting
 import latin_symbols
@@ -461,6 +462,8 @@ def build(family: dict, weight: str) -> Path:
     # vert・vrt2 の最後の lookup になるので、vert・vrt2 の lookup を足すものより後で呼ぶ
     extra_glyphs.split_vertical_cells(ud)
 
+    # 斜線の濃さを保つ命令を、ほかの字の処理が終わった後で、最終のグリフに足す (点の番号は、ここまでのグリフのもの)
+    diagonal = diagonal_hints.add(ud, family["key"], weight)
     rename(ud, family, weight, versions)
     reading_styles.label(ud)
     ud["post"].isFixedPitch = 0
@@ -499,7 +502,7 @@ def build(family: dict, weight: str) -> Path:
           f"{fractions['denominators']} denominators made; "
           f"{symbols['symbols']} symbols in Latin text ({symbols['vertical']} vertical forms, "
           f"vert only for {symbols['shared']}); "
-          f"hinting of BIZ UDP on {hinted['hinted']} glyphs (cvt +{hinted['cvt']}); "
+          f"hinting of BIZ UDP on {hinted['hinted']} glyphs (cvt +{hinted['cvt']}), diagonals rewritten on {len(diagonal)}; "
           f"{extra['invisible']} invisible, {extra['spaces']} spaces, {extra['dashes']} dashes and {extra['japanese']} Japanese characters added; "
           f"tnum {tabular['tabular']} glyph; colon between digits raised by {colon['raise']}; {marks['marks']} combining marks on {marks['bases']} bases; "
           f"halt {spaced['halt']}, vhal {spaced['vhal']}, palt {spaced['palt']}, vpal {spaced['vpal']} glyphs; "
