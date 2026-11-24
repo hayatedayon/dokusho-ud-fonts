@@ -448,7 +448,6 @@ def build(family: dict, weight: str) -> Path:
     cmap_udp = udp.getBestCmap()
     unhinted = {cmap_udp[code] for code in spec.UNHINTED if code in cmap_udp}
     hinted = hinting.add(ud, udp, taken, unhinted)
-    diagonal = diagonal_hints.add(ud, family["key"], weight)
     extra = extra_glyphs.add(ud)
     tabular = tabular_digits.add(ud)
     colon = tabular_digits.raise_colon(ud)
@@ -463,6 +462,8 @@ def build(family: dict, weight: str) -> Path:
     # vert・vrt2 の最後の lookup になるので、vert・vrt2 の lookup を足すものより後で呼ぶ
     extra_glyphs.split_vertical_cells(ud)
 
+    # 斜線の濃さを保つ命令を、ほかの字の処理が終わった後で、最終のグリフに足す (点の番号は、ここまでのグリフのもの)
+    diagonal = diagonal_hints.add(ud, family["key"], weight)
     rename(ud, family, weight, versions)
     reading_styles.label(ud)
     ud["post"].isFixedPitch = 0
