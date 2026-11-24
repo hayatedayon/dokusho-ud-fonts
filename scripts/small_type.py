@@ -1,7 +1,7 @@
 """小さい字の調整。追加数字には縦方向だけのヒント、試作ルビ仮名には任意の ss03 を用意する。
 
-ルビ仮名は全角の枠を保ち、原字のインクの中心を基準に細い線をわずかに補強する。小書き仮名だけは
-12% 大きくする。全仮名 194 字を機械的に調整する試作。通常の ruby と
+ルビ仮名は全角の枠を保ち、原字のインクの中心を基準に細い線をわずかに補強する。小書き仮名の拡大率は
+SMALL_SCALE (今は 1.0 = 拡大しない。1.12 にすると小書き仮名だけ 12% 大きくする)。全仮名 194 字を機械的に調整する試作。通常の ruby と
 本文の字形は変えない。横組・縦組の字形を別々に作り、原字と同じ送りを使う。ヒントは原字の命令をそのまま付ける。
 """
 
@@ -14,6 +14,8 @@ import latin_symbols
 RUBY_KANA = "".join(chr(c) for start, stop in ((0x3041, 0x3097), (0x30A0, 0x30FC), (0x31F0, 0x3200))
                     for c in range(start, stop))
 SMALL_KANA = "ぁぃぅぇぉっゃゅょゎゕゖァィゥェォッャュョヮヵヶ" + "".join(map(chr, range(0x31F0, 0x3200)))
+# 小書き仮名の拡大率。1.0 は拡大せず、補強と中心合わせだけを行う。1.12 は従来の ss03。
+SMALL_SCALE = 1.0
 RUBY_HINT_OPS = {"NPUSHB", "NPUSHW", "PUSHB", "PUSHW", "SVTCA", "MDAP", "SRP1", "SRP2", "IP", "SHP", "IUP"}
 
 
@@ -117,7 +119,8 @@ def trial_glyph(font, source: str, scale: float, ex: float, ey: float):
     outline = fraction_digits.embolden(outline, ex, ey)
     a, b = ink(font, source), fraction_digits.bounds(outline)
     dx, dy = (a[0] + a[2] - b[0] - b[2]) / 2, (a[1] + a[3] - b[1] - b[3]) / 2
-    # 右上に寄った縦組小書き仮名は、拡大した輪郭が枠から出る場合だけ内側へ戻す。
+    # 右上に寄った縦組小書き仮名は、拡大 (scale > 1) や補強で輪郭が枠から出る場合だけ内側へ戻す。
+    # 拡大しない (scale == 1) 今も、補強で枠に触れうるので、条件として残す。
     low, high = -font["OS/2"].usWinDescent, font["OS/2"].usWinAscent
     dx = max(-b[0], min(dx, em - b[2]))
     dy = max(low - b[1], min(dy, high - b[3]))
@@ -129,8 +132,9 @@ def trial_strength(font) -> int:
     return round(font["head"].unitsPerEm * (0.002 if font["OS/2"].usWeightClass >= 700 else 0.004))
 
 
-def trial_sources(font) -> dict[str, float]:
-    """試作字形の元になる字 (横組と縦組の字形) と、その拡大率。小書き仮名だけ拡大する。"""
+def trial_sources(font, small_scale: float | None = None) -> dict[str, float]:
+    """試作字形の元になる字 (横組と縦組の字形) と、その拡大率。小書き仮名の拡大率は SMALL_SCALE (指定すれば small_scale)。"""
+    small_scale = SMALL_SCALE if small_scale is None else small_scale
     import build
 
     cmap, gsub = font.getBestCmap(), font["GSUB"].table
@@ -141,7 +145,7 @@ def trial_sources(font) -> dict[str, float]:
         for tag in ("vert", "vrt2"):
             forms.update(build.single_mapping(gsub, tag, {base}).values())
         for source in sorted(forms):
-            sources.setdefault(source, 1.12 if char in SMALL_KANA else 1.0)
+            sources.setdefault(source, small_scale if char in SMALL_KANA else 1.0)
     return sources
 
 

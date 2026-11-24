@@ -22,6 +22,30 @@ with their substitutions, from BIZ UDP of the same design.
 ChangeLog
 ---------
 
+Next release (unreleased)
+- The optional ss03 (Ruby kana, trial) no longer enlarges the 40 small kana
+  (ぁぃぅぇぉっゃゅょゎゕゖ, ァィゥェォッャュョヮヵヶ and the 16 katakana
+  phonetic extensions U+31F0-31FF) by 12%; they keep the size of the
+  original glyphs, and only the emboldening and the centering remain. The
+  12% enlargement could make a small kana look like the full-size kana
+  next to it. The small kana divided by the full-size kana (outline width
+  and height, average of 20 pairs per face) are 0.81-0.84, the same as the
+  normal kana, instead of 0.91-0.94 with the enlargement. The emboldening
+  amounts are unchanged. The change affects only the glyphs that ss03
+  substitutes for these 40 kana and their 40 vertical forms (80 glyphs per
+  font). Without ss03 nothing changes: glyph shapes, instructions, advances
+  and offsets of every character are identical to 1.011 in HarfBuzz shaping
+  of all cmap characters (horizontal and vertical, with aalt, palt, vpal,
+  halt, vhal, hwid, fwid, ruby, ss01, ss02, vert and vrt2; 707,640 shapings
+  per font). The outlines of the other 154 kana in ss03 are unchanged; the
+  glyph count is unchanged. Outline edges of the 194 kana move by at most 8
+  units from the original (129 in 1.011) and the ink center by at most 6
+  units (36 in 1.011). The hinting instructions are still copied from the
+  original kana (all 940 glyphs pass the exact point check). Over the 194
+  kana, the unhinted ss03 ink is about 1.036 times that of the normal
+  glyphs (four faces, 6-10 ppem).
+  ss03 stays an opt-in feature; it is not applied by default.
+
 2026-11-19 (hayatedayon) Dokusho UD 1.011
 - Add white parentheses ⦅ ⦆ (U+2985 and U+2986) by mapping them to the
   existing fullwidth glyphs for ｟ ｠ (U+FF5F and U+FF60). They share
