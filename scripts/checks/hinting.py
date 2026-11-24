@@ -1,6 +1,7 @@
 """ヒンティング。FreeType でヒンティングを動かして描き、画素を元のフォントと比べる。"""
 
 import tempfile
+from contextlib import contextmanager
 from pathlib import Path
 
 from fontTools.ttLib import TTFont
@@ -203,6 +204,16 @@ def check_ruby_hint_rendering(ctx: FontContext) -> None:
 def diagonal_listed(ctx: FontContext) -> dict[str, str]:
     """この書体で斜線を書き直した字 (グリフ名 → 文字)"""
     return spec.DIAGONAL_GLYPHS.get((ctx.family["key"], ctx.weight), {})
+
+
+@contextmanager
+def stripped_font(ctx: FontContext):
+    """斜線を書き直した字から末尾を外したフォントの path と、その字の一覧 (グリフ名 → 文字)"""
+    listed = diagonal_listed(ctx)
+    with tempfile.TemporaryDirectory() as directory:
+        path = Path(directory) / ctx.label
+        write_stripped(ctx, path, listed)
+        yield path, listed
 
 
 def program_tokens(font: TTFont, name: str) -> list | None:
