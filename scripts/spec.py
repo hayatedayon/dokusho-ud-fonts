@@ -3,7 +3,7 @@
 # フォントの版 (head.fontRevision と name の Version)。リリースのタグ vX.Y.Z は X.YYZ に対応する
 # (v1.0.0 は 1.000、v1.2.3 は 1.023)。.github/workflows/release.yml が突き合わせる
 # 次の版を公開するまでは、公開済みの版を保つ。未公開の変更は FONTLOG に記録する。
-VERSION = "1.012"
+VERSION = "1.013"
 
 # ⦅ ⦆ は全角の二重括弧 ｟ ｠ と同じグリフを使う。
 WHITE_PARENTHESIS_ALIASES = {0x2985: 0xFF5F, 0x2986: 0xFF60}

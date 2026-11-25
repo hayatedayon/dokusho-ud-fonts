@@ -22,7 +22,7 @@ with their substitutions, from BIZ UDP of the same design.
 ChangeLog
 ---------
 
-Next release (hayatedayon) Dokusho UD 1.013
+2026-11-25 (hayatedayon) Dokusho UD 1.013
 - Adjusted hinting for 249 glyphs across the four faces, including Ø, ø
   and numerals with diagonal strokes. The added instructions coordinate
   the movement of the edges of the diagonal, reducing thinning and gaps
