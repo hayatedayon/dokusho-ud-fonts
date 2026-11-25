@@ -319,6 +319,7 @@ def check_diagonal_hints(ctx: FontContext) -> None:
     funcs = hinting_tools.functions(ctx.udp["fpgm"].program)
     offset = len(ctx.ud["cvt "].values)
     tails = {}
+    plans = diagonal_hints.load_plans().get(f"{ctx.family['key']}-{ctx.weight}", {})
     for name in order:
         glyph = font["glyf"][name]
         if glyph.numberOfContours <= 0 or glyph.isComposite():
@@ -333,13 +334,16 @@ def check_diagonal_hints(ctx: FontContext) -> None:
         stripped_path = Path(directory) / label
         write_stripped(ctx, stripped_path, listed)
         for name in sorted(set(tails) & set(listed)):
-            head, groups, _after = tails[name]
+            head, groups, after, method = tails[name]
             coordinates, ends, flags = outline(font, name)
-            points = [p for lo, hi, group in groups for p in group]
-            check(all(0 <= p < len(coordinates) for lo, hi, group in groups for p in (lo, hi, *group))
-                  and len(set(points)) == len(points) and not {lo for lo, _hi, _g in groups} & set(points)
-                  and not {hi for _lo, hi, _g in groups} & set(points)
-                  and all(coordinates[lo][1] != coordinates[hi][1] for lo, hi, _g in groups),
+            points = diagonal_hints.group_points(groups)
+            references = diagonal_hints.reference_points(groups)
+            plan = plans.get(name, {})
+            check((groups, after, method) == (plan.get("groups"), plan.get("after", False), plan.get("method", "ip")),
+                  f"{label}: {name}: the diagonal tail differs from its plan")
+            check(all(0 <= p < len(coordinates) for p in points + references)
+                  and len(set(points)) == len(points) and not set(references) & set(points)
+                  and (method == "shp" or all(coordinates[lo][1] != coordinates[hi][1] for lo, hi, _g in groups)),
                   f"{label}: {name}: the points of the diagonal tail are not valid")
             # 元の命令と同じか (BIZ UD か BIZ UDP の同じ名前の字。名前の無い字 (読書 UD が作った字) は画素だけで比べる)
             origins = []
@@ -365,7 +369,7 @@ def check_diagonal_hints(ctx: FontContext) -> None:
                 for i, (_x, y) in enumerate(coordinates):
                     by_height.setdefault(y, []).append(i)
                 rows = [rows_ for rows_ in by_height.values() if len(rows_) >= 3]
-                points = [p for _lo, _hi, group in tails[name][1] for p in group]
+                points = diagonal_hints.group_points(tails[name][1])
                 moved, lines, loss_ours, loss_original = 0, 0, [], []
                 for ppem in HINTING_PPEMS:
                     mine, original, unhinted = (r.outline(index, ppem) for r in (ours, stripped, plain))

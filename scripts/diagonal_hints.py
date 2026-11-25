@@ -8,10 +8,15 @@
 比で位置を決めるので、両側の縁は同じ高さなら同じ量だけ動き、縦の幅は保たれる。lo・hi は元の命令が動かす点
 (横線の高さにそろえる点) で、IP の対象は元の命令が動かさない点だけなので、横線のそろえは元のまま。
 
-足す末尾 (最後の IUP[0] (と、あれば IUP[1]) の前。グループの数だけ繰り返す):
+足す末尾 (最後の IUP[0] と、あれば IUP[1] の前または後。グループの数だけ繰り返す):
 
     SVTCA[0]
     PUSH 点 1 … 点 n, n, hi, lo;  SRP1;  SRP2;  SLOOP;  IP
+
+同じ参照点の動きを写す SHP の場合:
+
+    SVTCA[0]
+    PUSH 点 1 … 点 n, n, 参照点;  SRP1;  SLOOP;  SHP[1]
 
 末尾はこの形に限る。scripts/checks/hinting.py の check_diagonal_hints が、この形・元の命令との一致・横線のそろい・
 x が動かないこと・斜線の濃さを字ごとに確かめる。どの字に足すかは spec.DIAGONAL_GLYPHS に、点は diagonal_plans.json
@@ -65,12 +70,26 @@ def assemble(items: list) -> Program:
     return program
 
 
-def tail(groups: list) -> list:
-    """グループ (lo, hi, 点の並び) の並びから、足す末尾の tokens"""
+def tail(groups: list, method: str = "ip") -> list:
+    """IP の (lo, hi, 点の並び) または SHP の (参照点, 点の並び) から、足す末尾の tokens"""
     items: list = ["SVTCA[0]"]
-    for lo, hi, points in groups:
-        items += [*points, len(points), hi, lo, "SRP1[ ]", "SRP2[ ]", "SLOOP[ ]", "IP[ ]"]
+    if method == "ip":
+        for lo, hi, points in groups:
+            items += [*points, len(points), hi, lo, "SRP1[ ]", "SRP2[ ]", "SLOOP[ ]", "IP[ ]"]
+    elif method == "shp":
+        for reference, points in groups:
+            items += [*points, len(points), reference, "SRP1[ ]", "SLOOP[ ]", "SHP[1]"]
+    else:
+        raise ValueError(f"unknown diagonal tail method: {method}")
     return items
+
+
+def group_points(groups: list) -> list[int]:
+    return [point for group in groups for point in group[-1]]
+
+
+def reference_points(groups: list) -> list[int]:
+    return [point for group in groups for point in group[:-1]]
 
 
 def ending(items: list) -> list:
@@ -82,44 +101,53 @@ def ending(items: list) -> list:
     raise SystemExit("the glyph program does not end with IUP[0]")
 
 
-def rewrite(program: Program, groups: list, after: bool = False) -> Program:
+def rewrite(program: Program, groups: list, after: bool = False, method: str = "ip") -> Program:
     """program に groups の末尾を足したもの。after が偽なら最後の IUP の前に、真なら最後の IUP の後ろ (全ての点が
     補間された後) に足す。後ろに足すと、IP で動かす点以外は元の命令の結果のまま動かない"""
     items = tokens(program)
     last = ending(items)
     if after:
-        return assemble([*items, *tail(groups)])
-    return assemble([*items[: len(items) - len(last)], *tail(groups), *last])
+        return assemble([*items, *tail(groups, method)])
+    return assemble([*items[: len(items) - len(last)], *tail(groups, method), *last])
 
 
 def _read_groups(body: list):
-    """body の最後から、点 1 … 点 n, n, hi, lo, SRP1, SRP2, SLOOP, IP のグループと、その前の SVTCA[0] を読む。
-    (グループの並び, それより前の tokens)。決まった形でなければ None"""
+    """body の最後から、同じ種類のグループの並びと、その前の SVTCA[0] を読む。
+    (グループの並び, それより前の tokens, 命令の種類)。決まった形でなければ None"""
     groups: list = []
-    while body[-4:] == ["SRP1[ ]", "SRP2[ ]", "SLOOP[ ]", "IP[ ]"]:
-        if len(body) < 8 or not all(isinstance(v, int) for v in body[-7:-4]):
+    method = "shp" if body[-3:] == ["SRP1[ ]", "SLOOP[ ]", "SHP[1]"] else "ip"
+    operations = ["SRP1[ ]", "SLOOP[ ]", "SHP[1]"] if method == "shp" else [
+        "SRP1[ ]", "SRP2[ ]", "SLOOP[ ]", "IP[ ]"
+    ]
+    nops = len(operations)
+    nrefs = 1 if method == "shp" else 2
+    header = nops + nrefs + 1
+    while body[-nops:] == operations:
+        values = body[-header:-nops]
+        if len(values) != nrefs + 1 or not all(isinstance(v, int) for v in values):
             return None
-        lo, hi, count = body[-5], body[-6], body[-7]
-        if count < 1 or len(body) < 8 + count or not all(isinstance(v, int) for v in body[-7 - count:-7]):
+        count, *refs = values
+        points = body[-header - count:-header]
+        if count < 1 or len(points) != count or not all(isinstance(v, int) for v in points):
             return None
-        groups.insert(0, [lo, hi, body[-7 - count:-7]])
-        body = body[:-7 - count]
+        groups.insert(0, [*reversed(refs), points])
+        body = body[:-header - count]
     if not groups or body[-1:] != ["SVTCA[0]"]:
         return None
-    return groups, body[:-1]
+    return groups, body[:-1], method
 
 
 def split_tail(items: list):
-    """tokens を (元の命令の tokens, グループの並び, 後ろに足したか) に分ける。末尾が決まった形でなければ None
+    """tokens を (元の命令の tokens, グループの並び, 後ろに足したか, 命令の種類) に分ける。末尾が決まった形でなければ None
     (グループが無い元のままの命令も None)"""
     read = _read_groups(items)
     if read is not None:
-        groups, rest = read
+        groups, rest, method = read
         try:
             ending(rest)
         except SystemExit:
             return None
-        return rest, groups, True
+        return rest, groups, True, method
     try:
         last = ending(items)
     except SystemExit:
@@ -127,8 +155,8 @@ def split_tail(items: list):
     read = _read_groups(items[: len(items) - len(last)])
     if read is None:
         return None
-    groups, rest = read
-    return [*rest, *last], groups, False
+    groups, rest, method = read
+    return [*rest, *last], groups, False, method
 
 
 def digest(program: Program) -> str:
@@ -159,12 +187,13 @@ def add(font: TTFont, family: str, weight: str) -> dict[str, int]:
         if glyph.isComposite() or digest(glyph.program) != plan["program"]:
             raise SystemExit(f"{key} ({name}): the original program is not the one the diagonal plan was made for")
         groups = plan["groups"]
-        used = [p for lo, hi, points in groups for p in (lo, hi, *points)]
+        used = reference_points(groups) + group_points(groups)
         if not groups or not all(0 <= p < count for p in used):
             raise SystemExit(f"{key} ({name}): a point of the diagonal plan does not exist")
-        glyph.program = rewrite(glyph.program, groups, after=plan.get("after", False))
+        glyph.program = rewrite(glyph.program, groups, after=plan.get("after", False),
+                                method=plan.get("method", "ip"))
         sizes[key] = len(glyph.program.getBytecode())
-        stack = max(stack, max(len(points) for _lo, _hi, points in groups) + 3)
+        stack = max(stack, max(len(group[-1]) + len(group) for group in groups))
     if sizes:
         maxp = font["maxp"]
         maxp.maxSizeOfInstructions = max(maxp.maxSizeOfInstructions, *sizes.values())
