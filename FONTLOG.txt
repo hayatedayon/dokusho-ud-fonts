@@ -22,6 +22,14 @@ with their substitutions, from BIZ UDP of the same design.
 ChangeLog
 ---------
 
+Next release (hayatedayon) Dokusho UD 1.013
+- Adjusted hinting for 249 glyphs across the four faces, including Ø, ø
+  and numerals with diagonal strokes. The added instructions coordinate
+  the movement of the edges of the diagonal, reducing thinning and gaps
+  at small sizes while retaining the original grid fitting.
+- Added glyph-specific hinting checks and a DirectWrite pixel comparison
+  for candidate and published fonts at 9–20 px.
+
 2026-11-24 (hayatedayon) Dokusho UD 1.012
 - The optional ss03 (Ruby kana, trial) no longer enlarges the 40 small kana
   (ぁぃぅぇぉっゃゅょゎゕゖ, ァィゥェォッャュョヮヵヶ and the 16 katakana
