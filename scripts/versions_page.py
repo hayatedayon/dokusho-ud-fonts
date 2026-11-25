@@ -148,6 +148,13 @@ VERSIONS = [
     ]),
 ]
 
+# 公開前の見本は、UNRELEASED に版番号を指定するとローカルのフォントで作れる。
+if spec.VERSION >= "1.013" or UNRELEASED == "1.013":
+    VERSIONS.append(("1.013", "", "小さい字の斜線が細くなるのを抑える", [
+        Raster("Ø・2・4 の画素", "Ø ø 2 4", (9, 10, 11, 13, 15),
+               "斜線の縁の動きを補正した前後を、FreeType v40 のグレースケールで見比べます。"),
+    ]))
+
 SAMPLES = [
     ("和欧混植", "彼女は「It’s alive!」と叫んだ", "ja", ()),
     ("欧文の本文", "Alice was very tired", "en", ()),

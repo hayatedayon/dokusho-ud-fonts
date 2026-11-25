@@ -34,6 +34,10 @@ The embedded version (`VERSION` in `scripts/spec.py`) is not advanced until that
 
 Releases cannot be changed afterwards (GitHub immutable releases): the files and the tag of a published release can be neither replaced nor deleted, so a version always downloads the same files. The SHA-256 of each file is shown on the release page and can be checked against the release attestation that GitHub makes.
 
+## Diagonal hinting
+
+The build adds instructions that move the edges of diagonal strokes for the glyphs listed in `spec.DIAGONAL_GLYPHS`, keeping their original hint programs. Each glyph's plan in `diagonal_plans.json` places the added instructions before or after the final `IUP`. They either interpolate between two points moved by the original program (`IP`) or copy one point's displacement (`SHP`). The checks match the added instructions against `spec.DIAGONAL_GLYPHS` and `diagonal_plans.json`, and use FreeType to verify that no point moves horizontally, that the number of horizontal edges (outline edges with three or more points at the same height) aligned to pixel boundaries is the same as before, and that the vertical thickness of the diagonal does not shrink. For the pixel comparison against the source fonts, the checks strip the added instructions from the glyphs in `spec.DIAGONAL_GLYPHS` and compare the other glyphs as built.
+
 ## Reading and print proofs
 
 ```sh

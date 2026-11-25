@@ -92,6 +92,10 @@ python3 scripts/width_reference.py record /path/to/v1.0.6 tests/fixtures/widths-
 python3 scripts/glyph_reference.py record NotoSerifCJK-Regular.ttc NotoSansCJK-Regular.ttc
 ```
 
+## Windows の小さい字の画素比較
+
+Windows の `native-proof` では、`scripts/native/hintpix.cpp` が DirectWrite の Natural・GDI Natural・GDI Classic で 9〜20px のグリフの画素を採取し、公開版との比較に使います。成果物の `dist/native/hintpix/` に公開版の `release` と候補版の `build` があり、`scripts/native/hintpix_compare.py` が両者の差を `summary.json` にまとめます。
+
 ## 1.010 の実環境の確認表
 
 `dist/additions.html` と `dist/additions/*.png` は追加字の FreeType 画像です。12・14・16pxの実寸と同じ画素の４倍、96pxを４書体で見比べます。𠮷と吉の違い、土の下の横画の長さ、口の形、〱・〲の接合と濁点、縦組で前後の仮名２字分を使うことを確認します。画像を自動で作っても、目視で確かめたことにはなりません。
