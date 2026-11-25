@@ -316,6 +316,7 @@ DIAGONAL_GLYPHS: dict[tuple[str, str], dict[str, str]] = {
         "ampersand": "U+0026 &",
         "eight": "U+0038 8",
         "glyph12916": "別形 U+201C U+301D",
+        "glyph13305": "縦組で横に倒した U+00D8 Ø",
         "glyph13433": "別形 U+0052 U+FF32",
         "glyph13457": "別形 U+006B U+FF4B",
         "glyph13485": "別形",
